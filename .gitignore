@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Datos locales de desarrollo (backend JSON de ficha antes de swap a AgentCore Memory)
+data/*.json
+
+# CDK
+infra/cdk.out/
+infra/.venv/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Entorno
+.env

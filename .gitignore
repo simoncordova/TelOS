@@ -18,3 +18,10 @@ infra/.venv/
 
 # Entorno
 .env
+
+# Archivos de proceso/entorno de desarrollo — no son parte de la
+# implementación del producto, no se publican en el repo público.
+CLAUDE.md
+PLAN.md
+UPDATES.md
+.claude/

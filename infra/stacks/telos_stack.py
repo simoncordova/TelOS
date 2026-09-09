@@ -54,6 +54,19 @@ class TelosStack(Stack):
         )
         rol_agentes.add_to_policy(
             iam.PolicyStatement(
+                # Ya no hace falta habilitar el modelo a mano en la consola
+                # (Model access) — Bedrock lo auto-suscribe en la primera
+                # invocación, pero ese auto-enablement necesita este
+                # permiso de Marketplace en el rol que hace la primera
+                # llamada. Una vez habilitado para la cuenta, ya no hace
+                # falta este permiso para invocaciones futuras, pero no
+                # cuesta nada dejarlo.
+                actions=["aws-marketplace:Subscribe", "aws-marketplace:ViewSubscriptions"],
+                resources=["*"],
+            )
+        )
+        rol_agentes.add_to_policy(
+            iam.PolicyStatement(
                 # Acciones de AgentCore Memory/Gateway: servicio nuevo,
                 # confirmar nombres exactos de acción contra la
                 # documentación vigente antes de endurecer a least

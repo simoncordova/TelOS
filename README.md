@@ -97,9 +97,14 @@ todavía no se probó ni una vez — es lo primero que yo revisaría.
 CloudShell no necesita ninguna key: usa las credenciales temporales de tu
 sesión del console automáticamente.
 
-1. **Habilitar acceso al modelo** (una sola vez por cuenta/región, si no
-   lo hiciste antes): consola de Bedrock → **Model access** → habilitar
-   Anthropic Claude Sonnet 4.5.
+1. **Confirmar que tu identidad de CloudShell puede usar el modelo.** Ya
+   no existe el toggle manual de "Model access" en la consola — Bedrock
+   auto-suscribe el modelo la primera vez que se invoca, siempre que la
+   identidad que hace esa primera llamada tenga, además de
+   `bedrock:InvokeModel`, el permiso `aws-marketplace:Subscribe` (el rol
+   de CloudShell suele tenerlo si administrás la cuenta; si no, alguien
+   con esos permisos hace esa primera invocación una sola vez y después
+   queda habilitado para toda la cuenta).
 2. **Llevar el código a CloudShell.** Este repo todavía no tiene remoto
    — hace falta subirlo a un repo de GitHub público (lo vas a necesitar
    de todos modos para la entrega del hackathon, ver PLAN.md). Desde tu

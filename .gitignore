@@ -7,6 +7,7 @@ venv/
 
 # Datos locales de desarrollo (backend JSON de ficha antes de swap a AgentCore Memory)
 data/*.json
+data/*.jsonl
 
 # CDK
 infra/cdk.out/

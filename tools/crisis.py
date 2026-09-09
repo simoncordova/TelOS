@@ -4,8 +4,13 @@ Determinístico y sin llamada a modelo a propósito: la respuesta de
 seguridad no puede depender de que el LLM decida generarla bien.
 """
 
+import json
+import os
 import re
 import unicodedata
+from datetime import datetime, timezone
+
+_RUTA_EVENTOS = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "eventos_crisis.jsonl")
 
 # Curada de forma conservadora: mejor falso positivo que falso negativo.
 # Patrones escritos sin tildes/ñ: tanto el texto de entrada como estos
@@ -77,6 +82,20 @@ def detectar_señal_crisis(texto: str) -> dict:
                 return {"disparado": True, "categoria": categoria}
 
     return {"disparado": False, "categoria": None}
+
+
+def registrar_evento_crisis(usuario_id: str, categoria: str) -> None:
+    """Deja constancia de que el guardrail se activó, sin guardar el texto
+    disparador (ver sección 9 del spec: privacidad y desacoplamiento de
+    identidad — flag + timestamp, nada evaluativo ni el contenido crudo)."""
+    os.makedirs(os.path.dirname(_RUTA_EVENTOS), exist_ok=True)
+    evento = {
+        "usuario_id": usuario_id,
+        "categoria": categoria,
+        "fecha": datetime.now(timezone.utc).isoformat(),
+    }
+    with open(_RUTA_EVENTOS, "a", encoding="utf-8") as f:
+        f.write(json.dumps(evento, ensure_ascii=False) + "\n")
 
 
 MENSAJE_CRISIS = (

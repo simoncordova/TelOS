@@ -142,50 +142,12 @@ credenciales reales (ej. CloudShell) y confirmar que
 ## Autenticación
 
 Login con Google vía Cognito Hosted UI (`ui/auth.py`, recursos en
-`infra/stacks/telos_stack.py`). Requiere un paso manual que **solo vos
-podés hacer** (no hay tool de AWS ni de este repo que lo automatice):
-
-### 1. Crear el OAuth Client en Google Cloud Console
-
-1. [console.cloud.google.com](https://console.cloud.google.com/) → crear
-   o elegir un proyecto.
-2. **APIs & Services → OAuth consent screen** — configurarla (External,
-   modo Testing alcanza para el demo).
-3. **APIs & Services → Credentials → Create Credentials → OAuth client
-   ID** → tipo **Web application**.
-4. En **Authorized redirect URIs** todavía no vas a tener el dato — hacé
-   el paso 2 (deploy) primero, el output `GoogleRedirectUriParaConsola`
-   te da la URL exacta para pegar acá (algo como
-   `https://telos-<cuenta>.auth.<región>.amazoncognito.com/oauth2/idpresponse`).
-   Guardá el Client ID y el Client Secret que te da Google.
-
-### 2. Deploy (dos pasadas — ver por qué en el comentario del stack)
-
-```bash
-cd infra
-pip install -r requirements.txt
-npx aws-cdk bootstrap   # solo la primera vez en la cuenta/región
-
-# Primera pasada: crea todo, pero el callback de Cognito todavía apunta
-# a un placeholder porque la URL de App Runner no existe hasta ahora.
-npx aws-cdk deploy \
-  --parameters GoogleClientId=<client id de Google> \
-  --parameters GoogleClientSecret=<client secret de Google>
-```
-
-Con los outputs de esa primera pasada: pegá `GoogleRedirectUriParaConsola`
-en Google Cloud Console (paso 1.4), y guardá `UrlServicioUI`.
-
-```bash
-# Segunda pasada: ahora sí, con la URL real de App Runner.
-npx aws-cdk deploy \
-  --parameters GoogleClientId=<client id de Google> \
-  --parameters GoogleClientSecret=<client secret de Google> \
-  --parameters AppUrl=<el UrlServicioUI del paso anterior>
-```
-
-A partir de acá, `usuario_id` en la app es el email de la cuenta de
-Google con la que se loguea la persona (ya no el campo de texto libre).
+`infra/stacks/telos_stack.py`). `usuario_id` en la app es el email de la
+cuenta de Google con la que se loguea la persona (no un campo de texto
+libre). El paso manual que arma esto (crear el OAuth Client en Google
+Cloud Console) y el resto del proceso están juntos en
+[Despliegue](#despliegue) abajo, para no tener las instrucciones
+repartidas en dos lugares.
 
 ## Guardrail de crisis
 
@@ -198,38 +160,80 @@ preferencia. Solo el mensaje de respuesta usa el idioma seleccionado:
 recursos Latam/España en español, 988 Suicide & Crisis Lifeline
 (EE.UU./Canadá) en inglés. Ver sección 10 del spec.
 
-## Despliegue (desde AWS CloudShell)
+## Despliegue
 
-El despliegue usa dos mecanismos separados a propósito, para no mezclar
-CDK con recursos de AgentCore que CloudFormation no modela de forma
-nativa:
+Todo desde AWS CloudShell (sin generar keys locales — ver
+[Probar contra Bedrock real desde CloudShell](#probar-contra-bedrock-real-desde-cloudshell),
+que conviene hacer antes de esto). AgentCore Memory no necesita un paso
+de deploy aparte: `tools/ficha_agentcore.py` crea el recurso solo, la
+primera vez que se guarda o lee una ficha (por eso el primer mensaje que
+alguien mande en producción puede tardar hasta ~1 minuto más de lo
+normal — está creando la Memory, no es un cuelgue).
 
-1. **CDK** — IAM, la imagen Docker de la UI (build automático vía
-   `DockerImageAsset`, necesita Docker disponible en CloudShell) y el
-   hosting en App Runner:
+### Paso 1 — Crear el OAuth Client en Google Cloud Console
 
-   ```bash
-   cd infra
-   pip install -r requirements.txt
-   npx aws-cdk bootstrap   # solo la primera vez en la cuenta/región
-   npx aws-cdk deploy
-   ```
+Paso manual que **solo vos podés hacer** (no hay tool de AWS ni de este
+repo que lo automatice):
 
-   Al terminar, el output `ArnRolAgentes` da el ARN del rol IAM con
-   permisos de Bedrock/AgentCore para reutilizar en el paso 2, y
-   `UrlServicioUI` la URL pública del App Runner con la interfaz
-   Streamlit.
+1. [console.cloud.google.com](https://console.cloud.google.com/) → crear
+   o elegir un proyecto.
+2. **APIs & Services → OAuth consent screen** — configurarla (External,
+   modo Testing alcanza para el demo).
+3. **APIs & Services → Credentials → Create Credentials → OAuth client
+   ID** → tipo **Web application**. Todavía no vas a tener el
+   **Authorized redirect URI** — eso sale del Paso 2. Guardá el Client
+   ID y el Client Secret que te da Google, los necesitás ahora.
 
-2. **AgentCore Runtime / Memory / Gateway** — vía el toolkit de AgentCore,
-   reutilizando el rol IAM que CDK ya creó:
+### Paso 2 — CDK, primera pasada
 
-   ```bash
-   agentcore configure
-   agentcore launch
-   ```
+```bash
+git clone https://github.com/simoncordova/TelOS.git   # si no lo hiciste ya
+cd TelOS/infra
+pip install -r requirements.txt
+npx aws-cdk bootstrap   # solo la primera vez en la cuenta/región
 
-   (Pendiente de documentar el detalle exacto de flags una vez probado
-   en CloudShell — ver "Qué falta" abajo.)
+npx aws-cdk deploy \
+  --parameters GoogleClientId=<client id de Google> \
+  --parameters GoogleClientSecret=<client secret de Google>
+```
+
+Esta primera pasada crea todo (IAM, Cognito, ECR, App Runner) pero el
+callback de Cognito todavía apunta a un placeholder, porque la URL real
+de App Runner recién se conoce después de crearlo. Con los outputs:
+
+- `GoogleRedirectUriParaConsola` → pegalo en Google Cloud Console, en el
+  Authorized redirect URI del Paso 1.3.
+- `UrlServicioUI` → guardalo para el Paso 3.
+
+### Paso 3 — CDK, segunda pasada (con la URL real)
+
+```bash
+npx aws-cdk deploy \
+  --parameters GoogleClientId=<client id de Google> \
+  --parameters GoogleClientSecret=<client secret de Google> \
+  --parameters AppUrl=<el UrlServicioUI del paso anterior>
+```
+
+### Paso 4 — Abrir la app
+
+Entrá a `UrlServicioUI`, iniciá sesión con Google, y recorré las 4 fases.
+El rol IAM (`ArnRolAgentes`) ya tiene todos los permisos que necesita
+(Bedrock + AgentCore Memory) — no hace falta nada más para que la app
+funcione de punta a punta.
+
+### (Opcional, no bloquea nada) — AgentCore Runtime real
+
+Bonus de puntaje ("Technical Implementation" del reglamento del
+hackathon), no un requisito: hospedar el código de agentes en AgentCore
+Runtime en vez de correrlo en el mismo contenedor de la UI. Reutiliza el rol de
+`ArnRolAgentes` como execution role:
+
+```bash
+agentcore configure
+agentcore launch
+```
+
+Sin probar todavía end-to-end — ver "Qué falta" abajo.
 
 ## Qué falta / limitaciones conocidas
 
@@ -242,12 +246,13 @@ nativa:
   en App Runner (no Secrets Manager) — aceptable para el MVP, no queda
   expuesto fuera de la cuenta de AWS, pero es lo primero a endurecer si
   esto pasa de demo a algo real.
-- `crear_evento_calendario` está mockeado (P2 en PLAN.md) — devuelve una
-  confirmación simulada, no crea eventos reales en Google Calendar.
+- `crear_evento_calendario` está mockeado — devuelve una confirmación
+  simulada, no crea eventos reales en Google Calendar.
 - El seguimiento (Fase 5) se dispara "al abrir conversación", no hay
   scheduler real que envíe recordatorios proactivos.
-- El paso 2 del despliegue (`agentcore configure`/`launch`) no se ha
-  ejercitado todavía end-to-end.
+- El paso opcional de AgentCore Runtime (`agentcore configure`/`launch`)
+  no se ha ejercitado todavía — no bloquea el despliegue principal, es
+  bonus de puntaje.
 
 ## Licencia
 

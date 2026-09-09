@@ -195,6 +195,15 @@ class TelosStack(Stack):
                                 value=self.region,
                             ),
                             apprunner.CfnService.KeyValuePairProperty(
+                                # Sin esto, el contenedor desplegado usa el
+                                # backend JSON local por defecto -- efímero,
+                                # se pierde en cada restart/redeploy. Es
+                                # justo lo que la persistencia P0 (ficha
+                                # versionada) tiene que evitar.
+                                name="TELOS_FICHA_BACKEND",
+                                value="agentcore",
+                            ),
+                            apprunner.CfnService.KeyValuePairProperty(
                                 name="COGNITO_DOMAIN",
                                 value=user_pool_domain.base_url(),
                             ),

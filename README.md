@@ -59,7 +59,10 @@ tocar los agentes — ver [Persistencia](#persistencia) abajo.
 ## Correr localmente
 
 Requiere Python 3.12+ y credenciales de AWS con acceso a Bedrock
-(`aws configure` o variables de entorno estándar).
+(`aws configure` o variables de entorno estándar). Si preferís no generar
+keys locales, saltate esta sección y probá directo desde CloudShell — ver
+[Probar contra Bedrock real desde CloudShell](#probar-contra-bedrock-real-desde-cloudshell)
+más abajo, que usa las credenciales temporales de la sesión del console.
 
 ```bash
 python -m venv .venv
@@ -84,6 +87,44 @@ y vuelve a mostrar el campo de identificador libre.
 | `TELOS_MEMORY_NAME` | `telos_fichas_usuario` | Nombre del recurso de AgentCore Memory (solo si `TELOS_FICHA_BACKEND=agentcore`) |
 | `TELOS_REQUIRE_LOGIN` | `1` | `0` para saltar el login de Google en local |
 | `COGNITO_DOMAIN`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_CLIENT_SECRET`, `APP_URL` | — | Los inyecta `cdk deploy` como env vars de App Runner; solo hace falta exportarlos a mano si corrés el login localmente |
+
+## Probar contra Bedrock real desde CloudShell
+
+Antes de meterse con el deploy completo (CDK + Cognito + Google), vale la
+pena validar que los agentes conversan bien contra el modelo real. Esto
+todavía no se probó ni una vez — es lo primero que yo revisaría.
+
+CloudShell no necesita ninguna key: usa las credenciales temporales de tu
+sesión del console automáticamente.
+
+1. **Habilitar acceso al modelo** (una sola vez por cuenta/región, si no
+   lo hiciste antes): consola de Bedrock → **Model access** → habilitar
+   Anthropic Claude Sonnet 4.5.
+2. **Llevar el código a CloudShell.** Este repo todavía no tiene remoto
+   — hace falta subirlo a un repo de GitHub público (lo vas a necesitar
+   de todos modos para la entrega del hackathon, ver PLAN.md). Desde tu
+   máquina:
+   ```bash
+   gh repo create telos --public --source=. --remote=origin --push
+   # o, sin gh: creá el repo vacío en github.com y después
+   git remote add origin <url-del-repo>
+   git push -u origin main
+   ```
+3. **En CloudShell:**
+   ```bash
+   git clone <url-del-repo>
+   cd telos
+   pip install -r requirements.txt
+   python scripts/chat_terminal.py
+   ```
+   Esto abre un chat de terminal (sin Streamlit, sin browser) contra los
+   agentes reales. Escribí como si fueras un usuario explorando su
+   propósito; `ficha` muestra el estado guardado y `salir` termina.
+
+Si algo se ve raro (una fase no cierra, el guardrail no dispara cuando
+debería, el tono no cuadra), avisame con lo que viste y ajustamos el
+prompt correspondiente en `docs/agente-proposito-de-vida-prompts.md` +
+`agents/*.py`.
 
 ## Persistencia
 

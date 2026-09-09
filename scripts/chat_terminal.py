@@ -6,7 +6,7 @@ práctico. Usa las mismas credenciales ambientales de la sesión (las que
 ya tenga configuradas boto3) — no pide ni genera ninguna key.
 
 Uso:
-    python scripts/chat_terminal.py [usuario_id]
+    python scripts/chat_terminal.py [usuario_id] [idioma: es|en]
 
 Comandos dentro del chat: "ficha" muestra el estado guardado, "salir"
 termina.
@@ -31,9 +31,10 @@ _NOMBRES_FASE = {
 
 def main() -> None:
     usuario_id = sys.argv[1] if len(sys.argv) > 1 else "prueba-cloudshell"
-    sesion = SesionTelos(usuario_id)
+    idioma = sys.argv[2] if len(sys.argv) > 2 else "es"
+    sesion = SesionTelos(usuario_id, idioma=idioma)
 
-    print(f"--- Telos (usuario_id={usuario_id}) ---")
+    print(f"--- Telos (usuario_id={usuario_id}, idioma={idioma}) ---")
     print(f"Fase inicial: {_NOMBRES_FASE.get(sesion.fase_actual, sesion.fase_actual)}")
     print("Escribí 'salir' para terminar, 'ficha' para ver el estado guardado.\n")
 

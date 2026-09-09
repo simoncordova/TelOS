@@ -18,7 +18,7 @@ from agents.estratega_sistemas import crear_agente_estratega_sistemas
 from agents.explorador import crear_agente_explorador
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
-from tools.crisis import MENSAJE_CRISIS, detectar_señal_crisis, registrar_evento_crisis
+from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
 from tools.ficha import leer_ficha_usuario
 
 _FABRICAS_POR_FASE = {
@@ -37,10 +37,11 @@ class SesionTelos:
     momento a partir de la ficha guardada.
     """
 
-    def __init__(self, usuario_id: str):
+    def __init__(self, usuario_id: str, idioma: str = "es"):
         self.usuario_id = usuario_id
+        self.idioma = idioma
         self.fase_actual = self._determinar_fase_inicial()
-        self._agente: Agent = _FABRICAS_POR_FASE[self.fase_actual](usuario_id)
+        self._agente: Agent = _FABRICAS_POR_FASE[self.fase_actual](usuario_id, idioma)
 
     def _determinar_fase_inicial(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)
@@ -55,7 +56,7 @@ class SesionTelos:
         resultado_crisis = detectar_señal_crisis(texto)
         if resultado_crisis["disparado"]:
             registrar_evento_crisis(self.usuario_id, resultado_crisis["categoria"])
-            return MENSAJE_CRISIS
+            return mensaje_crisis(self.idioma)
 
         total_versiones_antes = self._contar_versiones()
         respuesta = self._agente(texto)
@@ -94,4 +95,4 @@ class SesionTelos:
 
     def _pasar_a_fase(self, fase: int) -> None:
         self.fase_actual = fase
-        self._agente = _FABRICAS_POR_FASE[fase](self.usuario_id)
+        self._agente = _FABRICAS_POR_FASE[fase](self.usuario_id, self.idioma)

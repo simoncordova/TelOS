@@ -7,7 +7,8 @@ Telos es un agente conversacional que acompaña a una persona a través de 4
 fases fijas — explorar, sintetizar, validar y convertir en sistema — hasta
 llegar a un propósito de vida concreto y un sistema de 4 preguntas
 accionable. Después, un quinto agente hace seguimiento breve cada vez que
-la persona vuelve a conversar, sin rachas ni gamificación.
+la persona vuelve a conversar, sin rachas ni gamificación. Disponible en
+español e inglés (selector explícito en la UI).
 
 Construido para el hackathon AWS Agents for Humans (track Everyday
 Agents) con [Strands Agents SDK](https://github.com/strands-agents/harness-sdk),
@@ -105,22 +106,13 @@ sesión del console automáticamente.
    de CloudShell suele tenerlo si administrás la cuenta; si no, alguien
    con esos permisos hace esa primera invocación una sola vez y después
    queda habilitado para toda la cuenta).
-2. **Llevar el código a CloudShell.** Este repo todavía no tiene remoto
-   — hace falta subirlo a un repo de GitHub público (lo vas a necesitar
-   de todos modos para la entrega del hackathon, ver PLAN.md). Desde tu
-   máquina:
+2. **En CloudShell:**
    ```bash
-   gh repo create telos --public --source=. --remote=origin --push
-   # o, sin gh: creá el repo vacío en github.com y después
-   git remote add origin <url-del-repo>
-   git push -u origin main
-   ```
-3. **En CloudShell:**
-   ```bash
-   git clone <url-del-repo>
-   cd telos
+   git clone https://github.com/simoncordova/TelOS.git
+   cd TelOS
    pip install -r requirements.txt
-   python scripts/chat_terminal.py
+   python scripts/chat_terminal.py                  # español (default)
+   python scripts/chat_terminal.py mi-usuario en     # English
    ```
    Esto abre un chat de terminal (sin Streamlit, sin browser) contra los
    agentes reales. Escribí como si fueras un usuario explorando su
@@ -200,8 +192,11 @@ Google con la que se loguea la persona (ya no el campo de texto libre).
 `tools/crisis.py::detectar_señal_crisis` es determinístico (sin llamada a
 modelo) y el Orquestador lo evalúa en cada turno, antes de rutear a
 cualquier agente — nunca es una tool que el modelo pueda decidir no
-llamar. Ver sección 10 del spec para el mensaje fijo y los recursos de
-ayuda (Latam/España).
+llamar. Revisa patrones en **español e inglés siempre**, sin importar el
+idioma seleccionado en la UI — es una cuestión de seguridad, no de
+preferencia. Solo el mensaje de respuesta usa el idioma seleccionado:
+recursos Latam/España en español, 988 Suicide & Crisis Lifeline
+(EE.UU./Canadá) en inglés. Ver sección 10 del spec.
 
 ## Despliegue (desde AWS CloudShell)
 

@@ -43,16 +43,51 @@ _CATEGORIAS = {
     ],
 }
 
+# English patterns. Se revisan SIEMPRE junto con los de español, sin
+# importar qué idioma esté seleccionado en la UI — ver sección 0.5 del
+# spec: el guardrail no puede depender de que la persona haya elegido el
+# idioma "correcto" antes de escribir algo grave.
+_CATEGORIES_EN = {
+    "ideacion_suicida": [
+        r"\bi\s+want\s+to\s+(die|kill myself)\b",
+        r"\bthinking (about|of) (killing myself|suicide|ending my life)\b",
+        r"\bsuicid\w*\b",
+        r"\bend(ing)?\s+my\s+life\b",
+        r"\bi\s+don'?t\s+want\s+to\s+(live|be alive)\b",
+        r"\bi\s+can'?t\s+(go on|keep going)\b",
+    ],
+    "plan_o_metodo": [
+        r"\bi\s+have\s+a\s+plan\s+to\s+(kill myself|end my life)\b",
+    ],
+    "autolesion": [
+        r"\bself[\s-]?harm\w*\b",
+        r"\bcutting\s+myself\b",
+        r"\bhurt(ing)?\s+myself\b",
+    ],
+    "desesperanza_extrema": [
+        r"\bi\s+don'?t\s+matter\s+to\s+anyone\b",
+        r"\b(everyone|they)\s+would\s+be\s+better\s+off\s+without\s+me\b",
+        r"\bno\s+one\s+would\s+(miss|notice) me\b",
+        r"\bdisappear\s+forever\b",
+    ],
+}
+
 _CATEGORIAS_COMPILADAS = {
     categoria: [re.compile(p, re.IGNORECASE) for p in patrones]
     for categoria, patrones in _CATEGORIAS.items()
 }
+_CATEGORIAS_COMPILADAS_EN = {
+    categoria: [re.compile(p, re.IGNORECASE) for p in patrones]
+    for categoria, patrones in _CATEGORIES_EN.items()
+}
 
 # Modismos benignos que de otro modo dispararían el guardrail por error
-# (ej. "morirme de la risa" = reír mucho, no una señal de crisis).
+# (ej. "morirme de la risa" = reír mucho, "dying laughing" en inglés, no
+# son señales de crisis).
 _EXCEPCIONES = [
     re.compile(r"\bmorir(me)?\s+de\s+(la\s+)?risa\b", re.IGNORECASE),
     re.compile(r"\bmuero\s+de\s+(la\s+)?risa\b", re.IGNORECASE),
+    re.compile(r"\b(die|died|dying)\s+(of\s+)?laugh(ing|ter)?\b", re.IGNORECASE),
 ]
 
 
@@ -76,10 +111,13 @@ def detectar_señal_crisis(texto: str) -> dict:
     if any(excepcion.search(texto_normalizado) for excepcion in _EXCEPCIONES):
         return {"disparado": False, "categoria": None}
 
-    for categoria, patrones in _CATEGORIAS_COMPILADAS.items():
-        for patron in patrones:
-            if patron.search(texto_normalizado):
-                return {"disparado": True, "categoria": categoria}
+    # Se revisan español e inglés siempre, sin importar el idioma
+    # seleccionado en la UI (sección 0.5 del spec).
+    for categorias_compiladas in (_CATEGORIAS_COMPILADAS, _CATEGORIAS_COMPILADAS_EN):
+        for categoria, patrones in categorias_compiladas.items():
+            for patron in patrones:
+                if patron.search(texto_normalizado):
+                    return {"disparado": True, "categoria": categoria}
 
     return {"disparado": False, "categoria": None}
 
@@ -98,7 +136,7 @@ def registrar_evento_crisis(usuario_id: str, categoria: str) -> None:
         f.write(json.dumps(evento, ensure_ascii=False) + "\n")
 
 
-MENSAJE_CRISIS = (
+MENSAJE_CRISIS_ES = (
     "Lo que acabas de compartir suena a que estás pasando por un momento "
     "muy difícil. Quiero pausar esta conversación un momento porque esto "
     "importa más que el propósito o el sistema que estábamos armando.\n\n"
@@ -108,3 +146,20 @@ MENSAJE_CRISIS = (
     "servicios de emergencia locales o a alguien de confianza ahora mismo.\n\n"
     "Cuando quieras, seguimos con la conversación — no hay ninguna prisa."
 )
+
+MENSAJE_CRISIS_EN = (
+    "What you just shared sounds like you're going through a really "
+    "difficult moment. I want to pause this conversation for a moment, "
+    "because this matters more than the purpose or the system we were "
+    "building.\n\n"
+    "If you're in the US or Canada, you can call or text 988 (Suicide & "
+    "Crisis Lifeline), available 24/7. If you're elsewhere, please "
+    "contact your local emergency services or someone you trust right "
+    "now.\n\n"
+    "Whenever you're ready, we can pick this back up — there's no rush "
+    "at all."
+)
+
+
+def mensaje_crisis(idioma: str) -> str:
+    return MENSAJE_CRISIS_EN if idioma == "en" else MENSAJE_CRISIS_ES

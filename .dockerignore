@@ -1,0 +1,9 @@
+.venv/
+.git/
+infra/
+data/
+__pycache__/
+*.pyc
+.streamlit/
+docs/
+*.md

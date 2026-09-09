@@ -227,7 +227,7 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 > resuena, dilo con naturalidad y ofrece pasar a rediseñarlo; no insistas
 > en mantener algo que la persona ya dijo que no le sirve.
 
-**Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=5, motivo_version="check-in: <resultado>")`, `detectar_señal_crisis(texto)`
+**Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=5, motivo_version="check-in: <resultado>")`. `detectar_señal_crisis` NO se expone como tool invocable por el modelo en ninguna fase — el Orquestador ya la corre de forma determinística en cada turno antes de rutear (sección 1 y 10); dejarla a criterio del LLM sería más débil que control de flujo en código.
 
 ## 7. Tools por agente
 
@@ -235,7 +235,7 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 |---|---|---|---|
 | `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Vía AgentCore Memory (o backend JSON local en desarrollo). Cada llamada crea una nueva versión; nunca sobrescribe el historial. |
 | `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 3, 4, 5 | Devuelve la última versión y un resumen del historial de versiones (fase, fecha, motivo — no el contenido completo de versiones viejas). |
-| `detectar_señal_crisis` | `(texto: str) -> dict` | Orquestador, en cada turno | Retorna `{"disparado": bool, "categoria": str \| None}`. Lista estática curada, sin llamada a modelo — determinístico. |
+| `detectar_señal_crisis` | `(texto: str) -> dict` | Orquestador, en cada turno (código, no tool del modelo) | Retorna `{"disparado": bool, "categoria": str \| None}`. Lista estática curada, sin llamada a modelo — determinístico. No se registra como tool de ningún agente de fase: exponerla al LLM la haría opcional para el modelo, y este guardrail no puede ser opcional. |
 | `crear_evento_calendario` | `(usuario_id: str, detalle: dict) -> dict` | Fase 4 | P2. Vía AgentCore Gateway envolviendo Google Calendar. Si no hay tiempo, se mockea devolviendo una confirmación fija sin llamar a ninguna API externa — el agente y su prompt no cambian, solo la implementación de la tool. |
 
 ## 8. Reglas de tono (todas las fases, con énfasis en Fase 5)

@@ -8,6 +8,13 @@ deben cambiar cuando se haga el swap.
 
 Cada llamada a guardar_ficha_usuario agrega una versión nueva; nunca
 sobrescribe el historial (ver reglas de privacidad/versionado del spec).
+
+Estas funciones se exponen sin decorador @tool a propósito: usuario_id y
+fase no deben quedar a criterio del modelo (es contexto determinístico de
+la sesión, no una decisión conversacional). Cada agents/*.py construye su
+propio tool con @tool envolviendo estas funciones, fijando usuario_id y
+fase por closure y dejando que el modelo solo decida `datos` y
+`motivo_version`.
 """
 
 import json

@@ -12,12 +12,20 @@ como señal de "esta fase terminó, avanza a la siguiente".
 
 Cuando la fase cambia a 2, 3 o 4 (flujo fijo o re-entrada desde Fase 5),
 el agente nuevo se invoca en el mismo turno con un mensaje de arranque
-neutro, y su respuesta se concatena a la de la fase que acaba de cerrar
-— si no, la persona se queda mirando un chat "colgado" después del
-cierre de una fase, sin señal de que tiene que escribir algo para que
-continúe. La única excepción es al llegar a Fase 5: ese cierre es el
-fin natural de la sesión (el spec dice que Fase 5 se dispara "al abrir
-una conversación nueva", no en el mismo turno que cierra Fase 4).
+neutro — si no, la persona se queda mirando un chat "colgado" después
+del cierre de una fase, sin señal de que tiene que escribir algo para
+que continúe. La única excepción es al llegar a Fase 5: ese cierre es
+el fin natural de la sesión (el spec dice que Fase 5 se dispara "al
+abrir una conversación nueva", no en el mismo turno que cierra Fase 4).
+
+`enviar_mensaje` es un generador, no devuelve un string: cuando hay
+cascada, entrega el mensaje de la fase que cierra y el de la fase
+siguiente por separado, apenas cada uno está listo, en vez de esperar a
+tener los dos para mostrar todo junto de una — con el Sintetizador
+generando más contenido ahora (propósito + explicación + ejemplo por
+candidato), esperar a los dos combinados se sentía como que la app se
+había colgado. Quien llama (`ui/app.py`, `scripts/chat_terminal.py`)
+itera y muestra cada parte a medida que llega.
 """
 
 from strands.agent import Agent
@@ -69,26 +77,32 @@ class SesionTelos:
         # sesión nueva entra directo a seguimiento, no retoma la fase 4.
         return 5 if fase_guardada >= 4 else fase_guardada
 
-    def enviar_mensaje(self, texto: str) -> str:
+    def enviar_mensaje(self, texto: str):
+        """Generador: entrega (fase, texto) por cada mensaje, en el orden
+        en que se van generando -- no un solo string con todo junto."""
         resultado_crisis = detectar_señal_crisis(texto)
         if resultado_crisis["disparado"]:
             registrar_evento_crisis(self.usuario_id, resultado_crisis["categoria"])
-            return mensaje_crisis(self.idioma)
+            yield self.fase_actual, mensaje_crisis(self.idioma)
+            return
 
         fase_antes = self.fase_actual
         total_versiones_antes = self._contar_versiones()
         respuesta = str(self._agente(texto))
+        yield fase_antes, respuesta
+
         self._avanzar_fase_si_corresponde(total_versiones_antes)
 
         # La fase cambió en este mismo turno: si el destino no es Fase 5
         # (que espera a una conversación nueva, no continúa en caliente),
         # arrancamos al agente siguiente ya mismo para no dejar a la
-        # persona esperando sin saber que le toca escribir algo.
+        # persona esperando sin saber que le toca escribir algo. Se
+        # entrega como un mensaje aparte, no concatenado al anterior --
+        # así quien llama puede mostrar el primero apenas está listo, sin
+        # esperar a que este segundo termine de generarse.
         if self.fase_actual != fase_antes and self.fase_actual != 5:
             continuacion = str(self._agente(_KICKOFF[self.idioma]))
-            respuesta = f"{respuesta}\n\n{continuacion}"
-
-        return respuesta
+            yield self.fase_actual, continuacion
 
     def _contar_versiones(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)

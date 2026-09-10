@@ -143,8 +143,18 @@ if texto_usuario:
     with st.chat_message("user"):
         st.markdown(texto_usuario)
 
-    with st.chat_message("assistant"):
+    # Generador: si hay cambio de fase en este turno, cada mensaje se
+    # muestra apenas está listo (burbuja aparte), no se espera a tener
+    # los dos juntos -- con el Sintetizador generando más contenido
+    # ahora, esperar a los dos combinados se sentía como que la app se
+    # había colgado.
+    generador = sesion.enviar_mensaje(texto_usuario)
+    while True:
         with st.spinner(t["spinner"]):
-            respuesta = sesion.enviar_mensaje(texto_usuario)
-        st.markdown(respuesta)
-    st.session_state["mensajes"].append({"rol": "assistant", "texto": respuesta})
+            try:
+                _fase, parte = next(generador)
+            except StopIteration:
+                break
+        with st.chat_message("assistant"):
+            st.markdown(parte)
+        st.session_state["mensajes"].append({"rol": "assistant", "texto": parte})

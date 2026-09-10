@@ -102,13 +102,17 @@ aplica el guardrail. Mantiene `fase_actual` en la ficha del usuario.
 5. Si el agente de fase señala que completó su salida, el Orquestador
    avanza `fase_actual`. Si el destino es Fase 2, 3 o 4, invoca al
    agente nuevo EN EL MISMO TURNO (con un mensaje interno de arranque
-   que nunca se le muestra a la persona) y concatena su respuesta a la
-   de la fase que acaba de cerrar, para que la conversación se sienta
-   continua — dejar el chat esperando a que la persona adivine que tiene
-   que escribir algo para "empujar" al siguiente agente es justo lo que
-   esta regla evita. Si el destino es Fase 5, NO se cascadea: ese cierre
-   es el fin natural de la sesión (Fase 5 se dispara al abrir una
-   conversación nueva, no en el mismo turno que cierra Fase 4).
+   que nunca se le muestra a la persona) — dejar el chat esperando a que
+   la persona adivine que tiene que escribir algo para "empujar" al
+   siguiente agente es justo lo que esta regla evita. Los dos mensajes
+   (el de cierre y el de apertura del siguiente) se entregan por
+   separado, cada uno apenas está listo, no concatenados en un solo
+   bloque a esperar — con fases que generan bastante contenido (el
+   Sintetizador, por ejemplo), esperar a los dos juntos se siente como
+   que la conversación se colgó. Si el destino es Fase 5, NO se
+   cascadea: ese cierre es el fin natural de la sesión (Fase 5 se
+   dispara al abrir una conversación nueva, no en el mismo turno que
+   cierra Fase 4).
 6. Caso especial: si existe una ficha con fase=5 (ciclo de seguimiento) y
    el agente de Fase 5 decide re-entrar a Fase 3 o 4, el Orquestador
    actualiza `fase_actual` a ese valor y guarda el motivo — esta

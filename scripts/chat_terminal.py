@@ -53,9 +53,11 @@ def main() -> None:
             print(leer_ficha_usuario(usuario_id))
             continue
 
-        respuesta = sesion.enviar_mensaje(texto)
-        nombre_fase = _NOMBRES_FASE.get(sesion.fase_actual, sesion.fase_actual)
-        print(f"\nTelos [{nombre_fase}]: {respuesta}\n")
+        # Generador: si hay cambio de fase en este turno, imprime cada
+        # mensaje apenas está listo (no espera a tener los dos juntos).
+        for fase, parte in sesion.enviar_mensaje(texto):
+            nombre_fase = _NOMBRES_FASE.get(fase, fase)
+            print(f"\nTelos [{nombre_fase}]: {parte}\n")
 
 
 if __name__ == "__main__":

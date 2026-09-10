@@ -20,16 +20,30 @@ leerlo (`actual["fase"]`) tiraba `TypeError: string indices must be
 integers, not 'str'` en un deploy real. Por eso acá se serializa a JSON
 antes de guardar y se deserializa al leer (`_decodificar_blob`), en vez
 de asumir que el SDK hace ese trabajo.
+
+Las fichas guardadas ANTES de este fix quedaron en un formato que no es
+ni JSON ni el repr() de Python -- parece un toString() estilo Java de
+algún wrapper interno de AgentCore ("{fase=1, datos={clave=valor, ...},
+...}", sin comillas en los valores). Parsearlo bien es genuinamente
+ambiguo (los valores son oraciones con comas adentro, no hay forma
+confiable de distinguir una coma de separación de una coma de la
+oración) y no vale la pena un parser a medida para datos de prueba
+previos al fix -- `_decodificar_blob` devuelve `None` si no puede
+decodificar una versión, y `leer_ficha_usuario` la descarta en vez de
+tumbar toda la sesión por una sola versión vieja corrupta.
 """
 
 import ast
 import json
+import logging
 import os
 from datetime import datetime, timezone
 
 from bedrock_agentcore.memory import MemoryClient
 
 from tools._agentcore_ids import id_seguro
+
+logger = logging.getLogger(__name__)
 
 _NOMBRE_MEMORIA = os.environ.get("TELOS_MEMORY_NAME", "telos_fichas_usuario")
 _REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
@@ -59,9 +73,10 @@ def _obtener_memory_id() -> str:
 
 def _decodificar_blob(blob):
     """Normaliza lo que devuelve list_events para el campo `blob` -- ver
-    la nota del docstring del módulo. Cubre además el caso de fichas ya
-    guardadas antes de este fix (dict de Python sin serializar, que
-    AgentCore devuelve como su repr(), no como JSON válido)."""
+    la nota del docstring del módulo. Devuelve None (no lanza) si la
+    versión no se puede decodificar -- una versión vieja corrupta no
+    tiene que tumbar la lectura de toda la ficha, quien llama la
+    descarta."""
     if isinstance(blob, dict):
         return blob
     if isinstance(blob, (bytes, bytearray)):
@@ -70,7 +85,12 @@ def _decodificar_blob(blob):
         try:
             return json.loads(blob)
         except json.JSONDecodeError:
+            pass
+        try:
             return ast.literal_eval(blob)
+        except (ValueError, SyntaxError):
+            logger.warning("No se pudo decodificar una versión de la ficha, se descarta: %r", blob[:200])
+            return None
     raise TypeError(f"Tipo de blob inesperado de AgentCore Memory: {type(blob)!r}")
 
 
@@ -105,11 +125,13 @@ def leer_ficha_usuario(usuario_id: str) -> dict:
         max_results=100,
         include_payload=True,
     )
-    versiones = [
-        _decodificar_blob(evento["payload"][0]["blob"])
-        for evento in eventos
-        if evento.get("payload") and "blob" in evento["payload"][0]
-    ]
+    versiones = []
+    for evento in eventos:
+        if not evento.get("payload") or "blob" not in evento["payload"][0]:
+            continue
+        version = _decodificar_blob(evento["payload"][0]["blob"])
+        if version is not None:
+            versiones.append(version)
     if not versiones:
         return {"existe": False, "actual": None, "historial": []}
 

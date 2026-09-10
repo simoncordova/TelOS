@@ -12,14 +12,18 @@ session_id=usuario_id — la ficha no tiene "sesiones" múltiples, es un
 eventos en orden cronológico, así que el último elemento es la versión
 vigente.
 
-Sin probar contra un recurso real de AgentCore Memory: este entorno de
-desarrollo no tiene credenciales de AWS. Validar en CloudShell (con
-`TELOS_FICHA_BACKEND=agentcore`) antes del demo — en particular, que el
-nombre del campo de memoria (`memoryId` vs `id`) y la forma del payload
-de vuelta en list_events coincidan con lo que retorna el SDK instalado
-en ese entorno (bedrock-agentcore==1.22.0 al momento de escribir esto).
+El campo `blob` no se serializa/deserializa solo: `create_blob_event`
+manda lo que se le pase tal cual como payload de la API, y AgentCore
+Memory lo devuelve como string (no como dict) en `list_events` --
+guardar un dict de Python crudo ahí y volver a indexarlo como dict al
+leerlo (`actual["fase"]`) tiraba `TypeError: string indices must be
+integers, not 'str'` en un deploy real. Por eso acá se serializa a JSON
+antes de guardar y se deserializa al leer (`_decodificar_blob`), en vez
+de asumir que el SDK hace ese trabajo.
 """
 
+import ast
+import json
 import os
 from datetime import datetime, timezone
 
@@ -53,6 +57,23 @@ def _obtener_memory_id() -> str:
     return _memory_id
 
 
+def _decodificar_blob(blob):
+    """Normaliza lo que devuelve list_events para el campo `blob` -- ver
+    la nota del docstring del módulo. Cubre además el caso de fichas ya
+    guardadas antes de este fix (dict de Python sin serializar, que
+    AgentCore devuelve como su repr(), no como JSON válido)."""
+    if isinstance(blob, dict):
+        return blob
+    if isinstance(blob, (bytes, bytearray)):
+        blob = blob.decode("utf-8")
+    if isinstance(blob, str):
+        try:
+            return json.loads(blob)
+        except json.JSONDecodeError:
+            return ast.literal_eval(blob)
+    raise TypeError(f"Tipo de blob inesperado de AgentCore Memory: {type(blob)!r}")
+
+
 def guardar_ficha_usuario(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None:
     """Agrega una nueva versión de la ficha del usuario como blob event. No sobrescribe el historial."""
     version = {
@@ -68,7 +89,7 @@ def guardar_ficha_usuario(usuario_id: str, datos: dict, fase: int, motivo_versio
         # sessionId, hay que sanitizarlo primero (ver tools/_agentcore_ids.py).
         actor_id=id_seguro(usuario_id),
         session_id=id_seguro(usuario_id),
-        blob_data=version,
+        blob_data=json.dumps(version, ensure_ascii=False),
     )
 
 
@@ -85,7 +106,7 @@ def leer_ficha_usuario(usuario_id: str) -> dict:
         include_payload=True,
     )
     versiones = [
-        evento["payload"][0]["blob"]
+        _decodificar_blob(evento["payload"][0]["blob"])
         for evento in eventos
         if evento.get("payload") and "blob" in evento["payload"][0]
     ]

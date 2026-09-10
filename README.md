@@ -143,13 +143,13 @@ prompt correspondiente en `docs/agente-proposito-de-vida-prompts.md` +
 nunca de los backends directamente, así que cambiar de backend no toca
 `agents/*.py`.
 
-**Estado del backend de AgentCore Memory:** implementado
-(`tools/ficha_agentcore.py`, cada versión de la ficha se guarda como un
-blob event) pero no probado todavía contra un recurso real de AWS — este
-entorno de desarrollo no tenía credenciales de AWS al escribirlo. Antes
-del demo, correr con `TELOS_FICHA_BACKEND=agentcore` en un entorno con
-credenciales reales (ej. CloudShell) y confirmar que
-`guardar_ficha_usuario` / `leer_ficha_usuario` funcionan de punta a punta.
+**Estado del backend de AgentCore Memory:** probado contra un recurso
+real de AWS (`tools/ficha_agentcore.py`, cada versión de la ficha se
+guarda como un blob event). Encontró un bug real: `create_blob_event`
+no serializa el `blob` por vos — guardar un dict de Python crudo y
+volver a indexarlo como dict al leerlo revienta, porque `list_events` lo
+devuelve como string, no como dict. Ya corregido: se serializa a JSON
+antes de guardar y se deserializa al leer.
 
 La ficha guarda el resultado final de cada fase, una sola vez, al
 cerrarla — no alcanza para reconstruir la conversación si el proceso se
@@ -159,9 +159,11 @@ patrón selector, mismo `TELOS_FICHA_BACKEND`): guarda cada turno de la
 fase en curso vía AgentCore Memory (`create_event`, eventos
 conversacionales de verdad — no `create_blob_event`, que es lo que usa
 la ficha) y el Orquestador los precarga como historial real del agente
-al construirlo o reconstruirlo. Mismo estado que el backend de la
-ficha: implementado (`tools/conversacion_agentcore.py`) pero sin probar
-contra AWS real todavía.
+al construirlo o reconstruirlo. Usa `content.text`/`role`, campos ya
+tipados como string por la API (no un blob de propósito general como el
+de la ficha), así que no debería tener el mismo problema de
+serialización — pero `tools/conversacion_agentcore.py` en sí todavía no
+se probó de punta a punta contra AWS real.
 
 ## Autenticación
 
@@ -313,11 +315,11 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
 
 ## Qué falta / limitaciones conocidas
 
-- Backend de AgentCore Memory sin probar contra AWS real, tanto para la
-  ficha como para el historial de turnos (ver [Persistencia](#persistencia)).
-- Login con Cognito implementado pero sin probar contra un despliegue
-  real (necesita las dos pasadas de deploy + crear los usuarios de
-  prueba, ver [Autenticación](#autenticación)).
+- Backend de AgentCore Memory de la ficha probado contra AWS real (encontró
+  y corrigió un bug real de serialización del blob, ver
+  [Persistencia](#persistencia)); el historial de turnos
+  (`tools/conversacion_agentcore.py`) todavía no se probó de punta a punta.
+- Login con Cognito probado contra un despliegue real.
 - `COGNITO_CLIENT_SECRET` viaja como variable de entorno en texto plano
   dentro del contenedor Docker (embebido en el user data de la instancia
   EC2, no Secrets Manager) — aceptable para el MVP, no queda expuesto

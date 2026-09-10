@@ -100,6 +100,20 @@ igual al resto de las fases si se retoma una sesión a mitad de camino:
 el agente lee la ficha y arranca reconociendo dónde quedaron, en vez de
 esperar en silencio.
 
+**Persistencia de la conversación en curso:** la ficha (`guardar_ficha_usuario`)
+guarda solo el resultado final de cada fase, una vez, al cerrarla — no
+alcanza para reconstruir la conversación real si el proceso se corta a
+mitad de camino (se cae, CloudShell recicla la sesión, se cierra el
+navegador). Por eso, además de la ficha, el Orquestador guarda cada
+turno (mensaje de la persona + respuesta del agente) de la fase en curso
+con `guardar_intercambio`, incluido el turno de arranque cuando el
+agente habla primero. Al construir (o reconstruir) el agente de una
+fase, el Orquestador precarga esos turnos con `leer_turnos` y se los
+pasa como historial real del modelo — así un proceso nuevo retoma con
+memoria conversacional genuina, no solo con el resumen estructurado de
+la ficha. Los turnos de un mensaje que dispara el guardrail de crisis
+NO se guardan acá (el agente de fase nunca llega a procesarlos).
+
 **Lógica (no es un prompt de modelo, es lógica de control):**
 1. Recibe el mensaje del usuario.
 2. Llama `detectar_señal_crisis(texto)` SIEMPRE, antes de cualquier otra
@@ -521,6 +535,8 @@ current system: ... / Last updated: ...".
 | `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 3, 4, 5 | Devuelve la última versión y un resumen del historial de versiones (fase, fecha, motivo — no el contenido completo de versiones viejas). |
 | `detectar_señal_crisis` | `(texto: str) -> dict` | Orquestador, en cada turno (código, no tool del modelo) | Retorna `{"disparado": bool, "categoria": str \| None}`. Lista estática curada, sin llamada a modelo — determinístico. No se registra como tool de ningún agente de fase: exponerla al LLM la haría opcional para el modelo, y este guardrail no puede ser opcional. |
 | `crear_evento_calendario` | `(usuario_id: str, detalle: dict) -> dict` | Fase 4 | P2. Vía AgentCore Gateway envolviendo Google Calendar. Si no hay tiempo, se mockea devolviendo una confirmación fija sin llamar a ninguna API externa — el agente y su prompt no cambian, solo la implementación de la tool. |
+| `guardar_intercambio` | `(usuario_id: str, fase: int, texto_usuario: str, texto_asistente: str) -> None` | Orquestador, en cada turno real (código, no tool del modelo) | Vía AgentCore Memory (`create_event`, un evento conversacional por turno — distinto de `create_blob_event`, que usa `guardar_ficha_usuario`) o backend JSON local en desarrollo. No se expone como tool del modelo: es lógica de control del Orquestador, igual que `detectar_señal_crisis`. |
+| `leer_turnos` | `(usuario_id: str, fase: int) -> list[dict]` | Orquestador, al construir o reconstruir el agente de una fase | Devuelve los turnos guardados de esa fase en orden cronológico (`[{"rol": "user"\|"assistant", "texto": str}, ...]`); el Orquestador los convierte al formato `Message` de Strands y los precarga como historial real del agente. |
 
 ## 8. Reglas de tono (todas las fases, con énfasis en Fase 5)
 

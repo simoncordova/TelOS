@@ -78,7 +78,9 @@ the person know that from now on, every time they open a new \
 conversation, Telos will do a brief check-in on this system."""
 
 
-def crear_agente_estratega_sistemas(usuario_id: str, idioma: str = "es") -> Agent:
+def crear_agente_estratega_sistemas(
+    usuario_id: str, idioma: str = "es", mensajes_previos: list | None = None
+) -> Agent:
     @tool
     def leer_ficha_usuario() -> dict:
         """Lee la última versión de la ficha del usuario y su historial."""
@@ -98,6 +100,8 @@ def crear_agente_estratega_sistemas(usuario_id: str, idioma: str = "es") -> Agen
         system_prompt=SYSTEM_PROMPT_EN if idioma == "en" else SYSTEM_PROMPT_ES,
         tools=[leer_ficha_usuario, guardar_ficha_usuario, crear_evento_calendario],
         model=crear_modelo(),
+        # Precarga los turnos ya guardados de esta fase (ver explorador.py).
+        messages=mensajes_previos,
         # Suprime el PrintingCallbackHandler por default de Strands (ver
         # explorador.py) -- quien llame controla cómo mostrar la respuesta.
         callback_handler=None,

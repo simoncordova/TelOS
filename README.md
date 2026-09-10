@@ -151,6 +151,18 @@ del demo, correr con `TELOS_FICHA_BACKEND=agentcore` en un entorno con
 credenciales reales (ej. CloudShell) y confirmar que
 `guardar_ficha_usuario` / `leer_ficha_usuario` funcionan de punta a punta.
 
+La ficha guarda el resultado final de cada fase, una sola vez, al
+cerrarla — no alcanza para reconstruir la conversación si el proceso se
+corta a mitad de una fase (se cae, CloudShell recicla la sesión, se
+cierra el navegador). Para eso existe `tools/conversacion.py` (mismo
+patrón selector, mismo `TELOS_FICHA_BACKEND`): guarda cada turno de la
+fase en curso vía AgentCore Memory (`create_event`, eventos
+conversacionales de verdad — no `create_blob_event`, que es lo que usa
+la ficha) y el Orquestador los precarga como historial real del agente
+al construirlo o reconstruirlo. Mismo estado que el backend de la
+ficha: implementado (`tools/conversacion_agentcore.py`) pero sin probar
+contra AWS real todavía.
+
 ## Autenticación
 
 Login vía Cognito Hosted UI (`ui/auth.py`, recursos en
@@ -247,8 +259,8 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
 
 ## Qué falta / limitaciones conocidas
 
-- Backend de AgentCore Memory sin probar contra AWS real (ver
-  [Persistencia](#persistencia)).
+- Backend de AgentCore Memory sin probar contra AWS real, tanto para la
+  ficha como para el historial de turnos (ver [Persistencia](#persistencia)).
 - Login con Cognito implementado pero sin probar contra un despliegue
   real (necesita las dos pasadas de deploy + crear los usuarios de
   prueba, ver [Autenticación](#autenticación)).

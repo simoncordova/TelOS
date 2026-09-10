@@ -35,6 +35,7 @@ from agents.estratega_sistemas import crear_agente_estratega_sistemas
 from agents.explorador import crear_agente_explorador
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
+from tools.conversacion import guardar_intercambio, leer_turnos
 from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
 from tools.ficha import leer_ficha_usuario
 
@@ -55,18 +56,33 @@ _KICKOFF = {
 }
 
 
+def _turnos_a_mensajes(turnos: list[dict]) -> list[dict]:
+    """Convierte los turnos guardados (tools/conversacion.py) al formato
+    de `Message` que espera Strands (`Agent(messages=...)`)."""
+    return [{"role": t["rol"], "content": [{"text": t["texto"]}]} for t in turnos]
+
+
 class SesionTelos:
     """Sesión en memoria de proceso: mantiene el agente Strands activo para
-    la fase actual de un usuario. La persistencia real vive en la ficha
-    (tools/ficha.py), no aquí — esta clase se puede recrear en cualquier
-    momento a partir de la ficha guardada.
+    la fase actual de un usuario. La ficha (tools/ficha.py) guarda el
+    resultado final de cada fase; tools/conversacion.py guarda cada turno
+    mientras la fase está en curso, para que un proceso nuevo pueda
+    reconstruir la conversación real (no solo la ficha) si el anterior se
+    cortó a mitad de camino -- por eso esta clase se puede recrear en
+    cualquier momento sin perder contexto.
     """
 
     def __init__(self, usuario_id: str, idioma: str = "es"):
         self.usuario_id = usuario_id
         self.idioma = idioma
         self.fase_actual = self._determinar_fase_inicial()
-        self._agente: Agent = _FABRICAS_POR_FASE[self.fase_actual](usuario_id, idioma)
+        self._agente: Agent = self._crear_agente_fase(self.fase_actual)
+
+    def _crear_agente_fase(self, fase: int) -> Agent:
+        turnos = leer_turnos(self.usuario_id, fase)
+        return _FABRICAS_POR_FASE[fase](
+            self.usuario_id, self.idioma, mensajes_previos=_turnos_a_mensajes(turnos)
+        )
 
     def abrir_conversacion(self):
         """Generador: el agente de la fase actual habla primero, sin
@@ -78,7 +94,10 @@ class SesionTelos:
 
         No revisa el guardrail de crisis (no hay texto de la persona
         que revisar) ni avanza de fase (abrir no cierra nada)."""
-        yield self.fase_actual, str(self._agente(_KICKOFF[self.idioma]))
+        kickoff = _KICKOFF[self.idioma]
+        respuesta = str(self._agente(kickoff))
+        guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
+        yield self.fase_actual, respuesta
 
     def _determinar_fase_inicial(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)
@@ -101,6 +120,7 @@ class SesionTelos:
         fase_antes = self.fase_actual
         total_versiones_antes = self._contar_versiones()
         respuesta = str(self._agente(texto))
+        guardar_intercambio(self.usuario_id, fase_antes, texto, respuesta)
         yield fase_antes, respuesta
 
         self._avanzar_fase_si_corresponde(total_versiones_antes)
@@ -113,7 +133,9 @@ class SesionTelos:
         # así quien llama puede mostrar el primero apenas está listo, sin
         # esperar a que este segundo termine de generarse.
         if self.fase_actual != fase_antes and self.fase_actual != 5:
-            continuacion = str(self._agente(_KICKOFF[self.idioma]))
+            kickoff = _KICKOFF[self.idioma]
+            continuacion = str(self._agente(kickoff))
+            guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, continuacion)
             yield self.fase_actual, continuacion
 
     def _contar_versiones(self) -> int:
@@ -147,4 +169,8 @@ class SesionTelos:
 
     def _pasar_a_fase(self, fase: int) -> None:
         self.fase_actual = fase
-        self._agente = _FABRICAS_POR_FASE[fase](self.usuario_id, self.idioma)
+        # Precarga los turnos que puedan existir de un paso anterior por
+        # esta misma fase (p. ej. Fase 5 reentra a Fase 3): limitación
+        # conocida, no distingue el primer intento del segundo -- ver
+        # tools/conversacion_agentcore.py.
+        self._agente = self._crear_agente_fase(fase)

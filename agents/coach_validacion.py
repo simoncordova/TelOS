@@ -68,7 +68,7 @@ guardar_ficha_usuario along with the supporting evidence, and hand off \
 to system design."""
 
 
-def crear_agente_coach_validacion(usuario_id: str, idioma: str = "es") -> Agent:
+def crear_agente_coach_validacion(usuario_id: str, idioma: str = "es", mensajes_previos: list | None = None) -> Agent:
     @tool
     def leer_ficha_usuario() -> dict:
         """Lee la última versión de la ficha del usuario y su historial."""
@@ -82,6 +82,8 @@ def crear_agente_coach_validacion(usuario_id: str, idioma: str = "es") -> Agent:
     return Agent(
         system_prompt=SYSTEM_PROMPT_EN if idioma == "en" else SYSTEM_PROMPT_ES,
         tools=[leer_ficha_usuario, guardar_ficha_usuario],
+        # Precarga los turnos ya guardados de esta fase (ver explorador.py).
+        messages=mensajes_previos,
         model=crear_modelo(),
         # Suprime el PrintingCallbackHandler por default de Strands (ver
         # explorador.py) -- quien llame controla cómo mostrar la respuesta.

@@ -148,7 +148,9 @@ def construir_vista_resumen(ficha_actual: dict | None, idioma: str = "es") -> st
     )
 
 
-def crear_agente_seguimiento(usuario_id: str, idioma: str = "es") -> Agent:
+def crear_agente_seguimiento(
+    usuario_id: str, idioma: str = "es", mensajes_previos: list | None = None
+) -> Agent:
     ficha = _leer(usuario_id)
     tipo_checkin = elegir_tipo_checkin(ficha["historial"])
     vista_resumen = construir_vista_resumen(ficha["actual"], idioma)
@@ -175,6 +177,8 @@ def crear_agente_seguimiento(usuario_id: str, idioma: str = "es") -> Agent:
         system_prompt=system_prompt,
         tools=[leer_ficha_usuario, guardar_ficha_usuario],
         model=crear_modelo(),
+        # Precarga los turnos ya guardados de esta fase (ver explorador.py).
+        messages=mensajes_previos,
         # Suprime el PrintingCallbackHandler por default de Strands (ver
         # explorador.py) -- quien llame controla cómo mostrar la respuesta.
         callback_handler=None,

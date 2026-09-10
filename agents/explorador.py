@@ -79,7 +79,7 @@ guardar_ficha_usuario and let the person know you're going to reflect \
 back what you heard — that's the next agent's job."""
 
 
-def crear_agente_explorador(usuario_id: str, idioma: str = "es") -> Agent:
+def crear_agente_explorador(usuario_id: str, idioma: str = "es", mensajes_previos: list | None = None) -> Agent:
     @tool
     def guardar_ficha_usuario(datos: dict, motivo_version: str) -> None:
         """Guarda el avance de la ficha del usuario en esta fase (Explorador)."""
@@ -89,6 +89,10 @@ def crear_agente_explorador(usuario_id: str, idioma: str = "es") -> Agent:
         system_prompt=SYSTEM_PROMPT_EN if idioma == "en" else SYSTEM_PROMPT_ES,
         tools=[guardar_ficha_usuario],
         model=crear_modelo(),
+        # Precarga los turnos ya guardados de esta fase (tools/conversacion.py)
+        # -- si el proceso se cortó a mitad de camino, el agente nuevo
+        # retoma con memoria real, no solo con lo que dice la ficha.
+        messages=mensajes_previos,
         # Sin esto, Strands crea un PrintingCallbackHandler por default
         # que ya imprime la respuesta a stdout por su cuenta -- duplica
         # la salida en scripts/chat_terminal.py, que también la imprime.

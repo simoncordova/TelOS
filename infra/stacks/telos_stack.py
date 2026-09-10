@@ -316,7 +316,7 @@ class TelosStack(Stack):
         # el prefix list administrado de CloudFront
         # (com.amazonaws.global.cloudfront.origin-facing) es la mejora
         # obvia si sobra tiempo.
-        sg_instancia.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(8501), "Streamlit (directo o vía CloudFront)")
+        sg_instancia.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(8501), "Streamlit (directo o via CloudFront)")
 
         comandos_usuario = ec2.UserData.for_linux()
         comandos_usuario.add_commands(

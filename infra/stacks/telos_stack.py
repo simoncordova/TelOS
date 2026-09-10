@@ -348,6 +348,17 @@ class TelosStack(Stack):
             security_group=sg_instancia,
             role=rol_agentes,
             user_data=comandos_usuario,
+            # El user data (con el APP_URL/Cognito embebido en el docker
+            # run) solo corre una vez, al primer arranque -- sin esto, un
+            # cambio de parámetro (como AppUrl en el Paso 2) actualiza la
+            # plantilla pero la instancia ya corriendo se queda sirviendo
+            # con los valores viejos para siempre, aunque Cognito ya
+            # tenga el callback nuevo (mismatch real que pasó en un
+            # deploy real). Con esto, cualquier cambio de user data
+            # reemplaza la instancia -- CloudFront apunta a
+            # instance_public_dns_name, así que su origen se actualiza
+            # solo en el mismo deploy.
+            user_data_causes_replacement=True,
             # Sin Elastic IP a propósito (menos piezas): si esta
             # instancia alguna vez se detiene y se reinicia, la IP/DNS
             # público cambia y hay que correr `cdk deploy` de nuevo para

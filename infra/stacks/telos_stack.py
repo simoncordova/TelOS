@@ -20,7 +20,7 @@ deploy (App Runner la genera). Ver el parámetro AppUrl más abajo.
 
 from pathlib import Path
 
-from aws_cdk import CfnOutput, CfnParameter, RemovalPolicy, Stack
+from aws_cdk import CfnOutput, CfnParameter, RemovalPolicy, Stack, Tags
 from aws_cdk import aws_apprunner as apprunner
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_ecr_assets as ecr_assets
@@ -33,6 +33,11 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 class TelosStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # Tag en todos los recursos del stack: identifica a Telos en la
+        # consola de AWS / Cost Explorer, separado de cualquier otra cosa
+        # que haya en la cuenta.
+        Tags.of(self).add("Project", "TelOS")
 
         # Rol que ejecuta el código de agentes. En el MVP corre dentro del
         # mismo contenedor de Streamlit (App Runner instance role); si más

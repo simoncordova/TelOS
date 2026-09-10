@@ -3,8 +3,8 @@
 Se dispara al abrir una conversación nueva cuando ya existe una ficha
 completa (fase >= 4). La Vista de resumen y la rotación del tipo de
 check-in se calculan en código, no se dejan a criterio del modelo — son
-justamente las reglas de tono que CLAUDE.md marca como no negociables
-(sin rachas, sin repetir check-in), y un prompt no las garantiza.
+justamente las reglas de tono no negociables del proyecto (sin rachas,
+sin repetir check-in), y un prompt no las garantiza.
 """
 
 from strands import Agent, tool

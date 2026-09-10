@@ -1,6 +1,6 @@
 """Factory de modelo compartido por los 5 agentes de fase. No es un agente
-en sí — CLAUDE.md pide un archivo por agente en /agents/, esto es
-configuración común para no repetirla 5 veces.
+en sí — es configuración común a los 5, para no repetirla en cada
+archivo de agents/.
 
 Usa el ID de "global cross-region inference" (prefijo `global.`), no el
 ID pelado del modelo: Claude Sonnet 4.5 no admite invocación on-demand

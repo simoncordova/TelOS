@@ -106,10 +106,17 @@ sesión del console automáticamente.
    de CloudShell suele tenerlo si administrás la cuenta; si no, alguien
    con esos permisos hace esa primera invocación una sola vez y después
    queda habilitado para toda la cuenta).
-2. **En CloudShell:**
+2. **En CloudShell, instalar dentro de un entorno virtual** — CloudShell
+   viene con `aws-sam-cli` preinstalado, que fija versiones exactas de
+   `boto3`/`watchdog`; instalar sin venv termina pisando esas versiones
+   globalmente (`pip` tira un warning de conflicto, no rompe nada de
+   Telos, pero puede afectar al `sam` CLI si lo usás después en esa
+   misma sesión):
    ```bash
    git clone https://github.com/simoncordova/TelOS.git
    cd TelOS
+   python -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
    python scripts/chat_terminal.py                  # español (default)
    python scripts/chat_terminal.py mi-usuario en     # English
@@ -176,6 +183,8 @@ normal — está creando la Memory, no es un cuelgue).
 ```bash
 git clone https://github.com/simoncordova/TelOS.git   # si no lo hiciste ya
 cd TelOS/infra
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 npx aws-cdk bootstrap   # solo la primera vez en la cuenta/región
 npx aws-cdk deploy

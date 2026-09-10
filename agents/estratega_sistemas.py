@@ -94,4 +94,7 @@ def crear_agente_estratega_sistemas(usuario_id: str, idioma: str = "es") -> Agen
         system_prompt=SYSTEM_PROMPT_EN if idioma == "en" else SYSTEM_PROMPT_ES,
         tools=[leer_ficha_usuario, guardar_ficha_usuario, crear_evento_calendario],
         model=crear_modelo(),
+        # Suprime el PrintingCallbackHandler por default de Strands (ver
+        # explorador.py) -- quien llame controla cómo mostrar la respuesta.
+        callback_handler=None,
     )

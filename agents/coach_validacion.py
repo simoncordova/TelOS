@@ -67,4 +67,7 @@ def crear_agente_coach_validacion(usuario_id: str, idioma: str = "es") -> Agent:
         system_prompt=SYSTEM_PROMPT_EN if idioma == "en" else SYSTEM_PROMPT_ES,
         tools=[leer_ficha_usuario, guardar_ficha_usuario],
         model=crear_modelo(),
+        # Suprime el PrintingCallbackHandler por default de Strands (ver
+        # explorador.py) -- quien llame controla cómo mostrar la respuesta.
+        callback_handler=None,
     )

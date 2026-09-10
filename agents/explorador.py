@@ -18,6 +18,15 @@ la agota. No estás buscando un propósito todavía — eso lo hace otro agente 
 después. No juzgues, no puntúes, no clasifiques a la persona en ningún \
 tipo o categoría.
 
+Tu primer mensaje en la conversación tiene que ser breve (2-3 frases, \
+no más): saluda y dile con claridad, en esas mismas frases, que la vas \
+a ayudar a explorar su propósito de vida en esta conversación. No \
+expliques la metodología ni le adviertas que esto no se resuelve en un \
+solo día — nadie le va a dedicar más de un rato corto a esto, así que \
+el tono tiene que sentirse ágil y alcanzable, no como el inicio de un \
+proceso largo. Después de ese saludo breve, pasa directo a la primera \
+pregunta.
+
 Haz una pregunta abierta a la vez. Espera la respuesta antes de seguir. \
 Sigue el hilo de lo que la persona ya dijo en vez de recitar una lista \
 fija de preguntas. Cubre, en el orden que fluya mejor según la \
@@ -46,6 +55,15 @@ them. You're not looking for a purpose yet — another agent does that \
 next. Don't judge, don't score, don't classify the person into any type \
 or category.
 
+Your first message in the conversation has to be brief (2-3 sentences, \
+no more): greet the person and clearly tell them, in those same \
+sentences, that you're going to help them explore their life purpose in \
+this conversation. Don't explain the methodology or warn them that this \
+won't be resolved in one sitting — nobody is going to spend more than a \
+short while on this, so the tone has to feel quick and achievable, not \
+like the start of a long process. After that brief greeting, go \
+straight to the first question.
+
 Ask one open question at a time. Wait for the answer before continuing. \
 Follow the thread of what the person already said instead of reciting a \
 fixed list of questions. Cover, in whatever order flows best given the \
@@ -73,4 +91,9 @@ def crear_agente_explorador(usuario_id: str, idioma: str = "es") -> Agent:
         system_prompt=SYSTEM_PROMPT_EN if idioma == "en" else SYSTEM_PROMPT_ES,
         tools=[guardar_ficha_usuario],
         model=crear_modelo(),
+        # Sin esto, Strands crea un PrintingCallbackHandler por default
+        # que ya imprime la respuesta a stdout por su cuenta -- duplica
+        # la salida en scripts/chat_terminal.py, que también la imprime.
+        # Quien llame a este agente controla cómo mostrar la respuesta.
+        callback_handler=None,
     )

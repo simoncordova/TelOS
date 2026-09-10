@@ -38,6 +38,7 @@ from agents.sintetizador import crear_agente_sintetizador
 from tools.conversacion import guardar_intercambio, leer_turnos
 from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
 from tools.ficha import leer_ficha_usuario
+from tools.limite_uso import excedio_limite_diario, mensaje_limite_alcanzado, registrar_invocacion
 
 _FABRICAS_POR_FASE = {
     1: crear_agente_explorador,
@@ -84,6 +85,20 @@ class SesionTelos:
             self.usuario_id, self.idioma, mensajes_previos=_turnos_a_mensajes(turnos)
         )
 
+    def _invocar(self, texto: str) -> str:
+        """Invoca al agente de la fase actual, salvo que esta cuenta ya
+        haya llegado al límite diario de invocaciones reales
+        (tools/limite_uso.py) -- en ese caso corta antes de tocar Bedrock
+        y devuelve el aviso fijo, sin generar costo. Cuenta cada
+        invocación real, no cada mensaje de la persona: una cascada de
+        cambio de fase dispara más de una por mensaje, y cada una cuesta
+        igual, así que cada una cuenta para el límite."""
+        if excedio_limite_diario(self.usuario_id):
+            return mensaje_limite_alcanzado(self.idioma)
+        respuesta = str(self._agente(texto))
+        registrar_invocacion(self.usuario_id)
+        return respuesta
+
     def abrir_conversacion(self):
         """Generador: el agente de la fase actual habla primero, sin
         esperar texto de la persona -- se llama una sola vez, al abrir
@@ -95,7 +110,7 @@ class SesionTelos:
         No revisa el guardrail de crisis (no hay texto de la persona
         que revisar) ni avanza de fase (abrir no cierra nada)."""
         kickoff = _KICKOFF[self.idioma]
-        respuesta = str(self._agente(kickoff))
+        respuesta = self._invocar(kickoff)
         guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
         yield self.fase_actual, respuesta
 
@@ -119,7 +134,7 @@ class SesionTelos:
 
         fase_antes = self.fase_actual
         total_versiones_antes = self._contar_versiones()
-        respuesta = str(self._agente(texto))
+        respuesta = self._invocar(texto)
         guardar_intercambio(self.usuario_id, fase_antes, texto, respuesta)
         yield fase_antes, respuesta
 
@@ -134,7 +149,7 @@ class SesionTelos:
         # esperar a que este segundo termine de generarse.
         if self.fase_actual != fase_antes and self.fase_actual != 5:
             kickoff = _KICKOFF[self.idioma]
-            continuacion = str(self._agente(kickoff))
+            continuacion = self._invocar(kickoff)
             guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, continuacion)
             yield self.fase_actual, continuacion
 

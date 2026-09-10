@@ -185,6 +185,43 @@ preferencia. Solo el mensaje de respuesta usa el idioma seleccionado:
 recursos Latam/España en español, 988 Suicide & Crisis Lifeline
 (EE.UU./Canadá) en inglés. Ver sección 10 del spec.
 
+## Protecciones de costo
+
+Cuatro capas, pensadas para que ni un uso descuidado ni uno malicioso
+disparen la cuenta de AWS sin que nadie se entere:
+
+- **Login obligatorio** (`TELOS_REQUIRE_LOGIN`, default `"1"`): nadie
+  llega al chat, y por lo tanto a Bedrock, sin loguearse con un usuario
+  de Cognito creado a mano — no hay registro público
+  (`self_sign_up_enabled=False`).
+- **Límite de 100 invocaciones reales por usuario por día**
+  (`tools/limite_uso.py`): cuenta cada invocación real al modelo, no
+  cada mensaje que escribe la persona (una cascada de cambio de fase
+  dispara más de una invocación por mensaje, y cada una cuesta igual).
+  Al llegar al límite, corta antes de tocar Bedrock y devuelve un aviso
+  fijo. Protege contra un usuario de prueba (o su contraseña filtrada)
+  mandando mensajes sin parar — no contra el resto de riesgos de abajo.
+- **App Runner topeado a 1 instancia** (`AutoScalingConfiguration` con
+  `MinSize=MaxSize=1` en `infra/stacks/telos_stack.py`): alcanza de
+  sobra para 3 usuarios de prueba, y evita que tráfico anómalo (llegue o
+  no a pasar el login) escale cómputo de más — el default de App Runner
+  es hasta 25 instancias.
+- **IAM de Bedrock delimitado al modelo exacto que usa la app**
+  (`RolEjecucionAgentes`, mismo stack): antes era `resources=["*"]`
+  (cualquier modelo de Bedrock); ahora son las 3 sentencias que
+  documenta AWS para perfiles de inferencia cross-region "global."
+  (perfil regional + modelo regional + modelo global), apuntando al
+  Sonnet 4.5 que define `agents/_modelo.py`. Si el modelo cambia, esta
+  política hay que actualizarla a mano — es un trade-off consciente
+  frente a dejarlo abierto.
+- **Alarma de AWS Budgets** (`EmailAlertaPresupuesto`, parámetro
+  obligatorio del stack): avisa por email al 80% del gasto real y al
+  100% del gasto proyectado del mes. Es de cuenta completa, no
+  delimitada a Telos — filtrar por tag en Budgets requiere activar Cost
+  Allocation Tags a mano en Billing primero, fuera del alcance de CDK.
+  Es el respaldo si las capas de arriba fallan o no alcanzan, no la
+  primera línea de defensa.
+
 ## Despliegue
 
 Todo desde AWS CloudShell (sin generar keys locales — ver
@@ -204,13 +241,16 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 npx aws-cdk bootstrap   # solo la primera vez en la cuenta/región
-npx aws-cdk deploy
+npx aws-cdk deploy --parameters EmailAlertaPresupuesto=<tu-email>
 ```
 
-Esta primera pasada crea todo (IAM, Cognito, ECR, App Runner) pero el
-callback de Cognito todavía apunta a un placeholder, porque la URL real
-de App Runner recién se conoce después de crearlo. Guarda los outputs
-`UrlServicioUI` y `UserPoolId` para los pasos siguientes.
+`EmailAlertaPresupuesto` es obligatorio (sin default a propósito, ver
+[Protecciones de costo](#protecciones-de-costo)) — ahí llega la alarma
+de AWS Budgets. Esta primera pasada crea todo (IAM, Cognito, ECR, App
+Runner, Budget) pero el callback de Cognito todavía apunta a un
+placeholder, porque la URL real de App Runner recién se conoce después
+de crearlo. Guarda los outputs `UrlServicioUI` y `UserPoolId` para los
+pasos siguientes.
 
 ### Paso 2 — CDK, segunda pasada (con la URL real)
 

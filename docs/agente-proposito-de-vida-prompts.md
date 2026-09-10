@@ -114,6 +114,17 @@ memoria conversacional genuina, no solo con el resumen estructurado de
 la ficha. Los turnos de un mensaje que dispara el guardrail de crisis
 NO se guardan acá (el agente de fase nunca llega a procesarlos).
 
+**Límite diario de invocaciones (protección de costo, no de producto):**
+antes de cada invocación real al agente de fase, el Orquestador revisa
+`excedio_limite_diario(usuario_id)` (`tools/limite_uso.py`, 100 por
+día). Si ya se llegó al límite, corta ahí mismo y devuelve un aviso fijo
+sin tocar Bedrock — nunca deja pasar una invocación de más. Cuenta cada
+invocación real (incluida la del mensaje de arranque y la de una
+cascada de cambio de fase), no cada mensaje de la persona, porque cada
+una cuesta igual. Ver README sección "Protecciones de costo" para el
+resto de las capas (login obligatorio, tope de App Runner, IAM
+delimitado al modelo, alarma de AWS Budgets).
+
 **Lógica (no es un prompt de modelo, es lógica de control):**
 1. Recibe el mensaje del usuario.
 2. Llama `detectar_señal_crisis(texto)` SIEMPRE, antes de cualquier otra
@@ -537,6 +548,7 @@ current system: ... / Last updated: ...".
 | `crear_evento_calendario` | `(usuario_id: str, detalle: dict) -> dict` | Fase 4 | P2. Vía AgentCore Gateway envolviendo Google Calendar. Si no hay tiempo, se mockea devolviendo una confirmación fija sin llamar a ninguna API externa — el agente y su prompt no cambian, solo la implementación de la tool. |
 | `guardar_intercambio` | `(usuario_id: str, fase: int, texto_usuario: str, texto_asistente: str) -> None` | Orquestador, en cada turno real (código, no tool del modelo) | Vía AgentCore Memory (`create_event`, un evento conversacional por turno — distinto de `create_blob_event`, que usa `guardar_ficha_usuario`) o backend JSON local en desarrollo. No se expone como tool del modelo: es lógica de control del Orquestador, igual que `detectar_señal_crisis`. |
 | `leer_turnos` | `(usuario_id: str, fase: int) -> list[dict]` | Orquestador, al construir o reconstruir el agente de una fase | Devuelve los turnos guardados de esa fase en orden cronológico (`[{"rol": "user"\|"assistant", "texto": str}, ...]`); el Orquestador los convierte al formato `Message` de Strands y los precarga como historial real del agente. |
+| `excedio_limite_diario` / `registrar_invocacion` | `(usuario_id: str) -> bool` / `(usuario_id: str) -> int` | Orquestador, antes/después de cada invocación real al agente de fase (código, no tool del modelo) | Protección de costo (100 invocaciones/día por usuario), no una regla de producto. Backend JSON local — no vía AgentCore Memory: no hace falta un backend compartido entre instancias, App Runner corre topeado a 1 instancia (ver README). |
 
 ## 8. Reglas de tono (todas las fases, con énfasis en Fase 5)
 

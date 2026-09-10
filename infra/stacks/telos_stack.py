@@ -22,12 +22,20 @@ from pathlib import Path
 
 from aws_cdk import CfnOutput, CfnParameter, RemovalPolicy, Stack, Tags
 from aws_cdk import aws_apprunner as apprunner
+from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_iam as iam
 from constructs import Construct
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Mismo modelo que el default de agents/_modelo.py (TELOS_MODEL_ID) -- si
+# ese default cambia, este también, para que la política de IAM siga
+# delimitada al modelo real que invoca la app y no se vuelva a abrir a
+# "cualquier modelo" por descuido.
+_MODELO_BASE = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+_PERFIL_INFERENCIA = f"global.{_MODELO_BASE}"
 
 
 class TelosStack(Stack):
@@ -53,10 +61,49 @@ class TelosStack(Stack):
                 "desde el código de agentes de Telos."
             ),
         )
+        # Delimitado al modelo/perfil de inferencia que la app realmente
+        # invoca (_MODELO_BASE arriba), no a "cualquier modelo de
+        # Bedrock" -- las 3 sentencias son el patrón exacto que documenta
+        # AWS para perfiles de inferencia cross-region "global.": perfil
+        # regional, modelo regional (con condición de que venga del
+        # perfil) y modelo global (sin región, requerido para el
+        # ruteo cross-region).
+        acciones_invocar = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        arn_perfil_regional = (
+            f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/{_PERFIL_INFERENCIA}"
+        )
         rol_agentes.add_to_policy(
             iam.PolicyStatement(
-                actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-                resources=["*"],
+                sid="InvocarPerfilInferenciaRegional",
+                actions=acciones_invocar,
+                resources=[arn_perfil_regional],
+                conditions={"StringEquals": {"aws:RequestedRegion": self.region}},
+            )
+        )
+        rol_agentes.add_to_policy(
+            iam.PolicyStatement(
+                sid="InvocarModeloRegional",
+                actions=acciones_invocar,
+                resources=[f"arn:aws:bedrock:{self.region}::foundation-model/{_MODELO_BASE}"],
+                conditions={
+                    "StringEquals": {
+                        "aws:RequestedRegion": self.region,
+                        "bedrock:InferenceProfileArn": arn_perfil_regional,
+                    }
+                },
+            )
+        )
+        rol_agentes.add_to_policy(
+            iam.PolicyStatement(
+                sid="InvocarModeloGlobalCrossRegion",
+                actions=acciones_invocar,
+                resources=[f"arn:aws:bedrock:::foundation-model/{_MODELO_BASE}"],
+                conditions={
+                    "StringEquals": {
+                        "aws:RequestedRegion": "unspecified",
+                        "bedrock:InferenceProfileArn": arn_perfil_regional,
+                    }
+                },
             )
         )
         rol_agentes.add_to_policy(
@@ -81,6 +128,73 @@ class TelosStack(Stack):
                 actions=["bedrock-agentcore:*"],
                 resources=["*"],
             )
+        )
+
+        # --- Alarma de costo (AWS Budgets) ---
+        email_alerta_presupuesto = CfnParameter(
+            self,
+            "EmailAlertaPresupuesto",
+            type="String",
+            description=(
+                "Email que recibe la alarma de AWS Budgets si el gasto de la "
+                "cuenta se acerca o supera el presupuesto mensual. No tiene "
+                "default a propósito: sin un email real, la alarma no sirve."
+            ),
+        )
+        limite_presupuesto_usd = CfnParameter(
+            self,
+            "LimitePresupuestoMensualUsd",
+            type="Number",
+            default=20,
+            description=(
+                "Presupuesto mensual (USD) que dispara la alarma. Es un "
+                "tripwire de costo de la cuenta completa (AWS Budgets no "
+                "puede filtrar por tag sin activar antes Cost Allocation "
+                "Tags a mano en Billing), no algo delimitado solo a Telos."
+            ),
+        )
+        budgets.CfnBudget(
+            self,
+            "PresupuestoTelos",
+            budget=budgets.CfnBudget.BudgetDataProperty(
+                budget_name="telos-presupuesto-mensual",
+                budget_type="COST",
+                time_unit="MONTHLY",
+                budget_limit=budgets.CfnBudget.SpendProperty(
+                    amount=limite_presupuesto_usd.value_as_number,
+                    unit="USD",
+                ),
+            ),
+            notifications_with_subscribers=[
+                budgets.CfnBudget.NotificationWithSubscribersProperty(
+                    notification=budgets.CfnBudget.NotificationProperty(
+                        notification_type="ACTUAL",
+                        comparison_operator="GREATER_THAN",
+                        threshold=80,
+                        threshold_type="PERCENTAGE",
+                    ),
+                    subscribers=[
+                        budgets.CfnBudget.SubscriberProperty(
+                            subscription_type="EMAIL",
+                            address=email_alerta_presupuesto.value_as_string,
+                        )
+                    ],
+                ),
+                budgets.CfnBudget.NotificationWithSubscribersProperty(
+                    notification=budgets.CfnBudget.NotificationProperty(
+                        notification_type="FORECASTED",
+                        comparison_operator="GREATER_THAN",
+                        threshold=100,
+                        threshold_type="PERCENTAGE",
+                    ),
+                    subscribers=[
+                        budgets.CfnBudget.SubscriberProperty(
+                            subscription_type="EMAIL",
+                            address=email_alerta_presupuesto.value_as_string,
+                        )
+                    ],
+                ),
+            ],
         )
 
         # --- Autenticación: Cognito con usuarios propios ---
@@ -152,10 +266,23 @@ class TelosStack(Stack):
         )
         imagen_ui.repository.grant_pull(rol_acceso_ecr)
 
+        # Tope de blast radius: nunca más de 1 instancia, pase lo que
+        # pase con el tráfico (malicioso o no) -- alcanza de sobra para
+        # los 3 usuarios de prueba del demo, y evita que App Runner
+        # escale de más (hasta 25 por default) ante tráfico anómalo.
+        escalado_ui = apprunner.CfnAutoScalingConfiguration(
+            self,
+            "EscaladoUI",
+            auto_scaling_configuration_name="telos-ui-tope-1",
+            min_size=1,
+            max_size=1,
+        )
+
         servicio_ui = apprunner.CfnService(
             self,
             "ServicioStreamlit",
             service_name="telos-ui",
+            auto_scaling_configuration_arn=escalado_ui.attr_auto_scaling_configuration_arn,
             source_configuration=apprunner.CfnService.SourceConfigurationProperty(
                 auto_deployments_enabled=False,
                 authentication_configuration=apprunner.CfnService.AuthenticationConfigurationProperty(

@@ -1,12 +1,28 @@
 """Stack de CDK para Telos. Ver Paso 4 del plan de implementación.
 
-Cubre lo "clásico": IAM, build/push de la imagen de la UI, hosting en App
-Runner, y autenticación (Cognito, usuarios propios). Deliberadamente NO
-define recursos AWS::BedrockAgentCore::* — Runtime/Memory/Gateway se
-configuran aparte con `agentcore configure` / `agentcore launch` desde
-CloudShell, reutilizando el rol IAM que este stack deja creado (ver
-output ArnRolAgentes). Documentado en el README como dos pasos de deploy
+Cubre lo "clásico": IAM, build/push de la imagen de la UI, hosting en
+EC2 detrás de CloudFront (ver nota abajo sobre por qué no App Runner), y
+autenticación (Cognito, usuarios propios). Deliberadamente NO define
+recursos AWS::BedrockAgentCore::* — Runtime/Memory/Gateway se configuran
+aparte con `agentcore configure` / `agentcore launch` desde CloudShell,
+reutilizando el rol IAM que este stack deja creado (ver output
+ArnRolAgentes). Documentado en el README como dos pasos de deploy
 separados, no uno solo.
+
+Hosting: EC2 (`t3.micro`, un solo `AWS::EC2::Instance`, sin Auto Scaling
+Group) detrás de CloudFront, no App Runner. App Runner devolvía "The AWS
+Access Key Id needs a subscription for the service" en una cuenta real
+(más de un mes de antigüedad, pero todavía consumiendo créditos de Free
+Tier sin haber cargado un método de pago verificado) -- App Runner no
+tiene nivel gratuito y AWS lo bloquea hasta verificar pago, algo fuera
+del control de este stack. EC2 sí es Free Tier real (750 hs/mes de
+t2.micro o t3.micro) y no pegó contra ese bloqueo. Un solo `Instance` (no
+un ASG) ya cumple el tope de "nunca más de 1" que antes hacía el
+AutoScalingConfiguration de App Runner -- no hace falta nada extra para
+eso. CloudFront da el HTTPS automático (dominio `*.cloudfront.net`, sin
+necesitar ACM ni un dominio propio) que perdíamos al bajar a EC2 pelado
+-- Cognito exige HTTPS en las callback URLs salvo para localhost, así
+que esto no es opcional.
 
 Autenticación: Cognito con su propio User Pool (self_sign_up_enabled=
 False -- no hay registro público, el dueño de la cuenta crea los
@@ -14,16 +30,18 @@ usuarios de prueba a mano con `aws cognito-idp admin-create-user`, ver
 README). Sin proveedores externos (nada de Google/Facebook/etc.) a
 propósito: evita cualquier dependencia con una cuenta de terceros.
 Requiere un SEGUNDO deploy igual: el callback URL de Cognito tiene que
-ser la URL real de App Runner, que solo se conoce después del primer
-deploy (App Runner la genera). Ver el parámetro AppUrl más abajo.
+ser la URL real de CloudFront, que solo se conoce después del primer
+deploy (CloudFront la genera). Ver el parámetro AppUrl más abajo.
 """
 
 from pathlib import Path
 
 from aws_cdk import CfnOutput, CfnParameter, RemovalPolicy, Stack, Tags
-from aws_cdk import aws_apprunner as apprunner
 from aws_cdk import aws_budgets as budgets
+from aws_cdk import aws_cloudfront as cloudfront
+from aws_cdk import aws_cloudfront_origins as origins
 from aws_cdk import aws_cognito as cognito
+from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_iam as iam
 from constructs import Construct
@@ -47,19 +65,25 @@ class TelosStack(Stack):
         # que haya en la cuenta.
         Tags.of(self).add("Project", "TelOS")
 
-        # Rol que ejecuta el código de agentes. En el MVP corre dentro del
-        # mismo contenedor de Streamlit (App Runner instance role); si más
-        # adelante se despliega el Runtime de AgentCore por separado, este
-        # mismo rol se puede pasar como execution role de `agentcore
-        # launch` en vez de crear uno nuevo.
+        # Rol que ejecuta el código de agentes -- en el MVP es el mismo
+        # rol de instancia de la EC2 que corre Streamlit (ver más abajo);
+        # si más adelante se despliega el Runtime de AgentCore por
+        # separado, este mismo rol se puede pasar como execution role de
+        # `agentcore launch` en vez de crear uno nuevo.
         rol_agentes = iam.Role(
             self,
             "RolEjecucionAgentes",
-            assumed_by=iam.ServicePrincipal("tasks.apprunner.amazonaws.com"),
+            assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
             description=(
                 "Permisos para invocar Bedrock y AgentCore Memory/Gateway "
                 "desde el código de agentes de Telos."
             ),
+        )
+        # Session Manager (consola de AWS, sin SSH ni puerto 22 abierto)
+        # para poder entrar a la instancia si el user data falla en
+        # silencio -- AL2023 trae el agente de SSM preinstalado.
+        rol_agentes.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore")
         )
         # Delimitado al modelo/perfil de inferencia que la app realmente
         # invoca (_MODELO_BASE arriba), no a "cualquier modelo de
@@ -205,7 +229,7 @@ class TelosStack(Stack):
             default="https://localhost:8501",
             description=(
                 "URL pública de la UI. El primer deploy no la conoce "
-                "todavía (App Runner la genera recién al crearse) — deja "
+                "todavía (CloudFront la genera recién al crearse) — deja "
                 "el default, y haz un segundo deploy pasando "
                 "--parameters AppUrl=<el output UrlServicioUI del primer "
                 "deploy> para que el login funcione de verdad."
@@ -258,96 +282,107 @@ class TelosStack(Stack):
             # MB ahí adentro lo vuelve lentísimo o lo cuelga.
             exclude=[".venv", ".git", "infra", "data", "**/__pycache__", "*.md"],
         )
+        # La instancia EC2 hace el pull directo de ECR (docker login +
+        # docker run en el user data, ver abajo) -- antes esto lo hacía
+        # un rol aparte para el build de App Runner, ya no aplica.
+        imagen_ui.repository.grant_pull(rol_agentes)
 
-        rol_acceso_ecr = iam.Role(
+        # VPC chica y propia (no ec2.Vpc.from_lookup a la default): 1 AZ,
+        # solo subred pública, sin NAT Gateway -- no hay nada privado que
+        # necesite salir a internet por NAT, y un NAT Gateway cuesta por
+        # hora aunque no se use, algo que las protecciones de costo de
+        # este stack justamente evitan en todos lados.
+        vpc = ec2.Vpc(
             self,
-            "RolAccesoECR",
-            assumed_by=iam.ServicePrincipal("build.apprunner.amazonaws.com"),
+            "VpcTelos",
+            max_azs=1,
+            nat_gateways=0,
+            subnet_configuration=[
+                ec2.SubnetConfiguration(name="publica", subnet_type=ec2.SubnetType.PUBLIC, cidr_mask=24),
+            ],
         )
-        imagen_ui.repository.grant_pull(rol_acceso_ecr)
 
-        # Tope de blast radius: nunca más de 1 instancia, pase lo que
-        # pase con el tráfico (malicioso o no) -- alcanza de sobra para
-        # los 3 usuarios de prueba del demo, y evita que App Runner
-        # escale de más (hasta 25 por default) ante tráfico anómalo.
-        escalado_ui = apprunner.CfnAutoScalingConfiguration(
+        sg_instancia = ec2.SecurityGroup(
             self,
-            "EscaladoUI",
-            auto_scaling_configuration_name="telos-ui-tope-1",
-            min_size=1,
-            max_size=1,
+            "SgInstanciaUI",
+            vpc=vpc,
+            description="Permite trafico HTTP entrante a Streamlit (8501).",
+            allow_all_outbound=True,
+        )
+        # MVP: abierto a cualquier IP, no delimitado al rango de
+        # CloudFront -- el login de Cognito sigue aplicando igual si
+        # alguien pega directo a la IP de la instancia sin pasar por
+        # CloudFront (pierde el HTTPS, no el login). Endurecer esto con
+        # el prefix list administrado de CloudFront
+        # (com.amazonaws.global.cloudfront.origin-facing) es la mejora
+        # obvia si sobra tiempo.
+        sg_instancia.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(8501), "Streamlit (directo o vía CloudFront)")
+
+        comandos_usuario = ec2.UserData.for_linux()
+        comandos_usuario.add_commands(
+            "dnf install -y docker",
+            "systemctl enable --now docker",
+            f"aws ecr get-login-password --region {self.region} | "
+            f"docker login --username AWS --password-stdin {self.account}.dkr.ecr.{self.region}.amazonaws.com",
+            "docker run -d --restart unless-stopped -p 8501:8501 "
+            f'-e TELOS_AWS_REGION="{self.region}" '
+            '-e TELOS_FICHA_BACKEND="agentcore" '
+            f'-e COGNITO_DOMAIN="{user_pool_domain.base_url()}" '
+            f'-e COGNITO_USER_POOL_ID="{user_pool.user_pool_id}" '
+            f'-e COGNITO_CLIENT_ID="{user_pool_client.user_pool_client_id}" '
+            f'-e COGNITO_CLIENT_SECRET="{user_pool_client.user_pool_client_secret.unsafe_unwrap()}" '
+            f'-e APP_URL="{app_url.value_as_string}" '
+            f"{imagen_ui.image_uri}",
         )
 
-        servicio_ui = apprunner.CfnService(
+        # Un solo Instance, no un Auto Scaling Group: ya cumple el tope
+        # de "nunca más de 1" sin necesitar nada extra (antes lo hacía el
+        # AutoScalingConfiguration de App Runner).
+        instancia_ui = ec2.Instance(
             self,
-            "ServicioStreamlit",
-            service_name="telos-ui",
-            auto_scaling_configuration_arn=escalado_ui.attr_auto_scaling_configuration_arn,
-            source_configuration=apprunner.CfnService.SourceConfigurationProperty(
-                auto_deployments_enabled=False,
-                authentication_configuration=apprunner.CfnService.AuthenticationConfigurationProperty(
-                    access_role_arn=rol_acceso_ecr.role_arn,
+            "InstanciaUI",
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO),
+            machine_image=ec2.MachineImage.latest_amazon_linux2023(),
+            security_group=sg_instancia,
+            role=rol_agentes,
+            user_data=comandos_usuario,
+            # Sin Elastic IP a propósito (menos piezas): si esta
+            # instancia alguna vez se detiene y se reinicia, la IP/DNS
+            # público cambia y hay que correr `cdk deploy` de nuevo para
+            # que CloudFront apunte al valor nuevo -- aceptable para el
+            # MVP, que la deja corriendo sin pausar.
+            associate_public_ip_address=True,
+        )
+
+        # CloudFront da el HTTPS automático (dominio *.cloudfront.net)
+        # que App Runner daba gratis y EC2 pelado no -- sin esto, Cognito
+        # rechaza el callback URL (exige HTTPS salvo para localhost).
+        # Cache deshabilitado y todos los headers/cookies/query strings
+        # reenviados: Streamlit necesita que el WebSocket (la interacción
+        # del chat) y el query string ?code= del login de Cognito lleguen
+        # intactos al origen, nunca cacheados.
+        distribucion = cloudfront.Distribution(
+            self,
+            "DistribucionUI",
+            default_behavior=cloudfront.BehaviorOptions(
+                origin=origins.HttpOrigin(
+                    instancia_ui.instance_public_dns_name,
+                    protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+                    http_port=8501,
                 ),
-                image_repository=apprunner.CfnService.ImageRepositoryProperty(
-                    image_identifier=imagen_ui.image_uri,
-                    image_repository_type="ECR",
-                    image_configuration=apprunner.CfnService.ImageConfigurationProperty(
-                        port="8501",
-                        runtime_environment_variables=[
-                            apprunner.CfnService.KeyValuePairProperty(
-                                name="TELOS_AWS_REGION",
-                                value=self.region,
-                            ),
-                            apprunner.CfnService.KeyValuePairProperty(
-                                # Sin esto, el contenedor desplegado usa el
-                                # backend JSON local por defecto -- efímero,
-                                # se pierde en cada restart/redeploy. Es
-                                # justo lo que la persistencia P0 (ficha
-                                # versionada) tiene que evitar.
-                                name="TELOS_FICHA_BACKEND",
-                                value="agentcore",
-                            ),
-                            apprunner.CfnService.KeyValuePairProperty(
-                                name="COGNITO_DOMAIN",
-                                value=user_pool_domain.base_url(),
-                            ),
-                            apprunner.CfnService.KeyValuePairProperty(
-                                name="COGNITO_USER_POOL_ID",
-                                value=user_pool.user_pool_id,
-                            ),
-                            apprunner.CfnService.KeyValuePairProperty(
-                                name="COGNITO_CLIENT_ID",
-                                value=user_pool_client.user_pool_client_id,
-                            ),
-                            apprunner.CfnService.KeyValuePairProperty(
-                                # TODO endurecer: mover a Secrets Manager +
-                                # runtime_environment_secrets en vez de
-                                # variable en texto plano. Aceptable para
-                                # el MVP del hackathon (no queda pública,
-                                # solo visible en la consola de App Runner
-                                # dentro de la cuenta).
-                                name="COGNITO_CLIENT_SECRET",
-                                value=user_pool_client.user_pool_client_secret.unsafe_unwrap(),
-                            ),
-                            apprunner.CfnService.KeyValuePairProperty(
-                                name="APP_URL",
-                                value=app_url.value_as_string,
-                            ),
-                        ],
-                    ),
-                ),
-            ),
-            instance_configuration=apprunner.CfnService.InstanceConfigurationProperty(
-                cpu="1024",
-                memory="2048",
-                instance_role_arn=rol_agentes.role_arn,
+                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
             ),
         )
 
         CfnOutput(
             self,
             "UrlServicioUI",
-            value=f"https://{servicio_ui.attr_service_url}",
+            value=f"https://{distribucion.distribution_domain_name}",
             description=(
                 "Pasar como --parameters AppUrl=<esta URL> en un segundo "
                 "deploy para que el callback de Cognito funcione."
@@ -369,5 +404,14 @@ class TelosStack(Stack):
             description=(
                 "Reutilizar como execution role en `agentcore launch` si "
                 "se despliega AgentCore Runtime por separado."
+            ),
+        )
+        CfnOutput(
+            self,
+            "IdInstanciaUI",
+            value=instancia_ui.instance_id,
+            description=(
+                "Usar con `aws ssm start-session --target <esto>` para "
+                "entrar a la instancia si el user data falla (ver README)."
             ),
         )

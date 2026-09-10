@@ -92,7 +92,7 @@ y vuelve a mostrar el campo de identificador libre.
 | `TELOS_FICHA_BACKEND` | `local` | `local` (JSON) o `agentcore` (AgentCore Memory real) |
 | `TELOS_MEMORY_NAME` | `telos_fichas_usuario` | Nombre del recurso de AgentCore Memory (solo si `TELOS_FICHA_BACKEND=agentcore`) |
 | `TELOS_REQUIRE_LOGIN` | `1` | `0` para saltar el login en local |
-| `COGNITO_DOMAIN`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_CLIENT_SECRET`, `APP_URL` | — | Los inyecta `cdk deploy` como env vars de App Runner; solo hace falta exportarlos a mano si corrés el login localmente |
+| `COGNITO_DOMAIN`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_CLIENT_SECRET`, `APP_URL` | — | Los inyecta `cdk deploy` en el `docker run` del user data de la instancia EC2; solo hace falta exportarlos a mano si corrés el login localmente |
 
 ## Probar contra Bedrock real desde CloudShell
 
@@ -201,11 +201,11 @@ disparen la cuenta de AWS sin que nadie se entere:
   Al llegar al límite, corta antes de tocar Bedrock y devuelve un aviso
   fijo. Protege contra un usuario de prueba (o su contraseña filtrada)
   mandando mensajes sin parar — no contra el resto de riesgos de abajo.
-- **App Runner topeado a 1 instancia** (`AutoScalingConfiguration` con
-  `MinSize=MaxSize=1` en `infra/stacks/telos_stack.py`): alcanza de
-  sobra para 3 usuarios de prueba, y evita que tráfico anómalo (llegue o
-  no a pasar el login) escale cómputo de más — el default de App Runner
-  es hasta 25 instancias.
+- **Un solo servidor, sin auto-scaling** (`ec2.Instance` en
+  `infra/stacks/telos_stack.py`, un `t3.micro`, no un Auto Scaling
+  Group): alcanza de sobra para 3 usuarios de prueba, y no hay forma de
+  que tráfico anómalo escale cómputo de más — no existe ningún mecanismo
+  de escalado que dispare, es literalmente un solo servidor prendido.
 - **IAM de Bedrock delimitado al modelo exacto que usa la app**
   (`RolEjecucionAgentes`, mismo stack): antes era `resources=["*"]`
   (cualquier modelo de Bedrock); ahora son las 3 sentencias que
@@ -232,6 +232,19 @@ primera vez que se guarda o lee una ficha (por eso el primer mensaje que
 alguien mande en producción puede tardar hasta ~1 minuto más de lo
 normal — está creando la Memory, no es un cuelgue).
 
+**Hosting de la UI: EC2 detrás de CloudFront, no App Runner.** La
+primera versión de este stack usaba App Runner, pero AWS lo bloqueó en
+una cuenta real con más de un mes de antigüedad ("The AWS Access Key Id
+needs a subscription for the service") por seguir consumiendo créditos
+de Free Tier sin un método de pago verificado — App Runner no tiene
+nivel gratuito. EC2 (`t3.micro`) sí es Free Tier real y no pegó contra
+ese bloqueo. CloudFront va adelante para dar el HTTPS automático
+(dominio `*.cloudfront.net`) que perdíamos al bajar a EC2 pelado —
+Cognito exige HTTPS en las callback URLs salvo para `localhost`, así que
+esto no es opcional. Si tu cuenta ya tiene App Runner habilitado, no
+hace falta este rodeo, pero el stack no lo vuelve a intentar por
+default.
+
 ### Paso 1 — CDK, primera pasada
 
 ```bash
@@ -246,11 +259,21 @@ npx aws-cdk deploy --parameters EmailAlertaPresupuesto=<tu-email>
 
 `EmailAlertaPresupuesto` es obligatorio (sin default a propósito, ver
 [Protecciones de costo](#protecciones-de-costo)) — ahí llega la alarma
-de AWS Budgets. Esta primera pasada crea todo (IAM, Cognito, ECR, App
-Runner, Budget) pero el callback de Cognito todavía apunta a un
-placeholder, porque la URL real de App Runner recién se conoce después
-de crearlo. Guarda los outputs `UrlServicioUI` y `UserPoolId` para los
+de AWS Budgets. Esta primera pasada crea todo (IAM, Cognito, ECR, VPC,
+EC2, CloudFront, Budget) pero el callback de Cognito todavía apunta a un
+placeholder, porque la URL real de CloudFront recién se conoce después
+de crearla. Guarda los outputs `UrlServicioUI` y `UserPoolId` para los
 pasos siguientes.
+
+CloudFront tarda varios minutos en propagarse después del deploy (a
+veces 10-15) — si al entrar a `UrlServicioUI` da error al toque, espera
+un rato antes de asumir que algo salió mal. Si el chat nunca arranca
+después de eso, `IdInstanciaUI` (otro output) sirve para entrar a la
+instancia sin SSH: `aws ssm start-session --target <IdInstanciaUI>` y
+revisar `docker ps` / `docker logs <container>` ahí adentro — el user
+data corre `dnf`, `docker login` y `docker run` en la primera
+inicialización, y si algo de eso falla en silencio, es el lugar donde
+mirar.
 
 ### Paso 2 — CDK, segunda pasada (con la URL real)
 
@@ -305,9 +328,14 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
   real (necesita las dos pasadas de deploy + crear los usuarios de
   prueba, ver [Autenticación](#autenticación)).
 - `COGNITO_CLIENT_SECRET` viaja como variable de entorno en texto plano
-  en App Runner (no Secrets Manager) — aceptable para el MVP, no queda
-  expuesto fuera de la cuenta de AWS, pero es lo primero a endurecer si
-  esto pasa de demo a algo real.
+  dentro del contenedor Docker (embebido en el user data de la instancia
+  EC2, no Secrets Manager) — aceptable para el MVP, no queda expuesto
+  fuera de la cuenta de AWS, pero es lo primero a endurecer si esto pasa
+  de demo a algo real.
+- Security group de la instancia EC2 abierto a cualquier IP en el puerto
+  8501, no delimitado al rango de CloudFront (ver
+  [Protecciones de costo](#protecciones-de-costo)) — el login de Cognito
+  sigue aplicando igual, pero es una mejora obvia si sobra tiempo.
 - `crear_evento_calendario` está mockeado — devuelve una confirmación
   simulada, no crea eventos reales en Google Calendar.
 - El seguimiento (Fase 5) se dispara "al abrir conversación", no hay

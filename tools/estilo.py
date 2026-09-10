@@ -40,6 +40,10 @@ _FORMAS_VOSEO = [
     # "mírame" -- no colisionan).
     "contame", "decime", "avisame", "escuchame", "ayudame", "mandame",
     "pasame", "mirame",
+    # Encontrados de verdad al revisar los prompts propios (no del
+    # modelo) con este mismo detector -- "léela"/"presenta"/"reconoce"
+    # son las formas de "tú" que hay que usar en su lugar.
+    "leela", "presentá", "reconocé",
 ]
 
 _PATRON = re.compile(

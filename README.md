@@ -127,11 +127,11 @@ sesión del console automáticamente.
    python scripts/chat_terminal.py mi-usuario en     # English
    ```
    Esto abre un chat de terminal (sin Streamlit, sin browser) contra los
-   agentes reales. Escribí como si fueras un usuario explorando su
+   agentes reales. Escribe como si fueras un usuario explorando su
    propósito; `ficha` muestra el estado guardado y `salir` termina.
 
 Si algo se ve raro (una fase no cierra, el guardrail no dispara cuando
-debería, el tono no cuadra), avisame con lo que viste y ajustamos el
+debería, el tono no cuadra), avísame con lo que viste y ajustamos el
 prompt correspondiente en `docs/agente-proposito-de-vida-prompts.md` +
 `agents/*.py`.
 
@@ -197,7 +197,7 @@ npx aws-cdk deploy
 
 Esta primera pasada crea todo (IAM, Cognito, ECR, App Runner) pero el
 callback de Cognito todavía apunta a un placeholder, porque la URL real
-de App Runner recién se conoce después de crearlo. Guardá los outputs
+de App Runner recién se conoce después de crearlo. Guarda los outputs
 `UrlServicioUI` y `UserPoolId` para los pasos siguientes.
 
 ### Paso 2 — CDK, segunda pasada (con la URL real)

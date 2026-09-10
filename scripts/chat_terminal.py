@@ -36,7 +36,7 @@ def main() -> None:
 
     print(f"--- Telos (usuario_id={usuario_id}, idioma={idioma}) ---")
     print(f"Fase inicial: {_NOMBRES_FASE.get(sesion.fase_actual, sesion.fase_actual)}")
-    print("Escribí 'salir' para terminar, 'ficha' para ver el estado guardado.\n")
+    print("Escribe 'salir' para terminar, 'ficha' para ver el estado guardado.\n")
 
     while True:
         try:

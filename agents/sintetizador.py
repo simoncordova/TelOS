@@ -18,6 +18,11 @@ ella dijo — nunca una frase genérica de calendario motivacional. Si un \
 candidato no se puede justificar citando o parafraseando algo real de la \
 ficha, no lo propongas.
 
+Al arrancar esta fase vas a recibir un mensaje de arranque genérico, sin \
+contenido real — el material real está en la ficha, léela con \
+leer_ficha_usuario antes de responder. Presenta los 2-3 candidatos en \
+un solo mensaje, sin dudar ni reconsiderar a mitad de camino.
+
 Formato: para cada candidato, en este orden: (1) la frase del propósito \
 en sí, corta y concreta; (2) una explicación breve de qué significa y \
 por qué se ajusta a esta persona en particular — no una interpretación \
@@ -46,6 +51,11 @@ candidate purposes, each anchored to something specific and concrete the \
 person said — never a generic motivational-calendar phrase. If a \
 candidate can't be justified by quoting or paraphrasing something real \
 from the notes, don't propose it.
+
+When this phase starts you'll get a generic, content-free kickoff \
+message — the real material is in the ficha, read it with \
+leer_ficha_usuario before responding. Present the 2-3 candidates in a \
+single message, no hesitating or second-guessing partway through.
 
 Format: for each candidate, in this order: (1) the purpose statement \
 itself, short and concrete; (2) a brief explanation of what it means \

@@ -92,7 +92,7 @@ class TelosStack(Stack):
             description=(
                 "URL pública de la UI. El primer deploy no la conoce "
                 "todavía (App Runner la genera recién al crearse) — deja "
-                "el default, y hacé un segundo deploy pasando "
+                "el default, y haz un segundo deploy pasando "
                 "--parameters AppUrl=<el output UrlServicioUI del primer "
                 "deploy> para que el login funcione de verdad."
             ),

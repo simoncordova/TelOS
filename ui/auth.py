@@ -43,13 +43,21 @@ def configurado() -> bool:
     return bool(_DOMAIN and _USER_POOL_ID and _CLIENT_ID and _CLIENT_SECRET)
 
 
-def url_login() -> str:
+def url_login(idioma: str = "es") -> str:
+    # El idioma va en `state`: Cognito lo devuelve intacto en el
+    # callback (?state=...), y sin esto se pierde -- el link de login es
+    # una navegación de página completa hacia otro dominio (Cognito) y
+    # de vuelta, así que cualquier cosa que solo viva en st.session_state
+    # (como el radio de idioma) se resetea a su default en la sesión
+    # nueva que arma Streamlit al volver (bug real: se elegía inglés
+    # antes de loguearse y la app saludaba en español después).
     return (
         f"{_DOMAIN}/oauth2/authorize"
         f"?client_id={_CLIENT_ID}"
         f"&response_type=code"
         f"&scope=openid+email+profile"
         f"&redirect_uri={_APP_URL}"
+        f"&state={idioma}"
     )
 
 

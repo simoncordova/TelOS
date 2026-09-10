@@ -68,6 +68,17 @@ _TEXTOS = {
 
 _REQUIERE_LOGIN = os.environ.get("TELOS_REQUIRE_LOGIN", "1") != "0"
 
+# Restaura el idioma elegido antes de loguearse: el link de login manda
+# a la persona a otro dominio (Cognito) y de vuelta -- una navegación de
+# página completa, no una interacción dentro de la misma sesión de
+# Streamlit -- así que st.session_state["idioma"] se pierde con la
+# sesión vieja. Cognito devuelve `state` intacto en el callback
+# (ver ui/auth.py::url_login), así que lo usamos para restaurarlo antes
+# de que el radio de idioma se dibuje con su default.
+_estado_idioma = st.query_params.get("state")
+if _estado_idioma in ("es", "en") and st.session_state.get("idioma") != _estado_idioma:
+    st.session_state["idioma"] = _estado_idioma
+
 with st.sidebar:
     st.title("Telos")
     idioma = st.radio(
@@ -100,7 +111,7 @@ if _REQUIERE_LOGIN:
                 st.error(t["login_failed"].format(error=e))
                 st.stop()
         else:
-            st.link_button(t["login_button"], auth.url_login())
+            st.link_button(t["login_button"], auth.url_login(idioma))
             st.stop()
 
     usuario_id = identidad["email"]

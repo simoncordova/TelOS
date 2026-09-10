@@ -58,6 +58,16 @@ reinicia el agente de la fase en curso en el nuevo idioma, sin perder el
 progreso guardado en la ficha (fase y datos ya guardados siguen igual,
 solo cambia el idioma de la conversación desde ese turno).
 
+El idioma elegido tiene que sobrevivir al login: el botón de login es
+una navegación de página completa hacia Cognito y de vuelta, no una
+interacción dentro de la misma sesión de Streamlit, así que cualquier
+selección que solo viva en el estado de sesión de la UI se pierde con
+esa vuelta (bug real: elegir inglés antes de loguearse y que la app
+saludara en español después de todos modos). El idioma viaja en el
+parámetro `state` del flujo OAuth — Cognito lo devuelve intacto en el
+callback — y la UI lo usa para restaurar la selección antes de dibujar
+el resto de la página.
+
 El **guardrail de crisis es una excepción**: `detectar_señal_crisis`
 revisa patrones en español Y en inglés siempre, sin importar qué idioma
 esté seleccionado en el toggle — es una cuestión de seguridad, no de

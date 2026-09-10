@@ -1,19 +1,21 @@
 """Stack de CDK para Telos. Ver Paso 4 del plan de implementación.
 
 Cubre lo "clásico": IAM, build/push de la imagen de la UI, hosting en App
-Runner, y autenticación (Cognito + federación a Google). Deliberadamente
-NO define recursos AWS::BedrockAgentCore::* — Runtime/Memory/Gateway se
+Runner, y autenticación (Cognito, usuarios propios). Deliberadamente NO
+define recursos AWS::BedrockAgentCore::* — Runtime/Memory/Gateway se
 configuran aparte con `agentcore configure` / `agentcore launch` desde
 CloudShell, reutilizando el rol IAM que este stack deja creado (ver
 output ArnRolAgentes). Documentado en el README como dos pasos de deploy
 separados, no uno solo.
 
-Autenticación: requiere que ya exista un OAuth Client ID/Secret de Google
-Cloud Console (paso manual, fuera de CDK — ver README) pasado como
-parámetros de deploy. Y requiere un SEGUNDO deploy: el callback URL de
-Cognito tiene que ser la URL real de App Runner, que solo se conoce
-después del primer deploy (App Runner la genera). Ver el parámetro
-AppUrl más abajo.
+Autenticación: Cognito con su propio User Pool (self_sign_up_enabled=
+False -- no hay registro público, el dueño de la cuenta crea los
+usuarios de prueba a mano con `aws cognito-idp admin-create-user`, ver
+README). Sin proveedores externos (nada de Google/Facebook/etc.) a
+propósito: evita cualquier dependencia con una cuenta de terceros.
+Requiere un SEGUNDO deploy igual: el callback URL de Cognito tiene que
+ser la URL real de App Runner, que solo se conoce después del primer
+deploy (App Runner la genera). Ver el parámetro AppUrl más abajo.
 """
 
 from pathlib import Path
@@ -76,23 +78,7 @@ class TelosStack(Stack):
             )
         )
 
-        # --- Autenticación: Cognito con federación a Google ---
-        google_client_id = CfnParameter(
-            self,
-            "GoogleClientId",
-            type="String",
-            description=(
-                "Client ID de OAuth 2.0 creado en Google Cloud Console "
-                "(APIs & Services > Credentials). Ver README."
-            ),
-        )
-        google_client_secret = CfnParameter(
-            self,
-            "GoogleClientSecret",
-            type="String",
-            no_echo=True,
-            description="Client Secret de ese mismo OAuth Client de Google.",
-        )
+        # --- Autenticación: Cognito con usuarios propios ---
         app_url = CfnParameter(
             self,
             "AppUrl",
@@ -103,13 +89,16 @@ class TelosStack(Stack):
                 "todavía (App Runner la genera recién al crearse) — deja "
                 "el default, y hacé un segundo deploy pasando "
                 "--parameters AppUrl=<el output UrlServicioUI del primer "
-                "deploy> para que el login con Google funcione de verdad."
+                "deploy> para que el login funcione de verdad."
             ),
         )
 
         user_pool = cognito.UserPool(
             self,
             "UserPoolTelos",
+            # Sin registro público: el dueño de la cuenta crea los
+            # usuarios de prueba a mano (admin-create-user), no cualquiera
+            # que llegue a la URL.
             self_sign_up_enabled=False,
             sign_in_aliases=cognito.SignInAliases(email=True),
             # MVP de hackathon: permite borrar el User Pool limpiamente
@@ -117,25 +106,12 @@ class TelosStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
         )
 
-        google_idp = cognito.UserPoolIdentityProviderGoogle(
-            self,
-            "GoogleIdP",
-            user_pool=user_pool,
-            client_id=google_client_id.value_as_string,
-            client_secret=google_client_secret.value_as_string,
-            scopes=["openid", "email", "profile"],
-            attribute_mapping=cognito.AttributeMapping(
-                email=cognito.ProviderAttribute.GOOGLE_EMAIL,
-                fullname=cognito.ProviderAttribute.GOOGLE_NAME,
-            ),
-        )
-
         user_pool_client = cognito.UserPoolClient(
             self,
             "UserPoolClientTelos",
             user_pool=user_pool,
             generate_secret=True,
-            supported_identity_providers=[cognito.UserPoolClientIdentityProvider.GOOGLE],
+            supported_identity_providers=[cognito.UserPoolClientIdentityProvider.COGNITO],
             o_auth=cognito.OAuthSettings(
                 flows=cognito.OAuthFlows(authorization_code_grant=True),
                 scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
@@ -143,10 +119,6 @@ class TelosStack(Stack):
                 logout_urls=[app_url.value_as_string],
             ),
         )
-        # El client de Cognito tiene que crearse después del IdP de
-        # Google: si Cognito lo valida antes de que el IdP exista, el
-        # deploy falla.
-        user_pool_client.node.add_dependency(google_idp)
 
         user_pool_domain = cognito.UserPoolDomain(
             self,
@@ -246,16 +218,16 @@ class TelosStack(Stack):
             value=f"https://{servicio_ui.attr_service_url}",
             description=(
                 "Pasar como --parameters AppUrl=<esta URL> en un segundo "
-                "deploy para que el callback de Google/Cognito funcione."
+                "deploy para que el callback de Cognito funcione."
             ),
         )
         CfnOutput(
             self,
-            "GoogleRedirectUriParaConsola",
-            value=user_pool_domain.base_url() + "/oauth2/idpresponse",
+            "UserPoolId",
+            value=user_pool.user_pool_id,
             description=(
-                "Pegar esto en Google Cloud Console > Credenciales > el "
-                "OAuth Client > Authorized redirect URIs."
+                "Usar con `aws cognito-idp admin-create-user --user-pool-id "
+                "<esto>` para crear los usuarios de prueba (ver README)."
             ),
         )
         CfnOutput(

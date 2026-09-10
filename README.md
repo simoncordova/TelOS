@@ -74,8 +74,8 @@ TELOS_REQUIRE_LOGIN=0 streamlit run ui/app.py
 
 Por defecto usa el backend JSON local para la ficha
 (`data/fichas.json`, gitignored) — no hace falta AgentCore Memory para
-probar el flujo de las 4 fases. `TELOS_REQUIRE_LOGIN=0` salta el login de
-Google (que necesita Cognito desplegado, ver [Autenticación](#autenticación))
+probar el flujo de las 4 fases. `TELOS_REQUIRE_LOGIN=0` salta el login
+(que necesita Cognito desplegado, ver [Autenticación](#autenticación))
 y vuelve a mostrar el campo de identificador libre.
 
 ### Variables de entorno
@@ -86,12 +86,12 @@ y vuelve a mostrar el campo de identificador libre.
 | `TELOS_AWS_REGION` | `us-east-1` | Región de Bedrock / AgentCore |
 | `TELOS_FICHA_BACKEND` | `local` | `local` (JSON) o `agentcore` (AgentCore Memory real) |
 | `TELOS_MEMORY_NAME` | `telos_fichas_usuario` | Nombre del recurso de AgentCore Memory (solo si `TELOS_FICHA_BACKEND=agentcore`) |
-| `TELOS_REQUIRE_LOGIN` | `1` | `0` para saltar el login de Google en local |
+| `TELOS_REQUIRE_LOGIN` | `1` | `0` para saltar el login en local |
 | `COGNITO_DOMAIN`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_CLIENT_SECRET`, `APP_URL` | — | Los inyecta `cdk deploy` como env vars de App Runner; solo hace falta exportarlos a mano si corrés el login localmente |
 
 ## Probar contra Bedrock real desde CloudShell
 
-Antes de meterse con el deploy completo (CDK + Cognito + Google), vale la
+Antes de meterse con el deploy completo (CDK + Cognito), vale la
 pena validar que los agentes conversan bien contra el modelo real. Esto
 todavía no se probó ni una vez — es lo primero que yo revisaría.
 
@@ -141,13 +141,14 @@ credenciales reales (ej. CloudShell) y confirmar que
 
 ## Autenticación
 
-Login con Google vía Cognito Hosted UI (`ui/auth.py`, recursos en
-`infra/stacks/telos_stack.py`). `usuario_id` en la app es el email de la
-cuenta de Google con la que se loguea la persona (no un campo de texto
-libre). El paso manual que arma esto (crear el OAuth Client en Google
-Cloud Console) y el resto del proceso están juntos en
-[Despliegue](#despliegue) abajo, para no tener las instrucciones
-repartidas en dos lugares.
+Login vía Cognito Hosted UI (`ui/auth.py`, recursos en
+`infra/stacks/telos_stack.py`) con usuarios propios del User Pool — sin
+ningún proveedor externo (nada de Google/Facebook/etc.), para no
+depender de ninguna cuenta de terceros. No hay registro público
+(`self_sign_up_enabled=False`): el dueño de la cuenta crea los usuarios
+de prueba a mano con `aws cognito-idp admin-create-user`. `usuario_id`
+en la app es el email de esa cuenta. El comando exacto está en
+[Despliegue](#despliegue) abajo.
 
 ## Guardrail de crisis
 
@@ -170,56 +171,51 @@ primera vez que se guarda o lee una ficha (por eso el primer mensaje que
 alguien mande en producción puede tardar hasta ~1 minuto más de lo
 normal — está creando la Memory, no es un cuelgue).
 
-### Paso 1 — Crear el OAuth Client en Google Cloud Console
-
-Paso manual que **solo vos podés hacer** (no hay tool de AWS ni de este
-repo que lo automatice):
-
-1. [console.cloud.google.com](https://console.cloud.google.com/) → crear
-   o elegir un proyecto.
-2. **APIs & Services → OAuth consent screen** — configurarla (External,
-   modo Testing alcanza para el demo).
-3. **APIs & Services → Credentials → Create Credentials → OAuth client
-   ID** → tipo **Web application**. Todavía no vas a tener el
-   **Authorized redirect URI** — eso sale del Paso 2. Guardá el Client
-   ID y el Client Secret que te da Google, los necesitás ahora.
-
-### Paso 2 — CDK, primera pasada
+### Paso 1 — CDK, primera pasada
 
 ```bash
 git clone https://github.com/simoncordova/TelOS.git   # si no lo hiciste ya
 cd TelOS/infra
 pip install -r requirements.txt
 npx aws-cdk bootstrap   # solo la primera vez en la cuenta/región
-
-npx aws-cdk deploy \
-  --parameters GoogleClientId=<client id de Google> \
-  --parameters GoogleClientSecret=<client secret de Google>
+npx aws-cdk deploy
 ```
 
 Esta primera pasada crea todo (IAM, Cognito, ECR, App Runner) pero el
 callback de Cognito todavía apunta a un placeholder, porque la URL real
-de App Runner recién se conoce después de crearlo. Con los outputs:
+de App Runner recién se conoce después de crearlo. Guardá los outputs
+`UrlServicioUI` y `UserPoolId` para los pasos siguientes.
 
-- `GoogleRedirectUriParaConsola` → pegalo en Google Cloud Console, en el
-  Authorized redirect URI del Paso 1.3.
-- `UrlServicioUI` → guardalo para el Paso 3.
-
-### Paso 3 — CDK, segunda pasada (con la URL real)
+### Paso 2 — CDK, segunda pasada (con la URL real)
 
 ```bash
-npx aws-cdk deploy \
-  --parameters GoogleClientId=<client id de Google> \
-  --parameters GoogleClientSecret=<client secret de Google> \
-  --parameters AppUrl=<el UrlServicioUI del paso anterior>
+npx aws-cdk deploy --parameters AppUrl=<el UrlServicioUI del paso anterior>
 ```
+
+### Paso 3 — Crear los usuarios de prueba
+
+Sin registro público, así que los usuarios se crean a mano (con las
+credenciales de sesión de CloudShell, sin generar ninguna key nueva):
+
+```bash
+aws cognito-idp admin-create-user \
+  --user-pool-id <el UserPoolId del Paso 1> \
+  --username usuario1@ejemplo.com \
+  --user-attributes Name=email,Value=usuario1@ejemplo.com Name=email_verified,Value=true \
+  --temporary-password "CambiaEsto123!"
+```
+
+Repetí para los 3 usuarios de prueba. Cada persona, al loguearse por
+primera vez en el Hosted UI con esa contraseña temporal, Cognito le va a
+pedir que la cambie por una definitiva — es el flujo normal, no hace
+falta hacer nada extra.
 
 ### Paso 4 — Abrir la app
 
-Entrá a `UrlServicioUI`, iniciá sesión con Google, y recorré las 4 fases.
-El rol IAM (`ArnRolAgentes`) ya tiene todos los permisos que necesita
-(Bedrock + AgentCore Memory) — no hace falta nada más para que la app
-funcione de punta a punta.
+Entrá a `UrlServicioUI`, iniciá sesión con uno de los usuarios de
+prueba, y recorré las 4 fases. El rol IAM (`ArnRolAgentes`) ya tiene
+todos los permisos que necesita (Bedrock + AgentCore Memory) — no hace
+falta nada más para que la app funcione de punta a punta.
 
 ### (Opcional, no bloquea nada) — AgentCore Runtime real
 
@@ -239,9 +235,9 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
 
 - Backend de AgentCore Memory sin probar contra AWS real (ver
   [Persistencia](#persistencia)).
-- Login con Google/Cognito implementado pero sin probar contra un
-  despliegue real (necesita el Client ID/Secret de Google + las dos
-  pasadas de deploy, ver [Autenticación](#autenticación)).
+- Login con Cognito implementado pero sin probar contra un despliegue
+  real (necesita las dos pasadas de deploy + crear los usuarios de
+  prueba, ver [Autenticación](#autenticación)).
 - `COGNITO_CLIENT_SECRET` viaja como variable de entorno en texto plano
   en App Runner (no Secrets Manager) — aceptable para el MVP, no queda
   expuesto fuera de la cuenta de AWS, pero es lo primero a endurecer si

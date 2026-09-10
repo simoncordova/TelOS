@@ -30,7 +30,7 @@ _NOMBRES_FASE = {
 _TEXTOS = {
     "es": {
         "caption": "El propósito no es una meta, es un horizonte.",
-        "login_button": "Iniciar sesión con Google",
+        "login_button": "Iniciar sesión",
         "logout_button": "Cerrar sesión",
         "connected_as": "Conectado como {usuario_id}",
         "cognito_missing": (
@@ -48,7 +48,7 @@ _TEXTOS = {
     },
     "en": {
         "caption": "Purpose isn't a goal to reach, it's a horizon.",
-        "login_button": "Sign in with Google",
+        "login_button": "Sign in",
         "logout_button": "Sign out",
         "connected_as": "Signed in as {usuario_id}",
         "cognito_missing": (

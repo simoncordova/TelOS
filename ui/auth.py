@@ -1,4 +1,8 @@
-"""Login con Google vía Cognito Hosted UI (Authorization Code flow).
+"""Login vía Cognito Hosted UI (Authorization Code flow), usuarios
+propios del User Pool — sin proveedores externos (nada de Google/etc.),
+para no depender de ninguna cuenta de terceros. El dueño de la cuenta
+crea los usuarios de prueba a mano (`aws cognito-idp admin-create-user`,
+ver README); no hay auto-registro público.
 
 No es un tool de agente ni un agente — es plumbing específico de la UI,
 por eso vive en ui/ y no en agents/ ni tools/.
@@ -42,8 +46,7 @@ def configurado() -> bool:
 def url_login() -> str:
     return (
         f"{_DOMAIN}/oauth2/authorize"
-        f"?identity_provider=Google"
-        f"&client_id={_CLIENT_ID}"
+        f"?client_id={_CLIENT_ID}"
         f"&response_type=code"
         f"&scope=openid+email+profile"
         f"&redirect_uri={_APP_URL}"

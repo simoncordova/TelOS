@@ -9,6 +9,15 @@ Cada agente de fase, según el spec, guarda su ficha exactamente una vez,
 al cerrar su fase (no hay saves parciales a mitad de fase) — por eso
 "¿se guardó una versión nueva de la fase actual en este turno?" alcanza
 como señal de "esta fase terminó, avanza a la siguiente".
+
+Cuando la fase cambia a 2, 3 o 4 (flujo fijo o re-entrada desde Fase 5),
+el agente nuevo se invoca en el mismo turno con un mensaje de arranque
+neutro, y su respuesta se concatena a la de la fase que acaba de cerrar
+— si no, la persona se queda mirando un chat "colgado" después del
+cierre de una fase, sin señal de que tiene que escribir algo para que
+continúe. La única excepción es al llegar a Fase 5: ese cierre es el
+fin natural de la sesión (el spec dice que Fase 5 se dispara "al abrir
+una conversación nueva", no en el mismo turno que cierra Fase 4).
 """
 
 from strands.agent import Agent
@@ -27,6 +36,14 @@ _FABRICAS_POR_FASE = {
     3: crear_agente_coach_validacion,
     4: crear_agente_estratega_sistemas,
     5: crear_agente_seguimiento,
+}
+
+# Mensaje interno para arrancar al agente nuevo tras un cambio de fase en
+# el mismo turno. Nunca se muestra a la persona (no se agrega al
+# historial visible, solo dispara la respuesta del agente siguiente).
+_KICKOFF = {
+    "es": "Continuemos.",
+    "en": "Let's continue.",
 }
 
 
@@ -58,11 +75,20 @@ class SesionTelos:
             registrar_evento_crisis(self.usuario_id, resultado_crisis["categoria"])
             return mensaje_crisis(self.idioma)
 
+        fase_antes = self.fase_actual
         total_versiones_antes = self._contar_versiones()
-        respuesta = self._agente(texto)
+        respuesta = str(self._agente(texto))
         self._avanzar_fase_si_corresponde(total_versiones_antes)
 
-        return str(respuesta)
+        # La fase cambió en este mismo turno: si el destino no es Fase 5
+        # (que espera a una conversación nueva, no continúa en caliente),
+        # arrancamos al agente siguiente ya mismo para no dejar a la
+        # persona esperando sin saber que le toca escribir algo.
+        if self.fase_actual != fase_antes and self.fase_actual != 5:
+            continuacion = str(self._agente(_KICKOFF[self.idioma]))
+            respuesta = f"{respuesta}\n\n{continuacion}"
+
+        return respuesta
 
     def _contar_versiones(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)

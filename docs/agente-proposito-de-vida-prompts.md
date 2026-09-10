@@ -81,12 +81,19 @@ aplica el guardrail. Mantiene `fase_actual` en la ficha del usuario.
 4. Si no dispara → lee `fase_actual` de la ficha (default: 1 si no existe
    ficha) y delega el mensaje al agente de esa fase.
 5. Si el agente de fase señala que completó su salida, el Orquestador
-   avanza `fase_actual` y pasa el control al siguiente agente en el
-   siguiente turno (no dentro del mismo turno, para no perder el ritmo
-   conversacional).
+   avanza `fase_actual`. Si el destino es Fase 2, 3 o 4, invoca al
+   agente nuevo EN EL MISMO TURNO (con un mensaje interno de arranque
+   que nunca se le muestra a la persona) y concatena su respuesta a la
+   de la fase que acaba de cerrar, para que la conversación se sienta
+   continua — dejar el chat esperando a que la persona adivine que tiene
+   que escribir algo para "empujar" al siguiente agente es justo lo que
+   esta regla evita. Si el destino es Fase 5, NO se cascadea: ese cierre
+   es el fin natural de la sesión (Fase 5 se dispara al abrir una
+   conversación nueva, no en el mismo turno que cierra Fase 4).
 6. Caso especial: si existe una ficha con fase=5 (ciclo de seguimiento) y
    el agente de Fase 5 decide re-entrar a Fase 3 o 4, el Orquestador
-   actualiza `fase_actual` a ese valor y guarda el motivo.
+   actualiza `fase_actual` a ese valor y guarda el motivo — esta
+   re-entrada también cascadea en el mismo turno, igual que el punto 5.
 
 ## 2. Fase 1 — Explorador
 

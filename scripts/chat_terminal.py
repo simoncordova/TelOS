@@ -40,7 +40,7 @@ def main() -> None:
 
     while True:
         try:
-            texto = input("Vos: ").strip()
+            texto = input("Tú: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break

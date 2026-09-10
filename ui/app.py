@@ -125,8 +125,15 @@ if st.session_state.get("clave_sesion") != clave_sesion:
     # agente de la fase en curso en el idioma elegido.
     st.session_state["clave_sesion"] = clave_sesion
     st.session_state["usuario_id"] = usuario_id
-    st.session_state["sesion"] = SesionTelos(usuario_id, idioma=idioma)
+    nueva_sesion = SesionTelos(usuario_id, idioma=idioma)
+    st.session_state["sesion"] = nueva_sesion
     st.session_state["mensajes"] = []
+    # El agente habla primero, siempre -- nueva conversación o retomada
+    # (Fase 5 en particular tiene que mostrar la Vista de resumen apenas
+    # se abre, no después de que la persona adivine qué escribir).
+    with st.spinner(t["spinner"]):
+        for _fase, parte in nueva_sesion.abrir_conversacion():
+            st.session_state["mensajes"].append({"rol": "assistant", "texto": parte})
 
 sesion: SesionTelos = st.session_state["sesion"]
 

@@ -68,6 +68,18 @@ class SesionTelos:
         self.fase_actual = self._determinar_fase_inicial()
         self._agente: Agent = _FABRICAS_POR_FASE[self.fase_actual](usuario_id, idioma)
 
+    def abrir_conversacion(self):
+        """Generador: el agente de la fase actual habla primero, sin
+        esperar texto de la persona -- se llama una sola vez, al abrir
+        la sesión (nueva o retomada). Sin esto, el sistema siempre se
+        queda esperando a que la persona adivine qué escribir primero,
+        incluso en Fase 5, que según el spec tiene que mostrar la Vista
+        de resumen apenas se abre la conversación, no después.
+
+        No revisa el guardrail de crisis (no hay texto de la persona
+        que revisar) ni avanza de fase (abrir no cierra nada)."""
+        yield self.fase_actual, str(self._agente(_KICKOFF[self.idioma]))
+
     def _determinar_fase_inicial(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)
         if not ficha["existe"]:

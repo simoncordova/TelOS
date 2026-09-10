@@ -38,6 +38,11 @@ def main() -> None:
     print(f"Fase inicial: {_NOMBRES_FASE.get(sesion.fase_actual, sesion.fase_actual)}")
     print("Escribe 'salir' para terminar, 'ficha' para ver el estado guardado.\n")
 
+    # El agente habla primero, siempre -- nueva conversación o retomada.
+    for fase, parte in sesion.abrir_conversacion():
+        nombre_fase = _NOMBRES_FASE.get(fase, fase)
+        print(f"Telos [{nombre_fase}]: {parte}\n")
+
     while True:
         try:
             texto = input("Tú: ").strip()

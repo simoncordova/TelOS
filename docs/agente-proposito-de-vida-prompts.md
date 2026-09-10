@@ -90,6 +90,16 @@ falta.
 **Rol:** no conversa directamente con contenido de propósito — rutea y
 aplica el guardrail. Mantiene `fase_actual` en la ficha del usuario.
 
+**Al abrir la sesión** (conversación nueva o retomada, antes de que la
+persona escriba nada): el agente de la fase actual habla primero,
+siempre — nunca se espera a que la persona adivine qué escribir para
+que el sistema reaccione. Esto no es opcional para Fase 5 (el spec
+siempre dijo que la Vista de resumen se muestra "al abrir la
+conversación", no después del primer mensaje de la persona) y aplica
+igual al resto de las fases si se retoma una sesión a mitad de camino:
+el agente lee la ficha y arranca reconociendo dónde quedaron, en vez de
+esperar en silencio.
+
 **Lógica (no es un prompt de modelo, es lógica de control):**
 1. Recibe el mensaje del usuario.
 2. Llama `detectar_señal_crisis(texto)` SIEMPRE, antes de cualquier otra

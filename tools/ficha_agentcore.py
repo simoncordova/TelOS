@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 
 from bedrock_agentcore.memory import MemoryClient
 
+from tools._agentcore_ids import id_seguro
+
 _NOMBRE_MEMORIA = os.environ.get("TELOS_MEMORY_NAME", "telos_fichas_usuario")
 _REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
 
@@ -61,8 +63,11 @@ def guardar_ficha_usuario(usuario_id: str, datos: dict, fase: int, motivo_versio
     }
     _obtener_cliente().create_blob_event(
         memory_id=_obtener_memory_id(),
-        actor_id=usuario_id,
-        session_id=usuario_id,
+        # usuario_id es el email real de Cognito (con "@" y ".") --
+        # AgentCore Memory no acepta esos caracteres en actorId/
+        # sessionId, hay que sanitizarlo primero (ver tools/_agentcore_ids.py).
+        actor_id=id_seguro(usuario_id),
+        session_id=id_seguro(usuario_id),
         blob_data=version,
     )
 
@@ -74,8 +79,8 @@ def leer_ficha_usuario(usuario_id: str) -> dict:
     """
     eventos = _obtener_cliente().list_events(
         memory_id=_obtener_memory_id(),
-        actor_id=usuario_id,
-        session_id=usuario_id,
+        actor_id=id_seguro(usuario_id),
+        session_id=id_seguro(usuario_id),
         max_results=100,
         include_payload=True,
     )

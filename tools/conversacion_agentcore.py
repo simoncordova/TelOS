@@ -24,6 +24,8 @@ import os
 
 from bedrock_agentcore.memory import MemoryClient
 
+from tools._agentcore_ids import id_seguro
+
 _NOMBRE_MEMORIA = os.environ.get("TELOS_MEMORY_NAME", "telos_fichas_usuario")
 _REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
 
@@ -58,7 +60,9 @@ def guardar_intercambio(usuario_id: str, fase: int, texto_usuario: str, texto_as
     """Agrega un par (usuario, asistente) al historial de turnos de esta fase."""
     _obtener_cliente().create_event(
         memory_id=_obtener_memory_id(),
-        actor_id=usuario_id,
+        # usuario_id es el email real de Cognito -- sanitizar antes de
+        # usarlo como actorId (ver tools/_agentcore_ids.py).
+        actor_id=id_seguro(usuario_id),
         session_id=_sesion_id(fase),
         messages=[(texto_usuario, "USER"), (texto_asistente, "ASSISTANT")],
     )
@@ -68,7 +72,7 @@ def leer_turnos(usuario_id: str, fase: int) -> list[dict]:
     """Devuelve los turnos guardados de esta fase, en orden cronológico."""
     eventos = _obtener_cliente().list_events(
         memory_id=_obtener_memory_id(),
-        actor_id=usuario_id,
+        actor_id=id_seguro(usuario_id),
         session_id=_sesion_id(fase),
         max_results=200,
         include_payload=True,

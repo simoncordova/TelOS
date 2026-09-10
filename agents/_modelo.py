@@ -22,3 +22,17 @@ REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
 
 def crear_modelo() -> BedrockModel:
     return BedrockModel(model_id=MODEL_ID, region_name=REGION)
+
+
+# Compartida por los 5 prompts en español (antes estaba copiada casi
+# textual en cada uno, un archivo por fix cuando se detectó el bug de
+# voseo). Un solo lugar para editarla si hace falta ajustarla de nuevo.
+# El chequeo real (que efectivamente se cumpla) es agents/_calidad.py —
+# esto es la instrucción, no la garantía.
+REGLA_CONJUGACION_ES = (
+    'IMPORTANTE sobre la conjugación: usa siempre las formas de "tú" '
+    '(tienes, quieres, eres, puedes, sientes) — nunca las de "vos" '
+    '(tenés, querés, sos, podés, sentís). El voseo se nota en cómo se '
+    'conjuga el verbo, no solo en si aparece la palabra "vos" escrita, '
+    'así que evita esas conjugaciones aunque nunca escribas el pronombre.'
+)

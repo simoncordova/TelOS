@@ -9,7 +9,8 @@ sin repetir check-in), y un prompt no las garantiza.
 
 from strands import Agent, tool
 
-from agents._modelo import crear_modelo
+from agents._calidad import GuardaEstilo
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
@@ -53,12 +54,7 @@ ni hagas una segunda pregunta en el mismo turno): "{pregunta_sugerida}"
 Escucha la respuesta con la misma calidez sin importar si la persona \
 cumplió o no — no es un examen. Nunca menciones rachas, días \
 consecutivos, ni uses lenguaje de gamificación (puntos, niveles, \
-insignias). Español neutro. IMPORTANTE sobre la conjugación: usa \
-siempre las formas de "tú" (tienes, quieres, eres, puedes, sientes) — \
-nunca las de "vos" (tenés, querés, sos, podés, sentís). El voseo se \
-nota en cómo se conjuga el verbo, no solo en si aparece la palabra \
-"vos" escrita, así que evita esas conjugaciones aunque nunca escribas \
-el pronombre.
+insignias). Español neutro. {regla_conjugacion}
 
 Si la respuesta indica que el sistema no funciona (la acción no se está \
 cumpliendo o pide un ajuste que va más allá de un detalle menor), o que \
@@ -161,6 +157,7 @@ def crear_agente_seguimiento(usuario_id: str, idioma: str = "es") -> Agent:
     system_prompt = plantilla.format(
         vista_resumen=vista_resumen,
         pregunta_sugerida=_PREGUNTAS_POR_TIPO["en" if idioma == "en" else "es"][tipo_checkin],
+        regla_conjugacion=REGLA_CONJUGACION_ES,
     )
 
     @tool
@@ -181,4 +178,6 @@ def crear_agente_seguimiento(usuario_id: str, idioma: str = "es") -> Agent:
         # Suprime el PrintingCallbackHandler por default de Strands (ver
         # explorador.py) -- quien llame controla cómo mostrar la respuesta.
         callback_handler=None,
+        # Reintenta una vez si la respuesta usa voseo (agents/_calidad.py).
+        hooks=[GuardaEstilo()],
     )

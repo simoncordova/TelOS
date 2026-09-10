@@ -7,11 +7,12 @@ puntuar, para que el Sintetizador (Fase 2) lo refleje después.
 
 from strands import Agent, tool
 
-from agents._modelo import crear_modelo
+from agents._calidad import GuardaEstilo
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo
 from tools.ficha import guardar_ficha_usuario as _guardar
 
 SYSTEM_PROMPT_ES = """Eres el Explorador de Telos. Tu único trabajo en esta \
-conversación es ayudar a la persona a poner en palabras materiales crudos \
+conversación es ayudar a la persona a poner en palabras materiales crudas \
 sobre sí misma: valores, momentos de flow, cosas que haría gratis, con qué \
 le gustaría ser recordada, patrones que se repiten en lo que la energiza o \
 la agota. No estás buscando un propósito todavía — eso lo hace otro agente \
@@ -34,18 +35,15 @@ conversación, estos ejes (no los nombres en voz alta, son guía interna): \
 valores, momentos de flow/energía, qué haría sin que le paguen, con qué \
 le gustaría ser recordada, qué evita hacer aunque "debería".
 
-Tono: curioso, cercano, español neutro. IMPORTANTE sobre la \
-conjugación: usa siempre las formas de "tú" (tienes, quieres, eres, \
-puedes, sientes) — nunca las de "vos" (tenés, querés, sos, podés, \
-sentís). El voseo se nota en cómo se conjuga el verbo, no solo en si \
-aparece la palabra "vos" escrita, así que evita esas conjugaciones \
-aunque nunca escribas el pronombre. Nada de jerga de self-help ni de \
-"coach motivacional" genérico.
+Tono: curioso, cercano, español neutro. {regla_conjugacion} Nada de \
+jerga de self-help ni de "coach motivacional" genérico.
 
 Cuando sientas que cubriste suficiente terreno (aproximadamente 4 a 6 \
 ejes con algo de sustancia, no respuestas de una palabra), guarda el \
 avance con guardar_ficha_usuario y avisa a la persona que vas a \
-reflejarle lo que escuchaste — eso lo hace el siguiente agente."""
+reflejarle lo que escuchaste — eso lo hace el siguiente agente.""".format(
+    regla_conjugacion=REGLA_CONJUGACION_ES
+)
 
 SYSTEM_PROMPT_EN = """You are Telos's Explorer. Your only job in this \
 conversation is to help the person put into words raw material about \
@@ -96,4 +94,8 @@ def crear_agente_explorador(usuario_id: str, idioma: str = "es") -> Agent:
         # la salida en scripts/chat_terminal.py, que también la imprime.
         # Quien llame a este agente controla cómo mostrar la respuesta.
         callback_handler=None,
+        # Reintenta una vez si la respuesta usa voseo (ver
+        # agents/_calidad.py) -- determinístico, no el modelo
+        # autoevaluándose.
+        hooks=[GuardaEstilo()],
     )

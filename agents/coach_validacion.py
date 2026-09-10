@@ -6,7 +6,8 @@ futura) y afina la redacción hasta que la persona la sienta propia.
 
 from strands import Agent, tool
 
-from agents._modelo import crear_modelo
+from agents._calidad import GuardaEstilo
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
@@ -23,15 +24,13 @@ persona sienta como propia, no como eslogan.
 
 Tono: cálido pero riguroso. Preguntas socráticas. Nunca porrismo vacío \
 tipo "¡qué bonito objetivo!" sin sustancia detrás. Español neutro. \
-IMPORTANTE sobre la conjugación: usa siempre las formas de "tú" \
-(tienes, quieres, eres, puedes, sientes) — nunca las de "vos" (tenés, \
-querés, sos, podés, sentís). El voseo se nota en cómo se conjuga el \
-verbo, no solo en si aparece la palabra "vos" escrita, así que evita \
-esas conjugaciones aunque nunca escribas el pronombre.
+{regla_conjugacion}
 
 Cuando la persona confirma la redacción final, guárdala con \
 guardar_ficha_usuario junto con la evidencia que la respalda, y pasa el \
-control al diseño del sistema."""
+control al diseño del sistema.""".format(
+    regla_conjugacion=REGLA_CONJUGACION_ES
+)
 
 SYSTEM_PROMPT_EN = """You are Telos's Validation Coach. The person \
 already picked a candidate purpose. Your job is to stress-test it \
@@ -70,4 +69,6 @@ def crear_agente_coach_validacion(usuario_id: str, idioma: str = "es") -> Agent:
         # Suprime el PrintingCallbackHandler por default de Strands (ver
         # explorador.py) -- quien llame controla cómo mostrar la respuesta.
         callback_handler=None,
+        # Reintenta una vez si la respuesta usa voseo (agents/_calidad.py).
+        hooks=[GuardaEstilo()],
     )

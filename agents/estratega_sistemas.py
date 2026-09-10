@@ -7,7 +7,8 @@ ficha: propósito + sistema.
 
 from strands import Agent, tool
 
-from agents._modelo import crear_modelo
+from agents._calidad import GuardaEstilo
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo
 from tools.calendario import crear_evento_calendario as _crear_evento
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
@@ -33,18 +34,15 @@ la respuesta sea ejecutable sin pensarlo. A diferencia de las fases \
 anteriores, aquí sí presentas las 4 preguntas de forma estructurada \
 porque son la salida del sistema, no el ritmo de una charla abierta.
 
-Tono: práctico y cercano. Español neutro. IMPORTANTE sobre la \
-conjugación: usa siempre las formas de "tú" (tienes, quieres, eres, \
-puedes, sientes) — nunca las de "vos" (tenés, querés, sos, podés, \
-sentís). El voseo se nota en cómo se conjuga el verbo, no solo en si \
-aparece la palabra "vos" escrita, así que evita esas conjugaciones \
-aunque nunca escribas el pronombre.
+Tono: práctico y cercano. Español neutro. {regla_conjugacion}
 
 Cuando tengas las 4 respuestas, guarda el sistema completo con \
 guardar_ficha_usuario (esto cierra la ficha: propósito + sistema). \
 Ofrece, si aplica, agendar la acción con crear_evento_calendario. Avisa a \
 la persona que a partir de ahora, cada vez que abra una conversación \
-nueva, Telos va a hacer un check-in breve sobre este sistema."""
+nueva, Telos va a hacer un check-in breve sobre este sistema.""".format(
+    regla_conjugacion=REGLA_CONJUGACION_ES
+)
 
 SYSTEM_PROMPT_EN = """You are Telos's Systems Strategist. The person \
 already has a validated purpose. Your job is to turn it into a \
@@ -97,4 +95,6 @@ def crear_agente_estratega_sistemas(usuario_id: str, idioma: str = "es") -> Agen
         # Suprime el PrintingCallbackHandler por default de Strands (ver
         # explorador.py) -- quien llame controla cómo mostrar la respuesta.
         callback_handler=None,
+        # Reintenta una vez si la respuesta usa voseo (agents/_calidad.py).
+        hooks=[GuardaEstilo()],
     )

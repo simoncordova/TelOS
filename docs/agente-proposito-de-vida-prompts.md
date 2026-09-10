@@ -66,6 +66,25 @@ elegido el idioma "correcto" antes de escribir algo grave. Solo el
 mensaje fijo de respuesta se muestra en el idioma seleccionado (sección
 10).
 
+## 0.6 Regla compartida y verificación de estilo
+
+La instrucción de tuteo/no-voseo (sección 8) vive en un solo lugar del
+código (`agents/_modelo.py::REGLA_CONJUGACION_ES`) y cada uno de los 5
+prompts en español la referencia, en vez de tenerla copiada en cada
+archivo — así una corrección futura se hace una sola vez, no cinco.
+
+Además del texto del prompt, hay una verificación real después de que
+el modelo responde: `agents/_calidad.py::GuardaEstilo`, un hook de
+Strands (`AfterModelCallEvent`) que revisa con `tools/estilo.py` si la
+respuesta generada usa voseo y, si lo detecta, fuerza **una**
+regeneración antes de mostrársela a la persona — determinístico (regex),
+no el modelo autoevaluándose, mismo criterio que el guardrail de crisis.
+Como mucho una regeneración por turno: si el reintento también falla,
+se deja pasar (un guardrail de estilo no debería poder trabar la
+conversación). El mismo mecanismo (hook + chequeo determinístico) sirve
+para agregar otras verificaciones de calidad más adelante si hace
+falta.
+
 ## 1. Orquestador
 
 **Rol:** no conversa directamente con contenido de propósito — rutea y

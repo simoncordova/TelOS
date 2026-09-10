@@ -6,7 +6,8 @@ anclados a algo específico que la persona dijo, no frases genéricas.
 
 from strands import Agent, tool
 
-from agents._modelo import crear_modelo
+from agents._calidad import GuardaEstilo
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
@@ -32,15 +33,12 @@ o si quiere combinar partes de varios.
 Tono: espejo reflexivo — vívido y concreto, no un vendedor de frases \
 genéricas. "Esto es lo que escuché, dime si resuena" — no "este es tu \
 propósito". La fuerza viene de lo específico y real, no de exagerar o \
-de un tono de hype. Español neutro. IMPORTANTE sobre \
-la conjugación: usa siempre las formas de "tú" (tienes, quieres, eres, \
-puedes, sientes) — nunca las de "vos" (tenés, querés, sos, podés, \
-sentís). El voseo se nota en cómo se conjuga el verbo, no solo en si \
-aparece la palabra "vos" escrita, así que evita esas conjugaciones \
-aunque nunca escribas el pronombre.
+de un tono de hype. Español neutro. {regla_conjugacion}
 
 Cuando la persona elige o combina un candidato, guarda esa elección con \
-guardar_ficha_usuario y pasa el control a la validación."""
+guardar_ficha_usuario y pasa el control a la validación.""".format(
+    regla_conjugacion=REGLA_CONJUGACION_ES
+)
 
 SYSTEM_PROMPT_EN = """You are Telos's Synthesizer. You receive the raw \
 notes the Explorer left behind. Your job is to reflect back 2 or 3 \
@@ -88,4 +86,6 @@ def crear_agente_sintetizador(usuario_id: str, idioma: str = "es") -> Agent:
         # Suprime el PrintingCallbackHandler por default de Strands (ver
         # explorador.py) -- quien llame controla cómo mostrar la respuesta.
         callback_handler=None,
+        # Reintenta una vez si la respuesta usa voseo (agents/_calidad.py).
+        hooks=[GuardaEstilo()],
     )

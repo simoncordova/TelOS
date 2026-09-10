@@ -41,7 +41,12 @@ Cada agente de fase es un `strands.Agent` independiente (`agents/*.py`)
 con su propio system prompt — el detalle completo de prompts, tools,
 reglas de tono y privacidad vive en
 [`docs/agente-proposito-de-vida-prompts.md`](docs/agente-proposito-de-vida-prompts.md),
-la fuente de verdad de esta arquitectura.
+la fuente de verdad de esta arquitectura. Las reglas compartidas por los
+5 (idioma neutro) viven en un solo lugar (`agents/_modelo.py`), y un hook
+de Strands (`agents/_calidad.py`) verifica de forma determinística la
+respuesta generada y fuerza una regeneración si hace falta — no es el
+modelo autoevaluándose, es un chequeo por código, igual que el guardrail
+de crisis.
 
 La persistencia de la ficha (`tools/ficha.py`) es intercambiable entre un
 backend JSON local (desarrollo) y AgentCore Memory real (producción) sin

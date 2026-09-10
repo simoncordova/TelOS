@@ -283,31 +283,12 @@ npx aws-cdk deploy --parameters AppUrl=<el UrlServicioUI del paso anterior>
 
 ### Paso 3 — Crear los usuarios de prueba
 
-Sin registro público, así que los usuarios se crean a mano (con las
-credenciales de sesión de CloudShell, sin generar ninguna key nueva). El
-User Pool tiene `email` como `UsernameAttributes` (no como alias) — eso
-significa que Cognito deriva el atributo `email` directo del
-`--username`; pasarlo de nuevo en `--user-attributes` (aunque sea con el
-mismo valor) da `InvalidParameterException`. El email no necesita ser
-real — solo tener formato válido — así que `example.com` (dominio
-reservado para pruebas, nunca entrega correo real) sirve si vas a
-repartir las credenciales vos mismo en vez de que cada persona reciba un
-correo de Cognito:
-
-```bash
-aws cognito-idp admin-create-user \
-  --user-pool-id <el UserPoolId del Paso 1> \
-  --username tester1@example.com \
-  --user-attributes Name=email_verified,Value=true \
-  --temporary-password "CambiaEsto123!" \
-  --message-action SUPPRESS
-```
-
-Repetí para los 3 usuarios de prueba (cambiando `tester1`). Cada
-persona, al loguearse por primera vez en el Hosted UI con esa contraseña
-temporal, Cognito le va a pedir que la cambie por una definitiva — es el
-flujo normal, no hace
-falta hacer nada extra.
+Sin registro público, así que los usuarios se crean a mano con
+`aws cognito-idp admin-create-user` contra el `UserPoolId` del Paso 1
+(credenciales de sesión de CloudShell, sin generar ninguna key nueva).
+Repetí para cada usuario de prueba que necesites; cada persona, al
+loguearse por primera vez con la contraseña temporal, Cognito le va a
+pedir que la cambie por una definitiva.
 
 ### Paso 4 — Abrir la app
 

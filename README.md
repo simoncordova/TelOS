@@ -82,7 +82,7 @@ y vuelve a mostrar el campo de identificador libre.
 
 | Variable | Default | Uso |
 |---|---|---|
-| `TELOS_MODEL_ID` | `anthropic.claude-sonnet-4-5-20250929-v1:0` | Modelo de Bedrock que usan los 5 agentes |
+| `TELOS_MODEL_ID` | `global.anthropic.claude-sonnet-4-5-20250929-v1:0` | Modelo de Bedrock que usan los 5 agentes — inference profile "global", no el ID pelado (ese falla con `ValidationException` en la mayoría de las regiones, Sonnet 4.5 no admite invocación on-demand directa) |
 | `TELOS_AWS_REGION` | `us-east-1` | Región de Bedrock / AgentCore |
 | `TELOS_FICHA_BACKEND` | `local` | `local` (JSON) o `agentcore` (AgentCore Memory real) |
 | `TELOS_MEMORY_NAME` | `telos_fichas_usuario` | Nombre del recurso de AgentCore Memory (solo si `TELOS_FICHA_BACKEND=agentcore`) |

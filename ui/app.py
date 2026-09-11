@@ -9,10 +9,13 @@ docs/agente-proposito-de-vida-prompts.md. El guardrail de crisis revisa
 ambos idiomas siempre, sin importar lo que esté seleccionado acá.
 
 Layout: no es un chat lineal a secas. De arriba a abajo en el área
-principal: un mapa del camino (las 5 fases como paradas, con un popover
-por parada para espiar lo que ya se definió ahí), la tarjeta de la Vista
-de resumen cuando estás en Fase 5 (código, no el texto del agente — ver
-agents/seguimiento.py), y recién después el chat. En la barra lateral:
+principal: una tarjeta de bienvenida (solo la primera vez, antes de que
+la persona diga su nombre -- explica de qué va la app y el camino de 5
+pasos, sin ser un wizard largo), un mapa del camino (las 5 fases como
+paradas, con un popover por parada para espiar lo que ya se definió
+ahí), la tarjeta de la Vista de resumen cuando estás en Fase 5 (código,
+no el texto del agente — ver agents/seguimiento.py), y recién después el
+chat. En la barra lateral:
 "Tus resultados" (propósito + sistema, el sistema como checklist si el
 modelo siguió el formato de líneas etiquetadas), "Tu evolución"
 (historial de versiones) y exportar la ficha. La barra lateral se
@@ -95,6 +98,18 @@ _TEXTOS = {
             "Última actualización: {fecha}\n"
         ),
         "exportar_sin_dato": "(sin definir)",
+        "bienvenida_titulo": "👋 Bienvenido a Telos",
+        "bienvenida_texto": (
+            "Vamos a explorar tu propósito de vida en una conversación corta, "
+            "en 5 pasos:\n\n"
+            "1. 🔎 **Explorador** — ponés en palabras lo que te mueve\n"
+            "2. 🪞 **Sintetizador** — te reflejamos 2 o 3 propósitos posibles\n"
+            "3. 🧭 **Coach de Validación** — lo ponemos a prueba con tu propia experiencia\n"
+            "4. 🛠️ **Estratega de Sistemas** — lo convertimos en un hábito concreto\n"
+            "5. 🔁 **Seguimiento** — check-ins breves cada vez que vuelvas\n\n"
+            "No es una meta con fecha límite — es un horizonte. Para arrancar, "
+            "contame cómo te llamas 👇"
+        ),
     },
     "en": {
         "caption": "Purpose isn't a goal to reach, it's a horizon.",
@@ -136,6 +151,18 @@ _TEXTOS = {
             "Last updated: {fecha}\n"
         ),
         "exportar_sin_dato": "(not defined)",
+        "bienvenida_titulo": "👋 Welcome to Telos",
+        "bienvenida_texto": (
+            "We're going to explore your life purpose in a short "
+            "conversation, in 5 steps:\n\n"
+            "1. 🔎 **Explorer** — put into words what moves you\n"
+            "2. 🪞 **Synthesizer** — we reflect back 2 or 3 possible purposes\n"
+            "3. 🧭 **Validation Coach** — we stress-test it against your own experience\n"
+            "4. 🛠️ **Systems Strategist** — we turn it into a concrete habit\n"
+            "5. 🔁 **Follow-up** — brief check-ins every time you come back\n\n"
+            "It's not a goal with a deadline — it's a horizon. To get "
+            "started, tell me your name 👇"
+        ),
     },
 }
 
@@ -350,6 +377,19 @@ with st.sidebar:
         disabled=not proposito,
         use_container_width=True,
     )
+
+# Pantalla de bienvenida: solo para quien todavía no tiene nombre
+# guardado (Paso 0, agents/orquestador.py) -- una señal simple y
+# pública de "primera vez", sin necesitar un flag nuevo. Explica de qué
+# va la app y el camino de 5 pasos antes de que conteste "¿cómo te
+# llamas?" -- breve a propósito, no un wizard de onboarding: el
+# Explorador mismo tiene la regla de sentirse "ágil y alcanzable, no
+# como el inicio de un proceso largo" (sección 2 del spec), y esta
+# pantalla tiene que sostener ese mismo tono.
+if not sesion.nombre:
+    with st.container(border=True):
+        st.subheader(t["bienvenida_titulo"])
+        st.markdown(t["bienvenida_texto"])
 
 # Mapa del camino: las 5 fases como paradas, no una barra de "% completado"
 # (el spec prohíbe ese lenguaje -- el propósito es un horizonte, no una

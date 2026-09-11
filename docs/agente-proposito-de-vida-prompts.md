@@ -124,6 +124,16 @@ memoria conversacional genuina, no solo con el resumen estructurado de
 la ficha. Los turnos de un mensaje que dispara el guardrail de crisis
 NO se guardan acá (el agente de fase nunca llega a procesarlos).
 
+**Consistencia eventual al decidir si avanzar de fase:** el Orquestador
+decide "¿el agente cerró la fase?" releyendo la ficha después de cada
+turno y comparando cuántas versiones hay contra antes del turno. Contra
+AgentCore Memory esta relectura puede no ver todavía un guardado que
+acaba de pasar (consistencia eventual) — sin manejarlo, un cierre de
+fase real pasaba desapercibido y la conversación quedaba trabada,
+aunque el agente ya hubiera guardado todo y avisado a la persona (bug
+real visto en producción). Por eso esa relectura reintenta unas pocas
+veces con una espera corta entre intentos antes de darse por vencida.
+
 **Límite diario de invocaciones (protección de costo, no de producto):**
 antes de cada invocación real al agente de fase, el Orquestador revisa
 `excedio_limite_diario(usuario_id)` (`tools/limite_uso.py`, 100 por

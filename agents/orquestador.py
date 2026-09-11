@@ -28,6 +28,8 @@ había colgado. Quien llama (`ui/app.py`, `scripts/chat_terminal.py`)
 itera y muestra cada parte a medida que llega.
 """
 
+import time
+
 from strands.agent import Agent
 
 from agents.coach_validacion import crear_agente_coach_validacion
@@ -157,8 +159,27 @@ class SesionTelos:
         ficha = leer_ficha_usuario(self.usuario_id)
         return len(ficha["historial"]) + (1 if ficha["existe"] else 0)
 
-    def _avanzar_fase_si_corresponde(self, total_versiones_antes: int) -> None:
+    def _leer_ficha_con_reintento(self, total_versiones_antes: int, intentos: int = 4, espera_segundos: float = 1.0) -> dict:
+        """AgentCore Memory puede tardar un instante en reflejar en
+        list_events un evento que se acaba de guardar (consistencia
+        eventual) -- sin este reintento, un guardado real podía pasar
+        desapercibido acá y la fase nunca avanzaba, aunque el agente ya
+        hubiera guardado todo y se lo hubiera dicho a la persona (bug
+        real visto en producción: el Explorador decía "ya guardé todo,
+        te paso al Sintetizador" y la app se quedaba esperando). Con el
+        backend JSON local esto siempre resuelve en el primer intento
+        (escritura sincrónica a disco), así que no agrega latencia ahí."""
         ficha = leer_ficha_usuario(self.usuario_id)
+        for _ in range(intentos - 1):
+            total_versiones = len(ficha["historial"]) + (1 if ficha["existe"] else 0)
+            if total_versiones > total_versiones_antes:
+                break
+            time.sleep(espera_segundos)
+            ficha = leer_ficha_usuario(self.usuario_id)
+        return ficha
+
+    def _avanzar_fase_si_corresponde(self, total_versiones_antes: int) -> None:
+        ficha = self._leer_ficha_con_reintento(total_versiones_antes)
         if not ficha["existe"]:
             return
 

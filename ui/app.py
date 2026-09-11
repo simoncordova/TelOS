@@ -16,6 +16,8 @@ paradas, con un popover por parada para espiar lo que ya se definió
 ahí), la tarjeta de la Vista de resumen cuando estás en Fase 5 (código,
 no el texto del agente — ver agents/seguimiento.py), y recién después el
 chat. En la barra lateral:
+"Fase actual" + "🔥 Racha" (rama `gamificacion` -- calculada por código en
+agents/seguimiento.py::calcular_racha, nunca a criterio del modelo),
 "Tus resultados" (propósito + sistema, el sistema como checklist si el
 modelo siguió el formato de líneas etiquetadas), "Tu evolución"
 (historial de versiones) y exportar la ficha. La barra lateral se
@@ -24,6 +26,13 @@ resultados" vive ahí y no en una columna junto al chat, que en charlas
 largas terminaba perdiéndose scroll abajo (bug real reportado). Se relee
 la ficha en cada rerun, así que todo esto se actualiza solo apenas un
 agente guarda una versión nueva.
+
+Tema visual: `.streamlit/config.toml` (paleta cálida, sin CSS propio) y,
+en `_procesar_turno`, `st.balloons()`/`st.toast()` nativos para festejar
+un hito real (sistema completado, check-in cumplido) -- decidido así en
+vez de un frontend nuevo por el riesgo real de plazo de un hackathon;
+ver docs/agente-proposito-de-vida-prompts.md sección 8 para la decisión
+completa de revertir la prohibición de gamificación.
 """
 
 import os
@@ -37,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ui.auth as auth  # noqa: E402
 from agents.orquestador import SesionTelos  # noqa: E402
-from agents.seguimiento import construir_vista_resumen  # noqa: E402
+from agents.seguimiento import calcular_racha, construir_vista_resumen  # noqa: E402
 from tools.ficha import leer_ficha_usuario  # noqa: E402
 
 st.set_page_config(page_title="Telos", page_icon="🧭")
@@ -73,6 +82,10 @@ _TEXTOS = {
         "id_label": "Tu identificador (login deshabilitado, TELOS_REQUIRE_LOGIN=0)",
         "id_missing": "Escribe un identificador en la barra lateral para empezar.",
         "fase_label": "Fase actual",
+        "camino_progreso_label": "Progreso de la conversación",
+        "racha_label": "🔥 Racha",
+        "racha_vacia": "Todavía sin check-ins",
+        "checkin_toast": "🔥 ¡Racha de {racha}! Seguís sosteniendo tu sistema.",
         "chat_placeholder": "Escribe aquí...",
         "spinner": "...",
         "idioma_label": "Idioma / Language",
@@ -126,6 +139,10 @@ _TEXTOS = {
         "id_label": "Your identifier (login disabled, TELOS_REQUIRE_LOGIN=0)",
         "id_missing": "Type an identifier in the sidebar to get started.",
         "fase_label": "Current phase",
+        "camino_progreso_label": "Conversation progress",
+        "racha_label": "🔥 Streak",
+        "racha_vacia": "No check-ins yet",
+        "checkin_toast": "🔥 {racha}-streak! You're keeping up your system.",
         "chat_placeholder": "Type here...",
         "spinner": "...",
         "idioma_label": "Idioma / Language",
@@ -284,7 +301,16 @@ sesion: SesionTelos = st.session_state["sesion"]
 def _procesar_turno(texto: str) -> None:
     """Consume el generador de la sesión, mostrando cada parte apenas
     está lista (ver docstring de agents.orquestador.SesionTelos) y
-    dejando registradas las últimas opciones ofrecidas, si las hay."""
+    dejando registradas las últimas opciones ofrecidas, si las hay.
+
+    Rama `gamificacion`: al final, si este turno completó el sistema
+    (Fase 4 → 5) o cerró un check-in cumplido, dispara un festejo nativo
+    de Streamlit (`st.balloons`/`st.toast`, sin CSS/JS) -- una sola vez
+    por hito real, no un gancho de hábito repetido en cada mensaje."""
+    fase_antes = sesion.fase_actual
+    ficha_antes = leer_ficha_usuario(usuario_id)
+    total_antes = len(ficha_antes["historial"]) + (1 if ficha_antes["existe"] else 0)
+
     st.session_state["mensajes"].append({"rol": "user", "texto": texto})
     with st.chat_message("user"):
         st.markdown(texto)
@@ -303,14 +329,35 @@ def _procesar_turno(texto: str) -> None:
         opciones_finales = opciones
     st.session_state["opciones_pendientes"] = opciones_finales
 
+    if fase_antes == 4 and sesion.fase_actual == 5:
+        st.balloons()
+        return
+
+    if fase_antes == 5 and sesion.fase_actual == 5:
+        ficha_despues = leer_ficha_usuario(usuario_id)
+        total_despues = len(ficha_despues["historial"]) + (1 if ficha_despues["existe"] else 0)
+        if total_despues > total_antes:
+            datos_nuevos = (ficha_despues["actual"] or {}).get("datos", {}) if ficha_despues["existe"] else {}
+            if datos_nuevos.get("cumplido") is True:
+                racha_nueva = calcular_racha(ficha_despues["historial"], ficha_despues["actual"])
+                st.toast(t["checkin_toast"].format(racha=racha_nueva))
+
 
 ficha = leer_ficha_usuario(usuario_id)
 datos = ficha["actual"]["datos"] if ficha["existe"] and ficha["actual"] else {}
 proposito = (datos or {}).get("proposito")
 sistema = (datos or {}).get("sistema")
+racha = calcular_racha(ficha["historial"], ficha["actual"]) if ficha["existe"] else 0
 
 with st.sidebar:
-    st.metric(t["fase_label"], _NOMBRES_FASE[idioma].get(sesion.fase_actual, sesion.fase_actual))
+    col_fase, col_racha = st.columns(2)
+    with col_fase:
+        st.metric(t["fase_label"], _NOMBRES_FASE[idioma].get(sesion.fase_actual, sesion.fase_actual))
+    with col_racha:
+        # Rama `gamificacion`: la racha es del sistema/hábito (la
+        # constancia), no del propósito -- el propósito sigue sin ser
+        # una "meta" que se completa (spec sección 8).
+        st.metric(t["racha_label"], str(racha) if racha > 0 else "—")
 
     # "Tus resultados" vive acá, no en una columna junto al chat -- ver
     # docstring del módulo (bug real: se perdía de vista en charlas
@@ -391,10 +438,12 @@ if not sesion.nombre:
         st.subheader(t["bienvenida_titulo"])
         st.markdown(t["bienvenida_texto"])
 
-# Mapa del camino: las 5 fases como paradas, no una barra de "% completado"
-# (el spec prohíbe ese lenguaje -- el propósito es un horizonte, no una
-# meta). Cada parada es un popover: clickeable para espiar lo que ya se
-# definió ahí, sin salir del chat.
+# Mapa del camino: las 5 fases como paradas. Ya funciona como indicador
+# de progreso de la conversación por sí solo (✅/🔵/⚪) -- no se le suma
+# una barra de "% completado" al lado para no duplicar la misma señal;
+# la gamificación nueva de la rama (racha, festejos) vive en la métrica
+# de al lado y en `_procesar_turno`, no acá. Cada parada es un popover:
+# clickeable para espiar lo que ya se definió ahí, sin salir del chat.
 columnas_camino = st.columns(5)
 for numero_fase, columna in zip(range(1, 6), columnas_camino):
     with columna:

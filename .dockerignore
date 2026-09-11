@@ -4,6 +4,6 @@ infra/
 data/
 __pycache__/
 *.pyc
-.streamlit/
+.streamlit/secrets.toml
 docs/
 *.md

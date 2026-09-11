@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY agents/ agents/
 COPY tools/ tools/
 COPY ui/ ui/
+COPY .streamlit/ .streamlit/
 
 EXPOSE 8501
 

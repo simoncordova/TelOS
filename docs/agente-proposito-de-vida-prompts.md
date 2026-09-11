@@ -816,7 +816,16 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 2. Mostrar la **Vista de resumen**: saludo con el nombre de la persona si
    se conoce (sección 0.7) + propósito vigente + sistema vigente + fecha
    de la última actualización. Nunca un contador de racha ni "llevas X
-   días seguidos" — ver reglas de tono (sección 8).
+   días seguidos" — ver reglas de tono (sección 8). "Mostrar" es código
+   (`agents/seguimiento.py::construir_vista_resumen`), no texto que el
+   modelo tenga que reproducir — cada front-end (`ui/app.py`,
+   `scripts/chat_terminal.py`, `scripts/simular_conversacion.py`) la
+   dibuja aparte, llamando a esa misma función directamente, antes de
+   que el agente diga nada. Antes el prompt le pedía al modelo "mostrá
+   este resumen tal cual"; se sacó esa instrucción porque ya podíamos
+   garantizar el texto exacto con código puro, sin depender de que el
+   modelo lo copiara sin tocarlo una vez más de lo necesario — mismo
+   criterio que el resto del proyecto.
 3. Hacer UNA sola pregunta de check-in, eligiendo un tipo distinto al de
    la sesión anterior, rotando entre:
    - **Cumplimiento:** ¿cómo te fue con el sistema desde la última vez?
@@ -903,7 +912,7 @@ current system: ... / Last updated: ...".
 | Tool | Firma | Usado por | Notas |
 |---|---|---|---|
 | `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Cada `agents/*.py` en realidad llama a `tools.ficha.guardar_ficha_usuario_fusionada`, no a la función base: fusiona `datos` sobre la última versión guardada (las claves nuevas ganan) antes de escribir, así una fase que se olvida de re-incluir "proposito"/"sistema" no los borra — ver sección 1, puntos 13-14. Vía AgentCore Memory (o backend JSON local en desarrollo); cada llamada crea una nueva versión, nunca sobrescribe el historial. Convención de claves de `datos`: desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas) — si una clave nunca se puso ni una sola vez, la fusión no tiene nada de qué heredarla, así que `SesionTelos._campos_faltantes` fuerza un reintento (sección 1, punto 14). El cuerpo real de la tool, en cada `agents/*.py`, también marca `SesionTelos._contenedor_guardado` (mismo patrón que `presentar_opciones`, fila de abajo) para que el Orquestador sepa con certeza que se ejecutó, sin depender de releer la ficha — ver sección 0.7. |
-| `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 3, 4, 5 | Devuelve la última versión y un resumen del historial de versiones (fase, fecha, motivo — no el contenido completo de versiones viejas). |
+| `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 3, 4, 5 | Devuelve la última versión y el historial de versiones anteriores, cada una con su `datos` completo (no solo fase/fecha/motivo) — necesario para la vista "Tu evolución" de la interfaz, que muestra cómo cambió el propósito/sistema con el tiempo, no solo cuándo. |
 | `presentar_opciones` | `(opciones: list[str]) -> str` | 2 (Sintetizador) | `agents/_modelo.py::crear_tool_presentar_opciones`. No persiste nada — solo le avisa a la sesión (`SesionTelos`) qué opciones mostrar como botones en este turno, vía un contenedor mutable compartido; el Orquestador la limpia antes de cada invocación y la entrega en la tupla `(fase, texto, opciones)`. Pensada para decisiones cerradas de un conjunto chico y conocido (el candidato de propósito); no se le agregó a las fases de preguntas abiertas (1, 3) porque ahí no hay un menú fijo que ofrecer, sería inventar estructura que el spec no pide. |
 | `guardar_nombre_usuario` / `leer_nombre_usuario` | `(usuario_id: str, nombre: str) -> None` / `(usuario_id: str) -> str \| None` | Orquestador, en el Paso 0 (código, no tool de ningún agente de fase) | `tools/perfil.py` (mismo selector de backend `TELOS_FICHA_BACKEND` que la ficha). No versiona -- a diferencia de `guardar_ficha_usuario`, cada guardado reemplaza el nombre vigente. Vive separado de la ficha a propósito: si fuera una clave más dentro de `datos`, se perdería de vista en cuanto una fase posterior guardara una versión nueva sin repetirla (ver la nota de la fila de arriba). |
 | `detectar_señal_crisis` | `(texto: str) -> dict` | Orquestador, en cada turno (código, no tool del modelo) | Retorna `{"disparado": bool, "categoria": str \| None}`. Lista estática curada, sin llamada a modelo — determinístico. No se registra como tool de ningún agente de fase: exponerla al LLM la haría opcional para el modelo, y este guardrail no puede ser opcional. |

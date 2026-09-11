@@ -135,11 +135,11 @@ def leer_ficha_usuario(usuario_id: str) -> dict:
     if not versiones:
         return {"existe": False, "actual": None, "historial": []}
 
+    # `historial` incluye `datos` completo de cada versión vieja (no solo
+    # metadata) desde que se agregó la vista "Tu evolución" de la
+    # interfaz -- ya estaba decodificado en memoria antes de filtrarlo.
     return {
         "existe": True,
         "actual": versiones[-1],
-        "historial": [
-            {"fase": v["fase"], "motivo_version": v["motivo_version"], "fecha": v["fecha"]}
-            for v in versiones[:-1]
-        ],
+        "historial": versiones[:-1],
     }

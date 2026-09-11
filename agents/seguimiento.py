@@ -5,6 +5,19 @@ completa (fase >= 4). La Vista de resumen y la rotación del tipo de
 check-in se calculan en código, no se dejan a criterio del modelo — son
 justamente las reglas de tono no negociables del proyecto (sin rachas,
 sin repetir check-in), y un prompt no las garantiza.
+
+La Vista de resumen (`construir_vista_resumen`) ya NO se le pide al
+modelo que la reproduzca en su mensaje -- la interfaz (`ui/app.py`) y
+las herramientas de terminal (`scripts/chat_terminal.py`,
+`scripts/simular_conversacion.py`) la muestran aparte, como una tarjeta
+fija, llamando a esta misma función directamente. Antes el prompt le
+pedía al modelo "mostrá este resumen tal cual" -- funcionaba, pero
+dependía de que el modelo lo copiara sin tocarlo una vez más de lo
+necesario, cuando ya podíamos mostrarlo con código puro (mismo criterio
+que el resto del proyecto: determinismo en código, no en la fidelidad
+de copia de un LLM). El prompt sigue recibiendo `{vista_resumen}` como
+contexto, para que la pregunta de check-in suene informada, pero ya no
+tiene que reproducirlo.
 """
 
 from strands import Agent, tool
@@ -47,17 +60,18 @@ SYSTEM_PROMPT_BASE_ES = """Eres el agente de Seguimiento de Telos. La \
 persona ya tiene un propósito y un sistema definidos; tu trabajo es un \
 check-in breve, no una sesión larga.
 
-Empieza el turno mostrando EXACTAMENTE este resumen, tal cual, antes de \
-cualquier otra cosa (no lo reformules, no le agregues lenguaje de racha \
-ni de progreso):
+Ya se le mostró, aparte de tu mensaje, este resumen de su propósito y \
+sistema vigentes (no hace falta que lo repitas ni lo resumas de nuevo, \
+es solo contexto para vos):
 
 ---
 {vista_resumen}
 ---
 
-Después haz esta única pregunta de check-in (puedes ajustar la redacción \
-para que fluya con la conversación, pero no cambies el tipo de pregunta \
-ni hagas una segunda pregunta en el mismo turno): "{pregunta_sugerida}"
+Tu único mensaje es esta pregunta de check-in (podés ajustar la \
+redacción para que fluya con la conversación, pero no cambies el tipo \
+de pregunta ni hagas una segunda pregunta en el mismo turno): \
+"{pregunta_sugerida}" — anda directo a ella, sin preámbulo largo.
 
 Escucha la respuesta con la misma calidez sin importar si la persona \
 cumplió o no — no es un examen. Nunca menciones rachas, días \
@@ -91,17 +105,18 @@ SYSTEM_PROMPT_BASE_EN = """You are Telos's Follow-up agent. The person \
 already has a purpose and a system defined; your job is a brief \
 check-in, not a long session.
 
-Start the turn by showing EXACTLY this summary, verbatim, before \
-anything else (don't rephrase it, don't add streak or progress \
-language):
+This summary of their current purpose and system was already shown to \
+them separately from your message (no need to repeat or re-summarize \
+it, it's just context for you):
 
 ---
 {vista_resumen}
 ---
 
-Then ask this single check-in question (you can adjust the wording to \
-flow with the conversation, but don't change the type of question or \
-ask a second question in the same turn): "{pregunta_sugerida}"
+Your only message is this check-in question (you can adjust the \
+wording to flow with the conversation, but don't change the type of \
+question or ask a second question in the same turn): \
+"{pregunta_sugerida}" — go straight to it, no long preamble.
 
 Listen to the answer with the same warmth regardless of whether the \
 person followed through or not — this isn't a test. Never mention \

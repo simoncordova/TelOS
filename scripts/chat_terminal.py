@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.orquestador import SesionTelos  # noqa: E402
+from agents.seguimiento import construir_vista_resumen  # noqa: E402
 from tools.ficha import leer_ficha_usuario  # noqa: E402
 
 _NOMBRES_FASE = {
@@ -47,6 +48,15 @@ def main() -> None:
     print(f"--- Telos (usuario_id={usuario_id}, idioma={idioma}) ---")
     print(f"Fase inicial: {_NOMBRES_FASE.get(sesion.fase_actual, sesion.fase_actual)}")
     print("Escribe 'salir' para terminar, 'ficha' para ver el estado guardado.\n")
+
+    # La Vista de resumen de Fase 5 ya no viene en el texto del agente
+    # (ver agents/seguimiento.py) -- se muestra aparte, con código, igual
+    # que en ui/app.py.
+    if sesion.fase_actual == 5:
+        ficha = leer_ficha_usuario(usuario_id)
+        print("--- Tu resumen ---")
+        print(construir_vista_resumen(ficha["actual"], idioma, sesion.nombre))
+        print("------------------\n")
 
     # El agente habla primero, siempre -- nueva conversación o retomada.
     for fase, parte, opciones in sesion.abrir_conversacion():

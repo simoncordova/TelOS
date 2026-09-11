@@ -51,8 +51,13 @@ def leer_ficha_usuario(usuario_id: str) -> dict:
         {
             "existe": bool,
             "actual": {"fase": int, "datos": dict, "motivo_version": str, "fecha": str} | None,
-            "historial": [{"fase": int, "motivo_version": str, "fecha": str}, ...],
+            "historial": [{"fase": int, "datos": dict, "motivo_version": str, "fecha": str}, ...],
         }
+
+    Nota: `historial` incluye `datos` completo de cada versión vieja (no
+    solo metadata) desde que se agregó la vista "Tu evolución" de la
+    interfaz -- el backend ya tenía el dato completo en memoria antes de
+    filtrarlo, así que esto no cuesta una lectura extra.
     """
     todo = _cargar_todo()
     versiones = todo.get(usuario_id, [])
@@ -62,8 +67,5 @@ def leer_ficha_usuario(usuario_id: str) -> dict:
     return {
         "existe": True,
         "actual": versiones[-1],
-        "historial": [
-            {"fase": v["fase"], "motivo_version": v["motivo_version"], "fecha": v["fecha"]}
-            for v in versiones[:-1]
-        ],
+        "historial": versiones[:-1],
     }

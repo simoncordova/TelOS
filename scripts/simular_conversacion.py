@@ -42,6 +42,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.orquestador import _FRASE_CIERRE_FALSO, SesionTelos  # noqa: E402
+from agents.seguimiento import construir_vista_resumen  # noqa: E402
 from tools.ficha import leer_ficha_usuario  # noqa: E402
 
 _NOMBRES_FASE = {
@@ -116,6 +117,14 @@ def main() -> None:
     print(f"--- Simulación Telos (usuario_id={usuario_id}, idioma={idioma}, {len(guion)} turnos) ---")
 
     sesion = SesionTelos(usuario_id, idioma=idioma)
+
+    # La Vista de resumen de Fase 5 ya no viene en el texto del agente
+    # (ver agents/seguimiento.py) -- se muestra aparte, con código.
+    if sesion.fase_actual == 5:
+        ficha = leer_ficha_usuario(usuario_id)
+        print("\n--- Tu resumen ---")
+        print(construir_vista_resumen(ficha["actual"], idioma, sesion.nombre))
+        print("------------------")
 
     fase_previa = sesion.fase_actual
     for fase, texto, opciones in sesion.abrir_conversacion():

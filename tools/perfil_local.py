@@ -38,3 +38,12 @@ def guardar_nombre_usuario(usuario_id: str, nombre: str) -> None:
 def leer_nombre_usuario(usuario_id: str) -> str | None:
     """Devuelve el nombre guardado, o None si todavía no se pidió."""
     return _cargar_todo().get(usuario_id)
+
+
+def borrar_nombre_usuario(usuario_id: str) -> None:
+    """Borra el nombre guardado -- para resetear cuentas de prueba
+    contaminadas (ver scripts/borrar_usuario.py). Irreversible."""
+    todo = _cargar_todo()
+    if usuario_id in todo:
+        del todo[usuario_id]
+        _guardar_todo(todo)

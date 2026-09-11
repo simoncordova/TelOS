@@ -69,3 +69,16 @@ def leer_ficha_usuario(usuario_id: str) -> dict:
         "actual": versiones[-1],
         "historial": versiones[:-1],
     }
+
+
+def borrar_ficha_usuario(usuario_id: str) -> None:
+    """Borra TODAS las versiones de la ficha de este usuario -- para
+    resetear cuentas de prueba contaminadas por rondas de testing viejas
+    (ver scripts/borrar_usuario.py), no expuesto como tool de ningún
+    agente. Irreversible: no hay "versión anterior" a la que volver
+    después de esto, a propósito -- es un borrado real, no una versión
+    nueva vacía."""
+    todo = _cargar_todo()
+    if usuario_id in todo:
+        del todo[usuario_id]
+        _guardar_todo(todo)

@@ -15,8 +15,8 @@ backends distintos para las dos cosas.
 import os
 
 if os.environ.get("TELOS_FICHA_BACKEND", "local") == "agentcore":
-    from tools.conversacion_agentcore import guardar_intercambio, leer_turnos
+    from tools.conversacion_agentcore import borrar_turnos_usuario, guardar_intercambio, leer_turnos
 else:
-    from tools.conversacion_local import guardar_intercambio, leer_turnos
+    from tools.conversacion_local import borrar_turnos_usuario, guardar_intercambio, leer_turnos
 
-__all__ = ["guardar_intercambio", "leer_turnos"]
+__all__ = ["borrar_turnos_usuario", "guardar_intercambio", "leer_turnos"]

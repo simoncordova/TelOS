@@ -19,9 +19,9 @@ fase por closure y dejando que el modelo solo decida `datos` y
 import os
 
 if os.environ.get("TELOS_FICHA_BACKEND", "local") == "agentcore":
-    from tools.ficha_agentcore import guardar_ficha_usuario, leer_ficha_usuario
+    from tools.ficha_agentcore import borrar_ficha_usuario, guardar_ficha_usuario, leer_ficha_usuario
 else:
-    from tools.ficha_local import guardar_ficha_usuario, leer_ficha_usuario
+    from tools.ficha_local import borrar_ficha_usuario, guardar_ficha_usuario, leer_ficha_usuario
 
 
 def guardar_ficha_usuario_fusionada(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None:
@@ -48,4 +48,4 @@ def guardar_ficha_usuario_fusionada(usuario_id: str, datos: dict, fase: int, mot
     guardar_ficha_usuario(usuario_id, fusionado, fase, motivo_version)
 
 
-__all__ = ["guardar_ficha_usuario", "guardar_ficha_usuario_fusionada", "leer_ficha_usuario"]
+__all__ = ["borrar_ficha_usuario", "guardar_ficha_usuario", "guardar_ficha_usuario_fusionada", "leer_ficha_usuario"]

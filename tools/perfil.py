@@ -16,8 +16,8 @@ del modelo.
 import os
 
 if os.environ.get("TELOS_FICHA_BACKEND", "local") == "agentcore":
-    from tools.perfil_agentcore import guardar_nombre_usuario, leer_nombre_usuario
+    from tools.perfil_agentcore import borrar_nombre_usuario, guardar_nombre_usuario, leer_nombre_usuario
 else:
-    from tools.perfil_local import guardar_nombre_usuario, leer_nombre_usuario
+    from tools.perfil_local import borrar_nombre_usuario, guardar_nombre_usuario, leer_nombre_usuario
 
-__all__ = ["guardar_nombre_usuario", "leer_nombre_usuario"]
+__all__ = ["borrar_nombre_usuario", "guardar_nombre_usuario", "leer_nombre_usuario"]

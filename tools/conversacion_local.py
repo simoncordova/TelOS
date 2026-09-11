@@ -43,3 +43,18 @@ def leer_turnos(usuario_id: str, fase: int) -> list[dict]:
     """Devuelve los turnos guardados de esta fase, en orden cronológico."""
     todo = _cargar_todo()
     return todo.get(_clave(usuario_id, fase), [])
+
+
+def borrar_turnos_usuario(usuario_id: str) -> None:
+    """Borra los turnos guardados de las 5 fases para este usuario --
+    para resetear cuentas de prueba contaminadas (ver
+    scripts/borrar_usuario.py). Irreversible."""
+    todo = _cargar_todo()
+    cambio = False
+    for fase in range(1, 6):
+        clave = _clave(usuario_id, fase)
+        if clave in todo:
+            del todo[clave]
+            cambio = True
+    if cambio:
+        _guardar_todo(todo)

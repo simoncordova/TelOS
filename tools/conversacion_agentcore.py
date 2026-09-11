@@ -87,3 +87,39 @@ def leer_turnos(usuario_id: str, fase: int) -> list[dict]:
             texto = conversacional.get("content", {}).get("text", "")
             turnos.append({"rol": rol, "texto": texto})
     return turnos
+
+
+def borrar_turnos_usuario(usuario_id: str) -> int:
+    """Borra los turnos guardados de las 5 fases para este usuario --
+    para resetear cuentas de prueba contaminadas (ver
+    scripts/borrar_usuario.py). Devuelve cuántos eventos borró en total.
+    Irreversible.
+
+    AgentCore Memory no tiene un "borrar todo el hilo" de un solo
+    llamado -- hay que listar y borrar evento por evento (`DeleteEvent`,
+    que pide memoryId+actorId+sessionId+eventId, los cuatro
+    obligatorios, sin wrapper de alto nivel en el SDK a diferencia de
+    create_event/list_events). Sin probar contra un recurso real (este
+    entorno de desarrollo no tiene credenciales de AWS) -- validar con
+    una cuenta de prueba antes de confiar en esto para una cuenta real.
+    """
+    cliente = _obtener_cliente()
+    memory_id = _obtener_memory_id()
+    actor_id = id_seguro(usuario_id)
+    borrados = 0
+    for fase in range(1, 6):
+        session_id = _sesion_id(fase)
+        eventos = cliente.list_events(
+            memory_id=memory_id,
+            actor_id=actor_id,
+            session_id=session_id,
+            max_results=200,
+            include_payload=False,
+        )
+        for evento in eventos:
+            event_id = evento.get("eventId")
+            if not event_id:
+                continue
+            cliente.delete_event(memoryId=memory_id, sessionId=session_id, eventId=event_id, actorId=actor_id)
+            borrados += 1
+    return borrados

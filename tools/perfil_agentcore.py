@@ -16,6 +16,7 @@ import json
 
 from tools._agentcore_ids import id_seguro
 from tools.ficha_agentcore import _obtener_cliente, _obtener_memory_id
+from tools.ficha_agentcore import borrar_eventos as _borrar_eventos
 
 _SUFIJO_SESION = "__perfil"
 
@@ -47,3 +48,9 @@ def leer_nombre_usuario(usuario_id: str) -> str | None:
         except (json.JSONDecodeError, AttributeError):
             continue
     return None
+
+
+def borrar_nombre_usuario(usuario_id: str) -> int:
+    """Borra el evento con el nombre guardado -- para resetear cuentas
+    de prueba contaminadas (ver scripts/borrar_usuario.py). Irreversible."""
+    return _borrar_eventos(id_seguro(usuario_id), id_seguro(usuario_id) + _SUFIJO_SESION)

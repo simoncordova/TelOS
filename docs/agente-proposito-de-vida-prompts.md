@@ -970,6 +970,15 @@ current system: ... / Last updated: ...".
   — no cuenta como excepción a las reglas de arriba: no se infiere nada
   a partir de él, no se usa para clasificar ni para personalizar el
   contenido más allá de cómo se la nombra.
+- **Borrado (herramienta de desarrollo, no self-service todavía):**
+  `scripts/borrar_usuario.py` borra ficha (todas las versiones), turnos
+  de conversación y nombre de perfil de un `usuario_id`, con
+  confirmación escrita salvo que se pase `-y`. Pensado para resetear
+  cuentas de prueba contaminadas por rondas de testing viejas, no para
+  que una persona real borre sus propios datos desde la interfaz — eso
+  sigue siendo P2 en el plan (`PLAN.md`), sin construir. No toca los
+  eventos del guardrail de crisis (sección 10): ese registro es de
+  seguridad, no algo que un reset de cuenta deba poder borrar.
 
 ## 10. Guardrail de crisis
 

@@ -143,3 +143,47 @@ def leer_ficha_usuario(usuario_id: str) -> dict:
         "actual": versiones[-1],
         "historial": versiones[:-1],
     }
+
+
+def borrar_eventos(actor_id: str, session_id: str) -> int:
+    """Borra TODOS los eventos de un hilo (memory_id fijo + actor_id +
+    session_id dados) -- compartido por tools/ficha_agentcore.py,
+    conversacion_agentcore.py y perfil_agentcore.py (los tres usan el
+    mismo recurso de Memory, solo cambia session_id). Devuelve cuántos
+    eventos borró.
+
+    AgentCore Memory no tiene un "borrar todo el hilo" de un solo
+    llamado -- hay que listar y borrar evento por evento
+    (`DeleteEvent`, que pide memoryId+actorId+sessionId+eventId, los
+    cuatro obligatorios). No expuesto como tool de ningún agente; lo usa
+    scripts/borrar_usuario.py para resetear cuentas de prueba
+    contaminadas por rondas de testing viejas. Sin probar contra un
+    recurso real de AgentCore Memory (este entorno de desarrollo no
+    tiene credenciales de AWS) -- validar con una cuenta de prueba antes
+    de confiar en esto para una cuenta real."""
+    cliente = _obtener_cliente()
+    memory_id = _obtener_memory_id()
+    eventos = cliente.list_events(
+        memory_id=memory_id,
+        actor_id=actor_id,
+        session_id=session_id,
+        max_results=200,
+        include_payload=False,
+    )
+    borrados = 0
+    for evento in eventos:
+        event_id = evento.get("eventId")
+        if not event_id:
+            continue
+        # delete_event no tiene wrapper de alto nivel en el SDK (a
+        # diferencia de create_event/list_events) -- se llama tal cual
+        # con los nombres de parámetro camelCase de la API cruda.
+        cliente.delete_event(memoryId=memory_id, sessionId=session_id, eventId=event_id, actorId=actor_id)
+        borrados += 1
+    return borrados
+
+
+def borrar_ficha_usuario(usuario_id: str) -> int:
+    """Borra TODAS las versiones de la ficha de este usuario. Devuelve
+    cuántas versiones borró. Irreversible."""
+    return borrar_eventos(id_seguro(usuario_id), id_seguro(usuario_id))

@@ -29,3 +29,24 @@ class FichaResponse(BaseModel):
     racha: int
     vista_resumen: str
     nombre: str | None
+
+
+class SuscripcionPushKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class SuscripcionPushRequest(BaseModel):
+    """Misma forma que PushSubscription.toJSON() en el navegador -- ver
+    web/src/lib/push.ts."""
+
+    endpoint: str
+    keys: SuscripcionPushKeys
+
+
+class EliminarSuscripcionPushRequest(BaseModel):
+    endpoint: str
+
+
+class EnviarPruebaPushRequest(BaseModel):
+    idioma: str = "es"

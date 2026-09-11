@@ -7,6 +7,7 @@ cada request. Ver ui/auth.py -- ese módulo hace el trabajo real
 (intercambio de code, validación de JWT); este módulo solo lo envuelve
 para el ciclo request/response de FastAPI, sin reimplementar nada."""
 
+import hmac
 import os
 
 from fastapi import HTTPException, Request
@@ -17,6 +18,7 @@ NOMBRE_COOKIE = "telos_session"
 
 _REQUIERE_LOGIN = os.environ.get("TELOS_REQUIRE_LOGIN", "1") != "0"
 _USUARIO_DEV = "prueba-local"
+_SECRETO_SCHEDULER = os.environ.get("PUSH_SCHEDULER_SECRET", "")
 
 
 def requiere_login() -> bool:
@@ -41,3 +43,18 @@ def obtener_usuario_actual(request: Request) -> str:
     if not cognito.sesion_vigente(identidad):
         raise HTTPException(status_code=401, detail="Sesión vencida.")
     return identidad["email"]
+
+
+def verificar_secreto_scheduler(request: Request) -> None:
+    """Dependencia para /api/push/enviar-recordatorios (Fase 4): ese
+    endpoint no lo llama una persona con sesión, lo llama el Scheduler de
+    EventBridge (ver infra/stacks/telos_stack.py) -- se protege con un
+    secreto compartido en vez de Cognito. Falla cerrado si el secreto no
+    está configurado (nunca "sin secreto = permitido"): un recordatorio
+    real manda notificaciones a TODAS las personas suscriptas, no es un
+    endpoint que deba quedar abierto por accidente."""
+    si_configurado = _SECRETO_SCHEDULER and hmac.compare_digest(
+        request.headers.get("X-Telos-Scheduler-Secret", ""), _SECRETO_SCHEDULER
+    )
+    if not si_configurado:
+        raise HTTPException(status_code=403, detail="Secreto de scheduler inválido o no configurado.")

@@ -17,11 +17,24 @@ from fastapi.responses import PlainTextResponse, RedirectResponse, StreamingResp
 
 from agents.orquestador import SesionTelos
 from agents.seguimiento import calcular_racha, construir_vista_resumen
-from api.auth import NOMBRE_COOKIE, obtener_usuario_actual, requiere_login
-from api.esquemas import AbrirSesionRequest, EnviarMensajeRequest
+from api import push
+from api.auth import NOMBRE_COOKIE, obtener_usuario_actual, requiere_login, verificar_secreto_scheduler
+from api.esquemas import (
+    AbrirSesionRequest,
+    EliminarSuscripcionPushRequest,
+    EnviarMensajeRequest,
+    EnviarPruebaPushRequest,
+    SuscripcionPushRequest,
+)
 from api.sse import stream_eventos
 from tools.ficha import leer_ficha_usuario
 from tools.perfil import leer_nombre_usuario
+from tools.push_suscripcion import (
+    eliminar_suscripcion_push,
+    guardar_suscripcion_push,
+    listar_suscripciones_push,
+    listar_todas_las_suscripciones,
+)
 from ui import auth as cognito
 
 app = FastAPI(title="Telos API")
@@ -166,3 +179,75 @@ def exportar_ficha(idioma: str = "es", usuario_id: str = Depends(obtener_usuario
     ficha = leer_ficha_usuario(usuario_id)
     resumen = construir_vista_resumen(ficha["actual"], idioma, nombre, ficha["historial"])
     return PlainTextResponse(resumen, headers={"Content-Disposition": "attachment; filename=telos.txt"})
+
+
+# --- Push (Fase 3/4 del plan): suscripción desde el navegador, envío
+# manual de prueba, y el envío masivo que dispara el Scheduler de
+# EventBridge. Ver api/push.py y tools/push_suscripcion.py. ---
+
+
+@app.get("/api/push/config")
+def push_config() -> dict:
+    """El frontend pide la clave pública acá (en vez de necesitarla
+    horneada en el build de Next.js) para no tener que pasar
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY como build arg de Docker -- ver
+    infra/stacks/telos_stack.py."""
+    return {"configurado": push.configurado(), "clavePublica": push.clave_publica()}
+
+
+@app.post("/api/push/suscripcion", status_code=204)
+def guardar_suscripcion(body: SuscripcionPushRequest, usuario_id: str = Depends(obtener_usuario_actual)) -> None:
+    guardar_suscripcion_push(usuario_id, body.model_dump())
+
+
+@app.delete("/api/push/suscripcion", status_code=204)
+def eliminar_suscripcion(body: EliminarSuscripcionPushRequest, usuario_id: str = Depends(obtener_usuario_actual)) -> None:
+    eliminar_suscripcion_push(usuario_id, body.endpoint)
+
+
+@app.post("/api/push/enviar-prueba")
+def enviar_prueba(body: EnviarPruebaPushRequest, usuario_id: str = Depends(obtener_usuario_actual)) -> dict:
+    """Manda una notificación de prueba a TODAS las suscripciones de la
+    persona logueada (puede tener más de un dispositivo/navegador) --
+    para validar la tubería completa (Service Worker, VAPID, proveedor
+    de push real) antes de depender del scheduler de Fase 4."""
+    suscripciones = listar_suscripciones_push(usuario_id)
+    enviados, invalidas = _enviar_a_suscripciones(usuario_id, suscripciones, push.construir_prueba(body.idioma))
+    return {"enviados": enviados, "invalidasEliminadas": invalidas}
+
+
+@app.post("/api/push/enviar-recordatorios", dependencies=[Depends(verificar_secreto_scheduler)])
+def enviar_recordatorios() -> dict:
+    """Único llamado por el Scheduler de EventBridge (ver
+    infra/stacks/telos_stack.py) -- nunca por una persona ni por el
+    frontend. Recorre a todas las personas suscriptas y les manda el
+    mismo recordatorio fijo, respetando el mismo tono que el resto del
+    proyecto (sin racha, sin "hace X días") -- ver
+    push.construir_recordatorio."""
+    # El idioma elegido no se persiste en ningún lado hoy (es
+    # st.session_state efímero en ui/app.py, se pierde al cerrar la
+    # pestaña) -- un recordatorio async no tiene de dónde leerlo, así
+    # que usa "es" para todos, el mismo default del resto de la app. Si
+    # hace falta un recordatorio en el idioma real de cada persona, hay
+    # que agregar ese campo al perfil primero (tools/perfil.py) -- no
+    # inventado acá sin que el spec lo pida.
+    total_enviados = 0
+    total_invalidas = 0
+    for usuario_id, suscripciones in listar_todas_las_suscripciones().items():
+        enviados, invalidas = _enviar_a_suscripciones(usuario_id, suscripciones, push.construir_recordatorio("es"))
+        total_enviados += enviados
+        total_invalidas += invalidas
+    return {"enviados": total_enviados, "invalidasEliminadas": total_invalidas}
+
+
+def _enviar_a_suscripciones(usuario_id: str, suscripciones: list[dict], mensaje: dict) -> tuple[int, int]:
+    enviados = 0
+    invalidas = 0
+    for suscripcion in suscripciones:
+        try:
+            push.enviar_push(suscripcion, mensaje)
+            enviados += 1
+        except push.SuscripcionInvalida:
+            eliminar_suscripcion_push(usuario_id, suscripcion.get("endpoint", ""))
+            invalidas += 1
+    return enviados, invalidas

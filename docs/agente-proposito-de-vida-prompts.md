@@ -966,6 +966,16 @@ cambio hasta que se decida mergear.
   una sola conversación continua, aunque por dentro sean 5 agentes
   distintos rotando.
 
+**Recordatorios push (rama `gamificacion`, Fase 3/4 de la migración a
+Node.js):** las mismas reglas de tono de esta sección aplican al texto
+de una notificación push, aunque nunca pase por ningún agente ni
+guardrail — el canal cambia, la persona que lo recibe es la misma. Por
+eso ese texto es fijo y determinístico en código (`api/push.py::
+construir_recordatorio`), no generado por el modelo: sin mención de
+racha, sin "hace X días que no volvés", sin tono de examen. Ver
+`api/push.py` y `infra/stacks/telos_stack.py` (EventBridge Scheduler,
+una vez por día — deliberadamente infrecuente, no un empujón constante).
+
 ## 9. Privacidad y desacoplamiento de identidad
 
 - Cero scoring: no se calcula ni almacena ningún puntaje, nivel o índice

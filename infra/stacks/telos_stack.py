@@ -36,14 +36,16 @@ deploy (CloudFront la genera). Ver el parámetro AppUrl más abajo.
 
 from pathlib import Path
 
-from aws_cdk import CfnOutput, CfnParameter, RemovalPolicy, Stack, Tags
+from aws_cdk import CfnOutput, CfnParameter, RemovalPolicy, SecretValue, Stack, Tags
 from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_cloudfront as cloudfront
 from aws_cdk import aws_cloudfront_origins as origins
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_ecr_assets as ecr_assets
+from aws_cdk import aws_events as events
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_scheduler as scheduler
 from constructs import Construct
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -464,6 +466,50 @@ class TelosStack(Stack):
             ),
         )
 
+        # Fase 3 (Web Push): claves generadas UNA vez a mano con
+        # scripts/generar_claves_vapid.py, nunca en el repo -- mismo
+        # criterio que el client secret de Cognito. Sin default: un push
+        # real necesita claves reales, no vale la pena un placeholder que
+        # deje /api/push/config "configurado=true" con una clave inválida.
+        vapid_public_key = CfnParameter(
+            self,
+            "VapidPublicKey",
+            type="String",
+            default="",
+            description="Clave pública VAPID (scripts/generar_claves_vapid.py). Vacío = push deshabilitado.",
+        )
+        vapid_private_key = CfnParameter(
+            self,
+            "VapidPrivateKey",
+            type="String",
+            default="",
+            no_echo=True,
+            description="Clave privada VAPID (scripts/generar_claves_vapid.py). Vacío = push deshabilitado.",
+        )
+        vapid_subject = CfnParameter(
+            self,
+            "VapidSubject",
+            type="String",
+            default="mailto:telos@example.com",
+            description="Contacto (mailto: o https:) que exige el protocolo VAPID/Web Push.",
+        )
+        # Comparte el mismo secreto entre la API y el Scheduler de Fase 4
+        # más abajo (ver events.Connection) -- protege
+        # /api/push/enviar-recordatorios de ser invocado por cualquiera
+        # que adivine la URL, ya que ese endpoint no pide sesión de
+        # Cognito (lo llama el Scheduler, no una persona).
+        push_scheduler_secret = CfnParameter(
+            self,
+            "PushSchedulerSecret",
+            type="String",
+            no_echo=True,
+            description=(
+                "Secreto compartido entre EventBridge Scheduler y "
+                "/api/push/enviar-recordatorios -- generá uno random "
+                "vos mismo (ej. `openssl rand -hex 32`), no tiene default."
+            ),
+        )
+
         imagen_api = ecr_assets.DockerImageAsset(
             self,
             "ImagenApi",
@@ -510,6 +556,10 @@ class TelosStack(Stack):
             f'-e COGNITO_CLIENT_ID="{user_pool_client.user_pool_client_id}" '
             f'-e COGNITO_CLIENT_SECRET="{user_pool_client.user_pool_client_secret.unsafe_unwrap()}" '
             f'-e APP_URL="{web_url.value_as_string}/api/auth/callback" '
+            f'-e VAPID_PUBLIC_KEY="{vapid_public_key.value_as_string}" '
+            f'-e VAPID_PRIVATE_KEY="{vapid_private_key.value_as_string}" '
+            f'-e VAPID_SUBJECT="{vapid_subject.value_as_string}" '
+            f'-e PUSH_SCHEDULER_SECRET="{push_scheduler_secret.value_as_string}" '
             f"{imagen_api.image_uri}",
             # --network host también acá: Next.js necesita pegarle a la
             # API por localhost:8000 (ver web/src/lib/api.ts).
@@ -581,5 +631,61 @@ class TelosStack(Stack):
             description=(
                 "Usar con `aws ssm start-session --target <esto>` para "
                 "entrar a la instancia de la API/Next.js si el user data falla."
+            ),
+        )
+
+        # --- Fase 4 (rama gamificacion): recordatorios automáticos.
+        # EventBridge Scheduler dispara un POST diario a
+        # /api/push/enviar-recordatorios en vez de un runtime Lambda
+        # aparte -- reutiliza el mismo FastAPI ya desplegado, sin
+        # duplicar la lógica de "quién está suscripto" en dos lugares
+        # (ver plan de migración sección C, punto 8). Autenticado con un
+        # secreto compartido (api/auth.py::verificar_secreto_scheduler),
+        # no con Cognito: quien llama es el Scheduler, no una persona.
+        conexion_scheduler_push = events.Connection(
+            self,
+            "ConexionSchedulerPush",
+            authorization=events.Authorization.api_key(
+                "X-Telos-Scheduler-Secret",
+                SecretValue.unsafe_plain_text(push_scheduler_secret.value_as_string),
+            ),
+            description="Credencial que EventBridge adjunta al llamar a /api/push/enviar-recordatorios.",
+        )
+
+        destino_recordatorios_push = events.ApiDestination(
+            self,
+            "DestinoRecordatoriosPush",
+            connection=conexion_scheduler_push,
+            endpoint=f"https://{distribucion_web.distribution_domain_name}/api/push/enviar-recordatorios",
+            http_method=events.HttpMethod.POST,
+            rate_limit_per_second=1,
+        )
+
+        rol_scheduler_push = iam.Role(
+            self,
+            "RolSchedulerPush",
+            assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
+            description="Permite a EventBridge Scheduler invocar el API destination de recordatorios push.",
+        )
+        rol_scheduler_push.add_to_policy(
+            iam.PolicyStatement(
+                actions=["events:InvokeApiDestination"],
+                resources=[destino_recordatorios_push.api_destination_arn],
+            )
+        )
+
+        scheduler.CfnSchedule(
+            self,
+            "ScheduleRecordatoriosPush",
+            description="Recordatorio diario de Telos vía Web Push (Fase 4 del plan de migración).",
+            # Una vez por día alcanza para el MVP -- el spec prohíbe el
+            # tono de hábito-shaming en Fase 5 (ver
+            # agents/seguimiento.py), así que esto es deliberadamente
+            # infrecuente, no un empujón constante.
+            schedule_expression="rate(1 day)",
+            flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(mode="OFF"),
+            target=scheduler.CfnSchedule.TargetProperty(
+                arn=destino_recordatorios_push.api_destination_arn,
+                role_arn=rol_scheduler_push.role_arn,
             ),
         )

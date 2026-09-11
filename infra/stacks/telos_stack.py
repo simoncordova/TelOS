@@ -36,7 +36,7 @@ deploy (CloudFront la genera). Ver el parámetro AppUrl más abajo.
 
 from pathlib import Path
 
-from aws_cdk import CfnOutput, CfnParameter, RemovalPolicy, SecretValue, Stack, Tags
+from aws_cdk import CfnOutput, CfnParameter, Duration, RemovalPolicy, SecretValue, Stack, Tags
 from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_cloudfront as cloudfront
 from aws_cdk import aws_cloudfront_origins as origins
@@ -44,8 +44,8 @@ from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_events as events
+from aws_cdk import aws_events_targets as events_targets
 from aws_cdk import aws_iam as iam
-from aws_cdk import aws_scheduler as scheduler
 from constructs import Construct
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -662,13 +662,24 @@ class TelosStack(Stack):
         )
 
         # --- Fase 4 (rama gamificacion): recordatorios automáticos.
-        # EventBridge Scheduler dispara un POST diario a
+        # Una EventBridge Rule programada dispara un POST diario a
         # /api/push/enviar-recordatorios en vez de un runtime Lambda
         # aparte -- reutiliza el mismo FastAPI ya desplegado, sin
         # duplicar la lógica de "quién está suscripto" en dos lugares
         # (ver plan de migración sección C, punto 8). Autenticado con un
         # secreto compartido (api/auth.py::verificar_secreto_scheduler),
-        # no con Cognito: quien llama es el Scheduler, no una persona.
+        # no con Cognito: quien llama es la Rule, no una persona.
+        #
+        # NO usa AWS::Scheduler::Schedule (el servicio "EventBridge
+        # Scheduler" nuevo, separado de EventBridge clásico): un deploy
+        # real contra la cuenta tiró "Provided Arn is not in correct
+        # format" al pasarle el ARN de un API destination como target de
+        # Scheduler -- Scheduler no soporta API destinations como target
+        # directo (a diferencia de lo que sugiere su propia doc de
+        # "universal targets"). events.Rule + events_targets.ApiDestination
+        # es el patrón real y soportado para "algo programado que llama a
+        # un endpoint HTTPS externo" -- crea y adjunta el rol IAM solo,
+        # sin necesitar un iam.Role a mano como el Schedule sí pedía.
         conexion_scheduler_push = events.Connection(
             self,
             "ConexionSchedulerPush",
@@ -688,31 +699,14 @@ class TelosStack(Stack):
             rate_limit_per_second=1,
         )
 
-        rol_scheduler_push = iam.Role(
+        events.Rule(
             self,
-            "RolSchedulerPush",
-            assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
-            description="Permite a EventBridge Scheduler invocar el API destination de recordatorios push.",
-        )
-        rol_scheduler_push.add_to_policy(
-            iam.PolicyStatement(
-                actions=["events:InvokeApiDestination"],
-                resources=[destino_recordatorios_push.api_destination_arn],
-            )
-        )
-
-        scheduler.CfnSchedule(
-            self,
-            "ScheduleRecordatoriosPush",
+            "ReglaRecordatoriosPush",
             description="Recordatorio diario de Telos vía Web Push (Fase 4 del plan de migración).",
             # Una vez por día alcanza para el MVP -- el spec prohíbe el
             # tono de hábito-shaming en Fase 5 (ver
             # agents/seguimiento.py), así que esto es deliberadamente
             # infrecuente, no un empujón constante.
-            schedule_expression="rate(1 day)",
-            flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(mode="OFF"),
-            target=scheduler.CfnSchedule.TargetProperty(
-                arn=destino_recordatorios_push.api_destination_arn,
-                role_arn=rol_scheduler_push.role_arn,
-            ),
+            schedule=events.Schedule.rate(Duration.days(1)),
+            targets=[events_targets.ApiDestination(destino_recordatorios_push)],
         )

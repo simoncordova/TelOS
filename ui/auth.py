@@ -69,13 +69,17 @@ def url_logout() -> str:
     )
 
 
-def intercambiar_codigo_por_identidad(code: str) -> dict:
-    """Canjea el authorization code por tokens y devuelve la identidad ya
-    validada: {"email": str, "nombre": str, "sub": str}.
+def intercambiar_codigo_por_id_token(code: str) -> str:
+    """Canjea el authorization code por tokens y devuelve el id_token
+    crudo (sin decodificar) -- separado de `intercambiar_codigo_por_identidad`
+    porque api/auth.py (rama gamificacion) necesita el JWT crudo para
+    guardarlo en la cookie de sesión y revalidarlo en cada request, no
+    solo los claims ya decodificados que basta para Streamlit (que
+    mantiene la identidad en st.session_state del mismo proceso, no en
+    una cookie que hay que revalidar).
 
-    Lanza ValueError si el intercambio o la validación del ID token
-    fallan (código vencido/reusado, firma inválida, etc.) — quien llama
-    debe tratarlo como "login fallido", no dejar pasar al usuario.
+    Lanza ValueError si el intercambio falla (código vencido/reusado,
+    etc.) — quien llama debe tratarlo como "login fallido".
     """
     respuesta = requests.post(
         f"{_DOMAIN}/oauth2/token",
@@ -94,8 +98,18 @@ def intercambiar_codigo_por_identidad(code: str) -> dict:
     id_token = respuesta.json().get("id_token")
     if not id_token:
         raise ValueError("La respuesta de Cognito no incluyó id_token.")
+    return id_token
 
-    return _validar_id_token(id_token)
+
+def intercambiar_codigo_por_identidad(code: str) -> dict:
+    """Canjea el authorization code por tokens y devuelve la identidad ya
+    validada: {"email": str, "nombre": str, "sub": str}.
+
+    Lanza ValueError si el intercambio o la validación del ID token
+    fallan (código vencido/reusado, firma inválida, etc.) — quien llama
+    debe tratarlo como "login fallido", no dejar pasar al usuario.
+    """
+    return _validar_id_token(intercambiar_codigo_por_id_token(code))
 
 
 def _obtener_jwk_client() -> PyJWKClient:
@@ -125,3 +139,12 @@ def _validar_id_token(id_token: str) -> dict:
 
 def sesion_vigente(identidad: dict | None) -> bool:
     return bool(identidad) and identidad.get("expira", 0) > time.time()
+
+
+def validar_id_token(id_token: str) -> dict:
+    """Alias público de `_validar_id_token` -- api/auth.py (rama
+    gamificacion) revalida el id_token guardado en la cookie de sesión
+    en cada request, a diferencia de Streamlit, que solo valida una vez
+    al intercambiar el code y después confía en st.session_state del
+    mismo proceso."""
+    return _validar_id_token(id_token)

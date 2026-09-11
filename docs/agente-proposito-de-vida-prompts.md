@@ -393,6 +393,24 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
     la siguiente. Fase 4 es la excepción (cierra la ficha entera, así
     que una sesión nueva entra directo a Fase 5) y una ficha ya en
     Fase 5 se queda en Fase 5.
+13. `guardar_ficha_usuario`, tal como lo usan los 5 `agents/*.py`, en
+    realidad es `tools.ficha.guardar_ficha_usuario_fusionada`: antes de
+    guardar, fusiona el `datos` nuevo sobre el `datos` de la última
+    versión (`{**previos, **nuevo}` — las claves nuevas ganan si hay
+    conflicto). Necesario porque confiar en que el modelo re-incluya
+    "proposito"/"sistema" en cada guardado posterior, tal como pide la
+    sección 7, no resultó confiable (bug real: el propósito ya guardado
+    desaparecía del panel de la interfaz apenas una fase posterior
+    guardaba sin re-incluirlo).
+14. La fusión del punto 13 no alcanza cuando una clave requerida NUNCA
+    se puso, ni siquiera en el guardado que la introduce (ej. el
+    Estratega cierra la ficha sin incluir "sistema" — no hay ningún
+    valor previo del que heredarlo). Por eso, después de cualquier
+    guardado real, `SesionTelos._campos_faltantes` relee la ficha ya
+    fusionada y, si a la fase que acaba de cerrar le sigue faltando
+    alguna clave de `_CAMPOS_REQUERIDOS_AL_CERRAR` (`proposito` desde
+    Fase 2, `sistema` desde Fase 4), fuerza un reintento pidiéndole al
+    modelo que vuelva a guardar incluyéndola.
 
 ## 2. Fase 1 — Explorador
 
@@ -884,7 +902,7 @@ current system: ... / Last updated: ...".
 
 | Tool | Firma | Usado por | Notas |
 |---|---|---|---|
-| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Vía AgentCore Memory (o backend JSON local en desarrollo). Cada llamada crea una nueva versión; nunca sobrescribe el historial. Convención de claves de `datos` (no forzada por esquema, pero todas las fases ≥2 tienen que respetarla porque Fase 5 y la interfaz leen la versión más reciente sin fusionar versiones viejas): desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas). Cada fase que guarda después de la 2 tiene que re-incluir estas claves aunque no las haya cambiado — omitirlas las hace desaparecer de la Vista de resumen y del panel de la interfaz, aunque sigan "vigentes" conceptualmente. El cuerpo real de la tool, en cada `agents/*.py`, también marca `SesionTelos._contenedor_guardado` (mismo patrón que `presentar_opciones`, fila de abajo) para que el Orquestador sepa con certeza que se ejecutó, sin depender de releer la ficha — ver sección 0.7. |
+| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Cada `agents/*.py` en realidad llama a `tools.ficha.guardar_ficha_usuario_fusionada`, no a la función base: fusiona `datos` sobre la última versión guardada (las claves nuevas ganan) antes de escribir, así una fase que se olvida de re-incluir "proposito"/"sistema" no los borra — ver sección 1, puntos 13-14. Vía AgentCore Memory (o backend JSON local en desarrollo); cada llamada crea una nueva versión, nunca sobrescribe el historial. Convención de claves de `datos`: desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas) — si una clave nunca se puso ni una sola vez, la fusión no tiene nada de qué heredarla, así que `SesionTelos._campos_faltantes` fuerza un reintento (sección 1, punto 14). El cuerpo real de la tool, en cada `agents/*.py`, también marca `SesionTelos._contenedor_guardado` (mismo patrón que `presentar_opciones`, fila de abajo) para que el Orquestador sepa con certeza que se ejecutó, sin depender de releer la ficha — ver sección 0.7. |
 | `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 3, 4, 5 | Devuelve la última versión y un resumen del historial de versiones (fase, fecha, motivo — no el contenido completo de versiones viejas). |
 | `presentar_opciones` | `(opciones: list[str]) -> str` | 2 (Sintetizador) | `agents/_modelo.py::crear_tool_presentar_opciones`. No persiste nada — solo le avisa a la sesión (`SesionTelos`) qué opciones mostrar como botones en este turno, vía un contenedor mutable compartido; el Orquestador la limpia antes de cada invocación y la entrega en la tupla `(fase, texto, opciones)`. Pensada para decisiones cerradas de un conjunto chico y conocido (el candidato de propósito); no se le agregó a las fases de preguntas abiertas (1, 3) porque ahí no hay un menú fijo que ofrecer, sería inventar estructura que el spec no pide. |
 | `guardar_nombre_usuario` / `leer_nombre_usuario` | `(usuario_id: str, nombre: str) -> None` / `(usuario_id: str) -> str \| None` | Orquestador, en el Paso 0 (código, no tool de ningún agente de fase) | `tools/perfil.py` (mismo selector de backend `TELOS_FICHA_BACKEND` que la ficha). No versiona -- a diferencia de `guardar_ficha_usuario`, cada guardado reemplaza el nombre vigente. Vive separado de la ficha a propósito: si fuera una clave más dentro de `datos`, se perdería de vista en cuanto una fase posterior guardara una versión nueva sin repetirla (ver la nota de la fila de arriba). |

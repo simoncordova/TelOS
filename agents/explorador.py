@@ -17,7 +17,7 @@ from agents._modelo import (
     crear_modelo,
     regla_nombre,
 )
-from tools.ficha import guardar_ficha_usuario as _guardar
+from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 
 # Tope de ejes: 5 (valores, flow, qué haría gratis, con qué recordarla,
 # qué evita) -- se lo repetimos al modelo como número concreto porque

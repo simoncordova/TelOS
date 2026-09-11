@@ -19,7 +19,7 @@ from agents._modelo import (
     crear_modelo,
     regla_nombre,
 )
-from tools.ficha import guardar_ficha_usuario as _guardar
+from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
 TIPOS_CHECKIN = ["cumplimiento", "autopercepcion", "ajuste"]

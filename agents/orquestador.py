@@ -217,6 +217,41 @@ _FRASE_CIERRE_FALSO = {
     ),
 }
 
+# Claves de `datos` que cada fase, al cerrar, tiene que garantizar que
+# existan en la ficha (ver tools/ficha.py::guardar_ficha_usuario_fusionada
+# y docs/agente-proposito-de-vida-prompts.md sección 7). La fusión ya
+# resuelve el caso de "el modelo se olvidó de re-incluir una clave que
+# una fase anterior ya había puesto" -- lo que NO resuelve es que una
+# clave nunca se haya puesto NINGUNA vez (ej. el Estratega cierra la
+# ficha sin incluir "sistema" -- no hay ningún valor previo del que
+# heredarlo). Esto se chequea después de cualquier guardado real
+# (`_contenedor_guardado`), releyendo la ficha ya fusionada.
+_CAMPOS_REQUERIDOS_AL_CERRAR = {
+    2: ("proposito",),
+    3: ("proposito",),
+    4: ("proposito", "sistema"),
+    5: ("proposito", "sistema"),
+}
+
+_FALTAN_CAMPOS = {
+    "es": (
+        "Guardaste el avance, pero a `datos` le faltó la clave {campos} "
+        "-- sin eso, la persona ve esa parte vacía en la interfaz aunque "
+        "ya la haya definido. Volvé a llamar a guardar_ficha_usuario en "
+        "tu respuesta a este mensaje, esta vez con {campos} incluida "
+        "(podés tomar el valor de lo que ya se habló en esta "
+        "conversación)."
+    ),
+    "en": (
+        "You saved the progress, but `datos` was missing the {campos} "
+        "key -- without it, the person sees that part empty in the UI "
+        "even though it's already been defined. Call "
+        "guardar_ficha_usuario again in your reply to this message, this "
+        "time including {campos} (you can take the value from what was "
+        "already discussed in this conversation)."
+    ),
+}
+
 
 def _turnos_a_mensajes(turnos: list[dict]) -> list[dict]:
     """Convierte los turnos guardados (tools/conversacion.py) al formato
@@ -384,15 +419,42 @@ class SesionTelos:
         patron = _FRASE_CIERRE_FALSO.get(self.idioma, _FRASE_CIERRE_FALSO["es"])
         return bool(patron.search(respuesta))
 
+    def _campos_faltantes(self, fase: int) -> tuple[str, ...]:
+        """Si guardar_ficha_usuario se ejecutó de verdad en la última
+        invocación (`_contenedor_guardado`) para `fase`, pero a la ficha
+        ya fusionada (`tools.ficha.guardar_ficha_usuario_fusionada`)
+        todavía le falta alguna clave que esa fase tiene que garantizar
+        (`_CAMPOS_REQUERIDOS_AL_CERRAR`), las devuelve. La fusión ya
+        resuelve "se olvidó de re-incluir una clave que una fase anterior
+        ya había puesto" -- esto detecta el caso que la fusión no puede
+        arreglar sola: que nunca se haya puesto, ni siquiera esta vez
+        (ej. el Estratega cierra la ficha sin incluir "sistema", que es
+        nuevo en esta fase, no hay ningún valor previo del que
+        heredarlo)."""
+        if not self._contenedor_guardado:
+            return ()
+        requeridos = _CAMPOS_REQUERIDOS_AL_CERRAR.get(fase, ())
+        if not requeridos:
+            return ()
+        ficha = leer_ficha_usuario(self.usuario_id)
+        datos = (ficha["actual"] or {}).get("datos", {}) if ficha["existe"] else {}
+        return tuple(campo for campo in requeridos if not (datos or {}).get(campo))
+
     def _invocar_verificado(self, texto: str) -> str:
         """Invoca y, si la respuesta suena a que ya guardó pero la tool
-        no se ejecutó de verdad, fuerza un reintento sin ambigüedad antes
-        de devolverla -- envoltorio de `_invocar` que se usa en todos los
-        puntos donde se invoca a un agente de fase, para que esta
-        verificación no dependa de acordarse de aplicarla cada vez."""
+        no se ejecutó de verdad, o si guardó mas le faltó alguna clave
+        obligatoria de esta fase, fuerza un reintento sin ambigüedad
+        antes de devolverla -- envoltorio de `_invocar` que se usa en
+        todos los puntos donde se invoca a un agente de fase, para que
+        estas verificaciones no dependan de acordarse de aplicarlas cada
+        vez."""
         respuesta = self._invocar(texto)
         if self._dice_que_guardo_sin_guardar(respuesta):
             respuesta = self._invocar(_FORZAR_CIERRE[self.idioma])
+        faltantes = self._campos_faltantes(self.fase_actual)
+        if faltantes:
+            campos = ", ".join(f'"{campo}"' for campo in faltantes)
+            respuesta = self._invocar(_FALTAN_CAMPOS[self.idioma].format(campos=campos))
         return respuesta
 
     def abrir_conversacion(self):
@@ -491,6 +553,15 @@ class SesionTelos:
             # de turnos de Fase 1): el texto suena a que ya guardó pero
             # la tool no se ejecutó -- bug real visto en el Sintetizador.
             respuesta = self._invocar(_FORZAR_CIERRE[self.idioma])
+
+        faltantes = self._campos_faltantes(fase_antes)
+        if faltantes:
+            # Guardó de verdad, pero le faltó una clave que esta fase
+            # tiene que garantizar (ej. "sistema" en el cierre de Fase 4)
+            # y que ninguna versión anterior tiene para heredar por
+            # fusión -- ver tools.ficha.guardar_ficha_usuario_fusionada.
+            campos = ", ".join(f'"{campo}"' for campo in faltantes)
+            respuesta = self._invocar(_FALTAN_CAMPOS[self.idioma].format(campos=campos))
 
         guardar_intercambio(self.usuario_id, fase_antes, texto, respuesta)
         yield fase_antes, respuesta, list(self._contenedor_opciones)

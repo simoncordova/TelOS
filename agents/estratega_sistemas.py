@@ -18,7 +18,7 @@ from agents._modelo import (
     regla_nombre,
 )
 from tools.calendario import crear_evento_calendario as _crear_evento
-from tools.ficha import guardar_ficha_usuario as _guardar
+from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
 _PLANTILLA_ES = """Eres el Estratega de Sistemas de Telos. La persona ya \

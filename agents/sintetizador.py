@@ -17,7 +17,7 @@ from agents._modelo import (
     crear_tool_presentar_opciones,
     regla_nombre,
 )
-from tools.ficha import guardar_ficha_usuario as _guardar
+from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
 _PLANTILLA_ES = """Eres el Sintetizador de Telos. Recibes la ficha cruda \

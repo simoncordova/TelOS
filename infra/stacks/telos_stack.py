@@ -282,7 +282,34 @@ class TelosStack(Stack):
             # calcula el hash del asset (para saber si hace falta
             # rebuild) recorriendo `directory` y un .venv de cientos de
             # MB ahí adentro lo vuelve lentísimo o lo cuelga.
-            exclude=[".venv", ".git", "infra", "data", "**/__pycache__", "*.md"],
+            #
+            # Fundamental (no solo performance): ui/Dockerfile solo copia
+            # requirements.txt/agents//tools//ui//.streamlit/ -- todo lo
+            # demás en la raíz (api/, web/, scripts/, tests/, docs/,
+            # conftest.py) tiene que estar excluido de este hash aunque no
+            # moleste al build en sí, porque CDK lo usa para decidir si
+            # cambió la imagen. Un cambio en api/ o web/ (rama
+            # gamificacion) sin este exclude cambiaba el hash igual,
+            # cambiaba imagen_ui.image_uri, y por
+            # user_data_causes_replacement=True terminaba reemplazando
+            # -- destruyendo y recreando -- la instancia de Streamlit en
+            # cada deploy de la parte nueva. Bug real, encontrado en un
+            # `cdk diff` antes de aplicarlo contra la cuenta real.
+            exclude=[
+                ".venv",
+                ".git",
+                "infra",
+                "data",
+                "api",
+                "web",
+                "scripts",
+                "tests",
+                "docs",
+                "conftest.py",
+                "LICENSE",
+                "**/__pycache__",
+                "*.md",
+            ],
         )
         # La instancia EC2 hace el pull directo de ECR (docker login +
         # docker run en el user data, ver abajo) -- antes esto lo hacía

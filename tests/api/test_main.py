@@ -113,3 +113,16 @@ def test_ficha_devuelve_snapshot(cliente):
     assert cuerpo["existe"] is True
     assert cuerpo["nombre"] == "Simón"
     assert "Vivir con intención" in cuerpo["vista_resumen"]
+
+
+def test_auth_me_devuelve_usuario(cliente):
+    respuesta = cliente.get("/api/auth/me")
+    assert respuesta.status_code == 200
+    assert respuesta.json() == {"usuarioId": "usuario-test", "nombre": "Simón"}
+
+
+def test_auth_me_401_sin_sesion():
+    main.app.dependency_overrides.clear()
+    with TestClient(main.app) as cliente_sin_auth:
+        respuesta = cliente_sin_auth.get("/api/auth/me")
+    assert respuesta.status_code == 401

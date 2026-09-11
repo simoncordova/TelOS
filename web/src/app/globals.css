@@ -27,3 +27,23 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+/* Port de st.balloons() -- Streamlit no tiene equivalente nativo acá,
+   así que esto es código genuinamente nuevo (ver plan de migración,
+   sección B). Sin librería de confetti: unos emoji flotando alcanza
+   para el mismo hito ("sistema completado"), sin una dependencia nueva
+   que justificar. */
+@keyframes globo-flotar {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-100vh);
+    opacity: 0;
+  }
+}
+
+.animar-globo {
+  animation: globo-flotar 3.2s ease-in forwards;
+}

@@ -1,27 +1,27 @@
-import { obtenerSalud } from "@/lib/api";
+import { obtenerAuthConfig } from "@/lib/api";
+import { obtenerUsuarioActual } from "@/lib/auth";
+import type { Idioma } from "@/lib/types";
+import { LoginScreen } from "@/components/LoginScreen";
+import { TelosApp } from "@/components/TelosApp";
 
-// Fase 0 de la migración (ver plan): esta página es a propósito solo un
-// placeholder que prueba el pipeline completo (build → Docker → EC2 →
-// CloudFront → fetch a la API real) antes de portar ningún componente
-// real de ui/app.py -- ese trabajo es la Fase 2.
-export default async function Home() {
-  const salud = await obtenerSalud();
+// Port del arranque de ui/app.py -- acá dividido en dos responsabilidades
+// que Streamlit mezcla en un solo script top-to-bottom: éste (Server
+// Component) decide auth/idioma inicial ANTES de renderizar nada
+// interactivo; TelosApp (Client Component) es todo lo que necesita
+// estado en el navegador (chat, SSE, festejos).
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ idioma?: string }>;
+}) {
+  const { idioma: idiomaParam } = await searchParams;
+  const idioma: Idioma = idiomaParam === "en" ? "en" : "es";
 
-  return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-      <h1 className="text-4xl font-semibold text-primary">Telos</h1>
-      <p className="max-w-md text-foreground/80">
-        El nuevo frontend está en construcción. La app completa sigue disponible en
-        Streamlit mientras tanto.
-      </p>
-      <p className="rounded-full bg-surface px-4 py-1 text-sm">
-        API:{" "}
-        {salud ? (
-          <span className="text-primary">conectada ({salud.estado})</span>
-        ) : (
-          <span className="text-foreground/60">sin conexión</span>
-        )}
-      </p>
-    </main>
-  );
+  const [usuario, config] = await Promise.all([obtenerUsuarioActual(), obtenerAuthConfig()]);
+
+  if (!usuario) {
+    return <LoginScreen idioma={idioma} />;
+  }
+
+  return <TelosApp usuarioId={usuario.usuarioId} requiereLogin={config.requiereLogin} idiomaInicial={idioma} />;
 }

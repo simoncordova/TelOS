@@ -427,29 +427,40 @@ class TelosStack(Stack):
             ),
         )
 
-        # --- API (rama gamificacion): backend delgado para el frontend
-        # Node.js nuevo -- ver C:\Users\Wendy\.claude\plans\
+        # --- Web + API (rama gamificacion): frontend Next.js nuevo y su
+        # backend delgado -- ver C:\Users\Wendy\.claude\plans\
         # cosmic-zooming-tarjan.md sección C. Instancia y distribución
         # propias, separadas de InstanciaUI/DistribucionUI a propósito:
-        # así un despliegue de la API (incluyendo un reemplazo por
+        # así un despliegue de esta parte (incluyendo un reemplazo por
         # user_data_causes_replacement) nunca puede interrumpir la
         # instancia que sirve Streamlit -- "mantener Streamlit
-        # desplegado" tiene que ser literal, no solo conceptual. Login
-        # todavía sin Cognito real acá (TELOS_REQUIRE_LOGIN=0, mismo
-        # mecanismo que ui/app.py) -- el App Client de Cognito recién se
-        # toca cuando el frontend Next.js exista de verdad (Fase 2 del
-        # plan), no antes.
-        api_url = CfnParameter(
+        # desplegado" tiene que ser literal, no solo conceptual.
+        #
+        # Los dos contenedores (API :8000, Next.js :3000) comparten esta
+        # misma instancia con --network host: es la forma más simple de
+        # que el Next.js server (Server Components corriendo del lado
+        # del server, no en el navegador) le hable a la API por
+        # http://localhost:8000 sin un hop extra por CloudFront ni una
+        # red Docker propia -- ver web/src/lib/api.ts. Un solo dominio de
+        # CloudFront enruta `/api/*` a la API y todo lo demás a Next.js,
+        # así el navegador nunca necesita CORS ni conocer dos dominios.
+        #
+        # Login todavía sin Cognito real acá (TELOS_REQUIRE_LOGIN=0,
+        # mismo mecanismo que ui/app.py) -- el App Client de Cognito
+        # recién se toca cuando el rediseño de Fase 2 del plan esté listo
+        # para probarse de punta a punta, no antes.
+        web_url = CfnParameter(
             self,
-            "ApiUrl",
+            "WebUrl",
             type="String",
-            default="https://localhost:8000",
+            default="https://localhost",
             description=(
-                "URL pública de la API. El primer deploy no la conoce "
-                "todavía -- deja el default, y haz un segundo deploy "
-                "pasando --parameters ApiUrl=<el output UrlServicioApi "
-                "del primer deploy> para que el redirect_uri de Cognito "
-                "quede bien configurado cuando se active el login real."
+                "URL pública del frontend Next.js + API. El primer "
+                "deploy no la conoce todavía -- deja el default, y haz "
+                "un segundo deploy pasando --parameters WebUrl=<el "
+                "output UrlServicioWeb del primer deploy> para que el "
+                "redirect_uri de Cognito quede bien configurado cuando "
+                "se active el login real."
             ),
         )
 
@@ -462,22 +473,35 @@ class TelosStack(Stack):
         )
         imagen_api.repository.grant_pull(rol_agentes)
 
+        imagen_web = ecr_assets.DockerImageAsset(
+            self,
+            "ImagenWeb",
+            # Contexto propio (web/), no la raíz del repo: a diferencia
+            # de ui/ y api/, el frontend Next.js no importa nada de
+            # agents/tools -- es un proyecto Node autocontenido que solo
+            # habla con la API por HTTP.
+            directory=str(_REPO_ROOT / "web"),
+            exclude=["node_modules", ".next", ".git"],
+        )
+        imagen_web.repository.grant_pull(rol_agentes)
+
         sg_instancia_web = ec2.SecurityGroup(
             self,
             "SgInstanciaWeb",
             vpc=vpc,
-            description="Permite trafico HTTP entrante a la API (8000).",
+            description="Permite trafico HTTP entrante a la API (8000) y a Next.js (3000).",
             allow_all_outbound=True,
         )
-        sg_instancia_web.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(8000), "API FastAPI (directo o via CloudFront)")
+        sg_instancia_web.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(8000), "API FastAPI (via CloudFront)")
+        sg_instancia_web.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(3000), "Next.js (via CloudFront)")
 
-        comandos_usuario_api = ec2.UserData.for_linux()
-        comandos_usuario_api.add_commands(
+        comandos_usuario_web = ec2.UserData.for_linux()
+        comandos_usuario_web.add_commands(
             "dnf install -y docker",
             "systemctl enable --now docker",
             f"aws ecr get-login-password --region {self.region} | "
             f"docker login --username AWS --password-stdin {self.account}.dkr.ecr.{self.region}.amazonaws.com",
-            "docker run -d --restart unless-stopped -p 8000:8000 "
+            "docker run -d --restart unless-stopped --network host "
             f'-e TELOS_AWS_REGION="{self.region}" '
             '-e TELOS_FICHA_BACKEND="agentcore" '
             '-e TELOS_REQUIRE_LOGIN="0" '
@@ -485,8 +509,13 @@ class TelosStack(Stack):
             f'-e COGNITO_USER_POOL_ID="{user_pool.user_pool_id}" '
             f'-e COGNITO_CLIENT_ID="{user_pool_client.user_pool_client_id}" '
             f'-e COGNITO_CLIENT_SECRET="{user_pool_client.user_pool_client_secret.unsafe_unwrap()}" '
-            f'-e APP_URL="{api_url.value_as_string}" '
+            f'-e APP_URL="{web_url.value_as_string}/api/auth/callback" '
             f"{imagen_api.image_uri}",
+            # --network host también acá: Next.js necesita pegarle a la
+            # API por localhost:8000 (ver web/src/lib/api.ts).
+            "docker run -d --restart unless-stopped --network host "
+            f'-e API_INTERNAL_URL="http://localhost:8000" '
+            f"{imagen_web.image_uri}",
         )
 
         instancia_web = ec2.Instance(
@@ -498,33 +527,50 @@ class TelosStack(Stack):
             machine_image=ec2.MachineImage.latest_amazon_linux2023(),
             security_group=sg_instancia_web,
             role=rol_agentes,
-            user_data=comandos_usuario_api,
+            user_data=comandos_usuario_web,
             user_data_causes_replacement=True,
             associate_public_ip_address=True,
         )
 
-        distribucion_api = cloudfront.Distribution(
+        distribucion_web = cloudfront.Distribution(
             self,
-            "DistribucionApi",
+            "DistribucionWeb",
             default_behavior=cloudfront.BehaviorOptions(
                 origin=origins.HttpOrigin(
                     instancia_web.instance_public_dns_name,
                     protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-                    http_port=8000,
+                    http_port=3000,
                 ),
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                 allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
                 cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
                 origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
             ),
+            additional_behaviors={
+                "/api/*": cloudfront.BehaviorOptions(
+                    origin=origins.HttpOrigin(
+                        instancia_web.instance_public_dns_name,
+                        protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+                        http_port=8000,
+                    ),
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    # ALL_VIEWER (no solo headers): la cookie de sesión
+                    # (api/auth.py) y el query string ?code=/&state= del
+                    # callback de Cognito tienen que llegar intactos al
+                    # origen, mismo motivo que DistribucionUI.
+                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
+                )
+            },
         )
 
         CfnOutput(
             self,
-            "UrlServicioApi",
-            value=f"https://{distribucion_api.distribution_domain_name}",
+            "UrlServicioWeb",
+            value=f"https://{distribucion_web.distribution_domain_name}",
             description=(
-                "Pasar como --parameters ApiUrl=<esta URL> en un segundo "
+                "Pasar como --parameters WebUrl=<esta URL> en un segundo "
                 "deploy. Probar con GET /api/salud."
             ),
         )
@@ -534,6 +580,6 @@ class TelosStack(Stack):
             value=instancia_web.instance_id,
             description=(
                 "Usar con `aws ssm start-session --target <esto>` para "
-                "entrar a la instancia de la API si el user data falla."
+                "entrar a la instancia de la API/Next.js si el user data falla."
             ),
         )

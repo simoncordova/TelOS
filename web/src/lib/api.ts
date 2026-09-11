@@ -11,7 +11,7 @@
 // sí puede usar rutas relativas ("/api/...") porque CloudFront enruta
 // /api/* al mismo origen (ver plan de migración sección C) -- no
 // necesita esta constante.
-const BASE_URL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "";
+export const BASE_URL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export async function obtenerSalud(): Promise<{ estado: string } | null> {
   try {
@@ -20,5 +20,15 @@ export async function obtenerSalud(): Promise<{ estado: string } | null> {
     return await respuesta.json();
   } catch {
     return null;
+  }
+}
+
+export async function obtenerAuthConfig(): Promise<{ requiereLogin: boolean }> {
+  try {
+    const respuesta = await fetch(`${BASE_URL}/api/auth/config`, { cache: "no-store" });
+    if (!respuesta.ok) return { requiereLogin: true };
+    return await respuesta.json();
+  } catch {
+    return { requiereLogin: true };
   }
 }

@@ -116,6 +116,14 @@ def auth_config() -> dict:
     return {"requiereLogin": requiere_login()}
 
 
+@app.get("/api/auth/me")
+def auth_me(usuario_id: str = Depends(obtener_usuario_actual)) -> dict:
+    """Único propósito: que web/ (Server Component, no puede leer una
+    cookie HttpOnly) sepa si hay sesión activa sin tener que arriesgar un
+    401 en una llamada que además le importa el resultado de negocio."""
+    return {"usuarioId": usuario_id, "nombre": leer_nombre_usuario(usuario_id)}
+
+
 # --- Conversación ---
 
 

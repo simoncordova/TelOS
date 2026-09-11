@@ -1,0 +1,19 @@
+# Dependencias de la API (rama gamificacion). Lista explícita en vez de
+# `-r ../requirements.txt` a propósito: ese archivo incluye streamlit,
+# que este contenedor no necesita -- api/ solo importa agents/*, tools/*
+# y ui/auth.py (que tampoco depende de streamlit). Mantener esta lista en
+# sync con la parte no-Streamlit de requirements.txt si esa cambia.
+#
+# Justificación de cada paquete nuevo frente a requirements.txt
+# (CLAUDE.md exige justificar dependencias nuevas):
+#   fastapi   -- capa HTTP que expone SesionTelos a un frontend separado;
+#                requisito estructural de desacoplar la UI, no una
+#                conveniencia (ver plan de migración, sección A).
+#   uvicorn   -- servidor ASGI que corre la app de FastAPI.
+strands-agents>=0.1.0
+boto3>=1.34.0
+bedrock-agentcore>=1.0.0
+requests>=2.31.0
+PyJWT[crypto]>=2.9.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0

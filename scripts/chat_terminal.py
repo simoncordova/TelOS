@@ -21,12 +21,22 @@ from agents.orquestador import SesionTelos  # noqa: E402
 from tools.ficha import leer_ficha_usuario  # noqa: E402
 
 _NOMBRES_FASE = {
+    0: "Bienvenida",
     1: "Explorador",
     2: "Sintetizador",
     3: "Coach de Validación",
     4: "Estratega de Sistemas",
     5: "Seguimiento",
 }
+
+
+def _imprimir(fase: int, parte: str, opciones: list[str]) -> None:
+    nombre_fase = _NOMBRES_FASE.get(fase, fase)
+    print(f"Telos [{nombre_fase}]: {parte}\n")
+    if opciones:
+        for i, opcion in enumerate(opciones, start=1):
+            print(f"  {i}) {opcion}")
+        print()
 
 
 def main() -> None:
@@ -39,9 +49,8 @@ def main() -> None:
     print("Escribe 'salir' para terminar, 'ficha' para ver el estado guardado.\n")
 
     # El agente habla primero, siempre -- nueva conversación o retomada.
-    for fase, parte in sesion.abrir_conversacion():
-        nombre_fase = _NOMBRES_FASE.get(fase, fase)
-        print(f"Telos [{nombre_fase}]: {parte}\n")
+    for fase, parte, opciones in sesion.abrir_conversacion():
+        _imprimir(fase, parte, opciones)
 
     while True:
         try:
@@ -60,9 +69,9 @@ def main() -> None:
 
         # Generador: si hay cambio de fase en este turno, imprime cada
         # mensaje apenas está listo (no espera a tener los dos juntos).
-        for fase, parte in sesion.enviar_mensaje(texto):
-            nombre_fase = _NOMBRES_FASE.get(fase, fase)
-            print(f"\nTelos [{nombre_fase}]: {parte}\n")
+        for fase, parte, opciones in sesion.enviar_mensaje(texto):
+            print()
+            _imprimir(fase, parte, opciones)
 
 
 if __name__ == "__main__":

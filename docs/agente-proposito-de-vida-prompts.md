@@ -33,6 +33,9 @@ Usuario
   │                          Mensaje fijo de crisis
   │                          (corta el flujo normal)
   │
+  ├─ Paso 0 (una sola vez, sin nombre guardado) ─> pide el nombre, sin
+  │    invocar ningún agente ni gastar Bedrock — ver sección 0.7
+  │
   ├─ fase=1 ─> Fase 1 Explorador
   ├─ fase=2 ─> Fase 2 Sintetizador
   ├─ fase=3 ─> Fase 3 Coach de Validación
@@ -47,6 +50,20 @@ Fases 1→2→3→4 son un **flujo fijo**: el Orquestador no permite saltarlas
 ni reordenarlas. Fase 5 es **dinámica**: no vive en la secuencia lineal,
 se dispara por evento (abrir sesión con ficha ya completa) y puede
 reinyectar al usuario en Fase 3 o 4 según lo que reporte.
+
+Esta secuencia (incluido el encadenado de una fase a la siguiente en el
+mismo turno) es lógica de control en Python plano
+(`agents/orquestador.py`), no algo que un prompt le pida al modelo que
+haga — el LLM nunca decide a qué fase rutear. Se evaluó mover esto a un
+servicio externo de orquestación (AWS Step Functions); se descartó para
+el MVP de hackathon porque el control ya es 100% determinístico en
+código, y agregar ese servicio sumaría infraestructura y tiempo de
+despliegue sin resolver ningún problema real que no estuviera ya
+resuelto. Lo que sí hacía falta arreglar — y es lo que motivó revisar
+esto — era que los prompts de cada fase *narraban* el mecanismo interno
+("te voy a pasar con el siguiente agente"), lo cual rompía la sensación
+de una sola conversación aunque el ruteo ya fuera correcto por código.
+Ver sección 0.7 y la regla compartida de transición en cada fase.
 
 ## 0.5 Idioma
 
@@ -94,6 +111,46 @@ se deja pasar (un guardrail de estilo no debería poder trabar la
 conversación). El mismo mecanismo (hook + chequeo determinístico) sirve
 para agregar otras verificaciones de calidad más adelante si hace
 falta.
+
+## 0.7 Nombre de la persona y transiciones transparentes
+
+**Captura del nombre (Paso 0):** antes de que exista cualquier fase, si
+todavía no hay un nombre guardado para ese `usuario_id`
+(`tools/perfil.py`, separado de la ficha — no versiona, no es el
+resultado de ninguna fase), el Orquestador pide el nombre directo en
+código, sin invocar ningún agente: cero costo de Bedrock salvo la
+extracción del nombre en sí, que sí usa una llamada mínima al modelo
+(sin tools, sin historial) porque parsear una respuesta libre como "me
+llamo Simón Cordova" con una regla determinística es frágil — es
+justo el tipo de tarea de texto libre que le corresponde al modelo, no
+al código, a diferencia del guardrail de crisis o el ruteo de fases. Esa
+extracción respeta el mismo límite diario de invocaciones que cualquier
+otra llamada real; si ya se alcanzó el límite, o si la extracción no
+devuelve nada usable, se usa un respaldo determinístico (primer token de
+lo que escribió la persona).
+
+Una vez capturado, el nombre se guarda una sola vez y se inyecta en el
+`system_prompt` de los 5 agentes de fase (parámetro `nombre=` en cada
+fábrica de `agents/*.py`, vía `agents/_modelo.py::regla_nombre`) para que
+se dirijan a la persona por su nombre de pila con naturalidad a lo largo
+de la conversación — no en cada mensaje, y nunca como un mail merge. El
+Explorador además lo usa en su saludo inicial. El nombre sobrevive a
+cualquier fase o re-entrada porque vive aparte de la ficha versionada; si
+falta (fichas de antes de esta función, o `TELOS_REQUIRE_LOGIN=0` en
+desarrollo sin login), cada prompt tiene que poder abrir igual de bien
+sin nombre para dirigirse a la persona.
+
+**Transiciones transparentes:** la persona nunca tiene que enterarse de
+que hay más de un agente. El Orquestador ya encadena el cierre de una
+fase con la apertura de la siguiente en el mismo turno (sección 1, punto
+5) — lo que faltaba era que los prompts de cada fase dejaran de narrar
+ese mecanismo ("te voy a pasar con el siguiente agente", "ahora te
+recibe el Validador", "cambio de rol"): eso le mostraba a la persona la
+costura interna del sistema. La regla compartida
+`agents/_modelo.py::REGLA_TRANSICION_ES/EN` prohíbe nombrar otro agente,
+otra fase, o el hecho de que la conversación "pasa" a otro lado; cada uno
+de los 5 prompts la referencia y tiene que cerrar su parte con una frase
+breve y cálida en vez de explicar el mecanismo.
 
 ## 1. Orquestador
 
@@ -146,9 +203,13 @@ resto de las capas (login obligatorio, un solo servidor sin
 auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 
 **Lógica (no es un prompt de modelo, es lógica de control):**
+0. Paso 0, una sola vez por usuario_id: si no hay nombre guardado
+   (`tools/perfil.py`), lo pide en código y no avanza al resto de esta
+   lógica hasta tenerlo — ver sección 0.7. No consume el límite diario
+   salvo por la extracción del nombre en sí.
 1. Recibe el mensaje del usuario.
 2. Llama `detectar_señal_crisis(texto)` SIEMPRE, antes de cualquier otra
-   cosa.
+   cosa (incluso durante el Paso 0).
 3. Si dispara → responde con el mensaje fijo de crisis (sección 6),
    registra el evento, NO avanza `fase_actual`, espera el próximo turno
    del usuario sin retomar automáticamente.
@@ -172,6 +233,23 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
    el agente de Fase 5 decide re-entrar a Fase 3 o 4, el Orquestador
    actualiza `fase_actual` a ese valor y guarda el motivo — esta
    re-entrada también cascadea en el mismo turno, igual que el punto 5.
+7. Cada mensaje que entrega `enviar_mensaje`/`abrir_conversacion` es una
+   tupla `(fase, texto, opciones)`, no solo `(fase, texto)`: `opciones`
+   es la lista (posiblemente vacía) que haya dejado la tool
+   `presentar_opciones` en esa invocación puntual (sección 7) — por
+   ahora solo la usa el Sintetizador, para el candidato de propósito.
+   Quien llama (`ui/app.py`) la usa para mostrar botones/un formulario en
+   vez de obligar a escribir la respuesta.
+8. Solo en Fase 1 (Explorador): si la fase lleva más de 8 preguntas del
+   agente sin cerrar, el Orquestador le agrega al texto que ve el modelo
+   (nunca a lo que se guarda en el historial visible) un recordatorio
+   interno de cerrar ya; a partir de 12, el recordatorio es más
+   insistente y le pide no hacer más preguntas nuevas. Esto es la red de
+   seguridad por código para la regla de cierre de la sección 2 — un
+   límite en el prompt (mejor que "cuando sientas que cubriste
+   terreno") igual puede fallar, y una conversación real llegó a más de
+   25 preguntas sin que el Explorador cerrara solo, hasta que la persona
+   tuvo que pedirlo explícitamente.
 
 ## 2. Fase 1 — Explorador
 
@@ -195,11 +273,14 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > pregunta.
 >
 > Haz una pregunta abierta a la vez. Espera la respuesta antes de seguir.
-> Sigue el hilo de lo que la persona ya dijo en vez de recitar una lista
-> fija de preguntas. Cubre, en el orden que fluya mejor según la
-> conversación, estos ejes (no los nombres en voz alta, son guía interna):
-> valores, momentos de flow/energía, qué haría sin que le paguen, con qué
-> le gustaría ser recordada, qué evita hacer aunque "debería".
+> Elige una sola pregunta y quédate con esa: nunca ofrezcas una segunda
+> como respaldo en el mismo turno. Sigue el hilo de lo que la persona ya
+> dijo en vez de recitar una lista fija de preguntas. Llevá la cuenta
+> interna (no en voz alta) de qué ejes ya cubriste, para no volver a
+> preguntar por el mismo eje con otras palabras — son exactamente estos
+> 5, cada uno se cubre una sola vez: valores, momentos de flow/energía,
+> qué haría sin que le paguen, con qué le gustaría ser recordada, qué
+> evita hacer aunque "debería".
 >
 > Tono: curioso, cercano, español neutro. IMPORTANTE sobre la
 > conjugación: usa siempre las formas de "tú" (tienes, quieres, eres,
@@ -209,10 +290,22 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > aunque nunca escribas el pronombre. Nada de jerga de self-help ni de
 > "coach motivacional" genérico.
 >
-> Cuando sientas que cubriste suficiente terreno (aproximadamente 4 a 6
-> ejes con algo de sustancia, no respuestas de una palabra), guarda el
-> avance con `guardar_ficha_usuario` y avisa a la persona que vas a
-> reflejarle lo que escuchaste — eso lo hace el siguiente agente.
+> Cierre — esto no es opcional ni "a criterio": en cuanto tengas algo de
+> sustancia en 4 de los 5 ejes, o como mucho después de 8 preguntas
+> tuyas en total (lo que llegue primero), cerrá la fase en ESE MISMO
+> turno: guarda el avance con `guardar_ficha_usuario`. No seas
+> exhaustivo — material suficiente es mejor que material perfecto. [regla
+> de transición compartida — sección 0.7: no anuncies que sigue otro
+> agente, cerrá con una frase breve y cálida]. [regla de nombre
+> compartida — sección 0.7: si sabés el nombre, usalo en el saludo]
+
+La versión original de esta regla de cierre decía "cuando sientas que
+cubriste suficiente terreno" — resultó demasiado elástica en producción
+(una conversación real superó las 25 preguntas, repitiendo ejes con otra
+redacción, hasta que la persona tuvo que pedir explícitamente que
+cerrara). El tope numérico de arriba es el reemplazo; el Orquestador
+además reintroduce el mismo tope por código como red de seguridad
+(sección 1, punto 8).
 
 **System prompt (English):**
 
@@ -234,20 +327,26 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > brief greeting, go straight to the first question.
 >
 > Ask one open question at a time. Wait for the answer before
-> continuing. Follow the thread of what the person already said instead
-> of reciting a fixed list of questions. Cover, in whatever order flows
-> best given the conversation, these areas (don't name them out loud,
-> they're internal guidance): values, flow/energy moments, what they'd
+> continuing. Pick one question and stick with it: never offer a second
+> one as a backup in the same turn. Follow the thread of what the person
+> already said instead of reciting a fixed list of questions. Keep an
+> internal (not spoken) tally of which areas you've already covered, so
+> you never ask about the same one again in different words — there are
+> exactly 5, each covered once: values, flow/energy moments, what they'd
 > do without getting paid, how they'd like to be remembered, what they
 > avoid doing even though they "should."
 >
 > Tone: curious, warm, casual, plain English. No self-help jargon, no
 > generic "motivational coach" voice.
 >
-> Once you feel you've covered enough ground (roughly 4 to 6 areas with
-> real substance, not one-word answers), save the progress with
-> `guardar_ficha_usuario` and let the person know you're going to
-> reflect back what you heard — that's the next agent's job.
+> Closing — this isn't optional or "your call": as soon as you have real
+> substance in 4 of the 5 areas, or after 8 of your own questions total
+> at the very most (whichever comes first), close the phase in THAT SAME
+> turn: save the progress with `guardar_ficha_usuario`. Don't be
+> exhaustive — good-enough material beats perfect material. [shared
+> transition rule — section 0.7: don't announce another agent is next,
+> close with a brief warm line] [shared name rule — section 0.7: if you
+> know their name, use it in the greeting]
 
 **Tools:** `guardar_ficha_usuario(usuario_id, datos, fase=1, motivo_version="avance exploración")`
 
@@ -279,8 +378,11 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > sienta vívido y propio en vez de una frase abstracta de calendario.
 > El ejemplo tiene que salir de algo que la persona realmente dijo —
 > inventar una escena genérica para que suene bien sería mentirle.
-> Después pregunta cuál resuena más, o si quiere combinar partes de
-> varios.
+> Después de escribir el mensaje, llamá a la tool `presentar_opciones`
+> con la frase corta de cada candidato (mismo orden, sin explicación ni
+> ejemplo) para que la interfaz muestre botones. Igual preguntá en tu
+> mensaje cuál resuena más, o si quiere combinar partes de varios, para
+> quien prefiera responder escribiendo.
 >
 > Tono: espejo reflexivo — vívido y concreto, no un vendedor de frases
 > genéricas. "Esto es lo que escuché, dime si resuena" — no "este es tu
@@ -292,8 +394,11 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > solo en si aparece la palabra "vos" escrita, así que evita esas
 > conjugaciones aunque nunca escribas el pronombre.
 >
-> Cuando la persona elige o combina un candidato, guarda esa elección con
-> `guardar_ficha_usuario` y pasa el control a la validación.
+> Cuando la persona elige o combina un candidato, guardá esa elección con
+> `guardar_ficha_usuario`. Pasale a `datos` la clave "proposito" con la
+> redacción final (string) — obligatoria, la leen las fases siguientes y
+> la interfaz. [regla de transición compartida — sección 0.7] [regla de
+> nombre compartida — sección 0.7]
 
 **System prompt (English):**
 
@@ -318,8 +423,12 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > would look like in practice, so it feels vivid and personal instead
 > of an abstract calendar phrase. The example has to come from
 > something the person actually said — making up a generic scene just
-> because it sounds good would be lying to them. Then ask which one
-> resonates most, or whether they'd like to blend parts of a few.
+> because it sounds good would be lying to them. After writing the
+> message, call the `presentar_opciones` tool with the short phrase of
+> each candidate (same order, no explanation or example) so the UI can
+> show buttons. Still ask in your message which one resonates most, or
+> whether they'd like to blend parts of a few, for anyone who'd rather
+> answer by typing.
 >
 > Tone: reflective mirror — vivid and concrete, not a generic-phrases
 > salesperson. "Here's what I heard, tell me if it resonates" — not
@@ -327,9 +436,11 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > truthfulness, not from exaggeration or a hype tone.
 >
 > Once the person picks or blends a candidate, save that choice with
-> `guardar_ficha_usuario` and hand off to validation.
+> `guardar_ficha_usuario`. Pass `datos` the key "proposito" with the
+> final wording (string) — required, later phases and the UI read it.
+> [shared transition rule — section 0.7] [shared name rule — section 0.7]
 
-**Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=2, motivo_version="propósito candidato elegido")`
+**Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=2, motivo_version="propósito candidato elegido")`, `presentar_opciones(opciones: list[str])`
 
 **Sale a:** Fase 3.
 
@@ -365,8 +476,11 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > esas conjugaciones aunque nunca escribas el pronombre.
 >
 > Cuando la persona confirma la redacción final, guárdala con
-> `guardar_ficha_usuario` junto con la evidencia que la respalda, y pasa
-> el control al diseño del sistema.
+> `guardar_ficha_usuario` junto con la evidencia que la respalda. Pasale
+> a `datos` la clave "proposito" con la redacción final (string) — la
+> misma clave que usó el Sintetizador, tiene que seguir presente acá
+> aunque solo hayas ajustado la redacción. [regla de transición
+> compartida — sección 0.7] [regla de nombre compartida — sección 0.7]
 
 **System prompt (English):**
 
@@ -394,8 +508,11 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > like "what a great goal!" with no substance behind it.
 >
 > Once the person confirms the final wording, save it with
-> `guardar_ficha_usuario` along with the supporting evidence, and hand
-> off to system design.
+> `guardar_ficha_usuario` along with the supporting evidence. Pass
+> `datos` the key "proposito" with the final wording (string) — the same
+> key the Synthesizer used, it has to stay present here even if you only
+> tweaked the wording. [shared transition rule — section 0.7] [shared
+> name rule — section 0.7]
 
 **Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=3, motivo_version="propósito validado con evidencia")`
 
@@ -441,10 +558,22 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 >
 > Cuando tengas las 4 respuestas, guarda el sistema completo con
 > `guardar_ficha_usuario` (esto cierra la ficha: propósito + sistema).
-> Ofrece, si aplica, agendar la acción con `crear_evento_calendario`.
-> Avisa a la persona que a partir de ahora, cada vez que abra una
-> conversación nueva, Telos va a hacer un check-in breve sobre este
-> sistema.
+> Pasale a `datos` DOS claves: "proposito" con la redacción vigente
+> (la misma que ya validó el Coach, aunque no haya cambiado en esta
+> fase) y "sistema" con un resumen en texto de las 4 respuestas, con un
+> salto de línea real entre cada una — porque la Vista de resumen de
+> Fase 5 y el panel de la interfaz muestran ambas claves de la versión
+> más reciente, y si falta "proposito" acá se pierde de vista aunque ya
+> esté validado. Ofrece, si aplica, agendar la acción con
+> `crear_evento_calendario`.
+>
+> Cierre de la sesión: como esta fase termina la ficha y la próxima vez
+> va a ser un check-in (no una fase nueva en esta misma conversación),
+> tu último mensaje tiene que sentirse como un cierre real, no un corte
+> abrupto — reconocé que por hoy esto es todo, y avisale con calidez que
+> la próxima vez que abra una conversación nueva vas a hacer un check-in
+> breve sobre este sistema. [regla de transición compartida — sección
+> 0.7] [regla de nombre compartida — sección 0.7]
 
 **System prompt (English):**
 
@@ -477,9 +606,22 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 >
 > Once you have all 4 answers, save the complete system with
 > `guardar_ficha_usuario` (this closes the intake: purpose + system).
-> Offer to schedule the action with `crear_evento_calendario` if it
-> applies. Let the person know that from now on, every time they open a
-> new conversation, Telos will do a brief check-in on this system.
+> Pass `datos` TWO keys: "proposito" with the current wording (the same
+> the Coach already validated, even if unchanged in this phase) and
+> "sistema" with a plain-text summary of the 4 answers, with a real line
+> break between each one — because Phase 5's summary view and the UI's
+> side panel show both keys from the most recent version, and if
+> "proposito" is missing here it drops out of sight even though it's
+> already validated. Offer to schedule the action with
+> `crear_evento_calendario` if it applies.
+>
+> Closing the session: since this phase closes the intake and next time
+> it'll be a check-in (not a new phase in this same conversation), your
+> last message has to feel like a real close, not an abrupt cutoff —
+> acknowledge this is it for today, and warmly let them know that next
+> time they open a new conversation you'll do a brief check-in on this
+> system. [shared transition rule — section 0.7] [shared name rule —
+> section 0.7]
 
 **Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=4, motivo_version="sistema de 4 preguntas definido")`, `crear_evento_calendario(usuario_id, detalle)` (P2 — ver sección 7)
 
@@ -495,9 +637,10 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 1. `leer_ficha_usuario` para obtener la última versión + fecha del último
    check-in + qué tipo de pregunta se usó la última vez (para no
    repetirla).
-2. Mostrar la **Vista de resumen**: propósito vigente + sistema vigente +
-   fecha de la última actualización. Nunca un contador de racha ni
-   "llevas X días seguidos" — ver reglas de tono (sección 8).
+2. Mostrar la **Vista de resumen**: saludo con el nombre de la persona si
+   se conoce (sección 0.7) + propósito vigente + sistema vigente + fecha
+   de la última actualización. Nunca un contador de racha ni "llevas X
+   días seguidos" — ver reglas de tono (sección 8).
 3. Hacer UNA sola pregunta de check-in, eligiendo un tipo distinto al de
    la sesión anterior, rotando entre:
    - **Cumplimiento:** ¿cómo te fue con el sistema desde la última vez?
@@ -532,8 +675,18 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 > por el Orquestador para este turno. Escucha la respuesta con la misma
 > calidez sin importar si la persona cumplió o no — no es un examen.
 > Si la respuesta indica que el sistema no funciona o el propósito ya no
-> resuena, dilo con naturalidad y ofrece pasar a rediseñarlo; no insistas
-> en mantener algo que la persona ya dijo que no le sirve.
+> resuena, dilo con naturalidad y ofrece pasar a rediseñarlo. Si la
+> persona acepta, seguí vos mismo con esa conversación de rediseño en tu
+> próximo mensaje — no lo anuncies como si otro agente fuera a tomar la
+> posta. [regla de transición compartida — sección 0.7]
+>
+> Cuando termines el check-in, guardá `datos` con: un resumen fiel en
+> palabras de la persona; las claves "proposito" y "sistema" con los
+> valores vigentes que ya leíste (sin cambios, salvo que este check-in
+> los haya ajustado) — si las omitís, el panel de la interfaz y el
+> próximo check-in dejan de verlas; y, si corresponde re-entrar a una
+> fase anterior, la clave "reentrada" con "fase3" o "fase4". [regla de
+> nombre compartida — sección 0.7]
 
 **System prompt (English, for the check-in's conversational part):**
 
@@ -546,8 +699,18 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 > to the answer with the same warmth regardless of whether the person
 > followed through or not — this isn't a test. If the answer indicates
 > the system isn't working or the purpose no longer resonates, say so
-> naturally and offer to redesign it; don't push to keep something the
-> person already said isn't serving them.
+> naturally and offer to redesign it. If they agree, just continue that
+> redesign conversation yourself in your next message — don't announce
+> it as if another agent is taking over. [shared transition rule —
+> section 0.7]
+>
+> When you finish the check-in, save `datos` with: a faithful summary in
+> the person's own words; the keys "proposito" and "sistema" with the
+> current values you already read (unchanged, unless this check-in
+> adjusted them) — omitting them makes the UI's side panel and the next
+> check-in lose track of them; and, if re-entering an earlier phase
+> applies, the key "reentrada" with "fase3" or "fase4". [shared name
+> rule — section 0.7]
 
 **Tipos de check-in (English):** compliance ("How did the system go
 since last time?"), self-perception ("Does this purpose still feel like
@@ -562,13 +725,15 @@ current system: ... / Last updated: ...".
 
 | Tool | Firma | Usado por | Notas |
 |---|---|---|---|
-| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Vía AgentCore Memory (o backend JSON local en desarrollo). Cada llamada crea una nueva versión; nunca sobrescribe el historial. |
+| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Vía AgentCore Memory (o backend JSON local en desarrollo). Cada llamada crea una nueva versión; nunca sobrescribe el historial. Convención de claves de `datos` (no forzada por esquema, pero todas las fases ≥2 tienen que respetarla porque Fase 5 y la interfaz leen la versión más reciente sin fusionar versiones viejas): desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas). Cada fase que guarda después de la 2 tiene que re-incluir estas claves aunque no las haya cambiado — omitirlas las hace desaparecer de la Vista de resumen y del panel de la interfaz, aunque sigan "vigentes" conceptualmente. |
 | `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 3, 4, 5 | Devuelve la última versión y un resumen del historial de versiones (fase, fecha, motivo — no el contenido completo de versiones viejas). |
+| `presentar_opciones` | `(opciones: list[str]) -> str` | 2 (Sintetizador) | `agents/_modelo.py::crear_tool_presentar_opciones`. No persiste nada — solo le avisa a la sesión (`SesionTelos`) qué opciones mostrar como botones en este turno, vía un contenedor mutable compartido; el Orquestador la limpia antes de cada invocación y la entrega en la tupla `(fase, texto, opciones)`. Pensada para decisiones cerradas de un conjunto chico y conocido (el candidato de propósito); no se le agregó a las fases de preguntas abiertas (1, 3) porque ahí no hay un menú fijo que ofrecer, sería inventar estructura que el spec no pide. |
+| `guardar_nombre_usuario` / `leer_nombre_usuario` | `(usuario_id: str, nombre: str) -> None` / `(usuario_id: str) -> str \| None` | Orquestador, en el Paso 0 (código, no tool de ningún agente de fase) | `tools/perfil.py` (mismo selector de backend `TELOS_FICHA_BACKEND` que la ficha). No versiona -- a diferencia de `guardar_ficha_usuario`, cada guardado reemplaza el nombre vigente. Vive separado de la ficha a propósito: si fuera una clave más dentro de `datos`, se perdería de vista en cuanto una fase posterior guardara una versión nueva sin repetirla (ver la nota de la fila de arriba). |
 | `detectar_señal_crisis` | `(texto: str) -> dict` | Orquestador, en cada turno (código, no tool del modelo) | Retorna `{"disparado": bool, "categoria": str \| None}`. Lista estática curada, sin llamada a modelo — determinístico. No se registra como tool de ningún agente de fase: exponerla al LLM la haría opcional para el modelo, y este guardrail no puede ser opcional. |
 | `crear_evento_calendario` | `(usuario_id: str, detalle: dict) -> dict` | Fase 4 | P2. Vía AgentCore Gateway envolviendo Google Calendar. Si no hay tiempo, se mockea devolviendo una confirmación fija sin llamar a ninguna API externa — el agente y su prompt no cambian, solo la implementación de la tool. |
 | `guardar_intercambio` | `(usuario_id: str, fase: int, texto_usuario: str, texto_asistente: str) -> None` | Orquestador, en cada turno real (código, no tool del modelo) | Vía AgentCore Memory (`create_event`, un evento conversacional por turno — distinto de `create_blob_event`, que usa `guardar_ficha_usuario`) o backend JSON local en desarrollo. No se expone como tool del modelo: es lógica de control del Orquestador, igual que `detectar_señal_crisis`. |
-| `leer_turnos` | `(usuario_id: str, fase: int) -> list[dict]` | Orquestador, al construir o reconstruir el agente de una fase | Devuelve los turnos guardados de esa fase en orden cronológico (`[{"rol": "user"\|"assistant", "texto": str}, ...]`); el Orquestador los convierte al formato `Message` de Strands y los precarga como historial real del agente. |
-| `excedio_limite_diario` / `registrar_invocacion` | `(usuario_id: str) -> bool` / `(usuario_id: str) -> int` | Orquestador, antes/después de cada invocación real al agente de fase (código, no tool del modelo) | Protección de costo (100 invocaciones/día por usuario), no una regla de producto. Backend JSON local — no vía AgentCore Memory: no hace falta un backend compartido entre instancias, la UI corre en una sola instancia EC2, sin auto-scaling (ver README). |
+| `leer_turnos` | `(usuario_id: str, fase: int) -> list[dict]` | Orquestador, al construir o reconstruir el agente de una fase | Devuelve los turnos guardados de esa fase en orden cronológico (`[{"rol": "user"\|"assistant", "texto": str}, ...]`); el Orquestador los convierte al formato `Message` de Strands y los precarga como historial real del agente. También se usa para contar cuántas preguntas lleva el Explorador (sección 1, punto 8). |
+| `excedio_limite_diario` / `registrar_invocacion` | `(usuario_id: str) -> bool` / `(usuario_id: str) -> int` | Orquestador, antes/después de cada invocación real al agente de fase (código, no tool del modelo) | Protección de costo (100 invocaciones/día por usuario), no una regla de producto. Backend JSON local — no vía AgentCore Memory: no hace falta un backend compartido entre instancias, la UI corre en una sola instancia EC2, sin auto-scaling (ver README). La extracción del nombre (Paso 0) también cuenta acá. |
 
 ## 8. Reglas de tono (todas las fases, con énfasis en Fase 5)
 
@@ -592,6 +757,11 @@ current system: ... / Last updated: ...".
 - Preguntas abiertas, una a la vez, en todas las fases excepto la salida
   estructurada de Fase 4 (las 4 preguntas del sistema son el producto,
   no el ritmo de la charla).
+- Nunca narrar el mecanismo interno de transición entre fases o agentes
+  ("te voy a pasar con el siguiente agente", "ahora te recibe el Coach",
+  "cambio de rol") — ver sección 0.7. La persona tiene que vivirlo como
+  una sola conversación continua, aunque por dentro sean 5 agentes
+  distintos rotando.
 
 ## 9. Privacidad y desacoplamiento de identidad
 
@@ -609,6 +779,11 @@ current system: ... / Last updated: ...".
   propia evolución sin que el sistema emita un juicio sobre ella.
 - El guardrail de crisis registra que se activó (flag + timestamp +
   categoría) pero no guarda el texto disparador verbatim a largo plazo.
+- El nombre de pila (sección 0.7, `tools/perfil.py`) es un identificador
+  literal para dirigirse a la persona, no un dato analizado ni derivado
+  — no cuenta como excepción a las reglas de arriba: no se infiere nada
+  a partir de él, no se usa para clasificar ni para personalizar el
+  contenido más allá de cómo se la nombra.
 
 ## 10. Guardrail de crisis
 

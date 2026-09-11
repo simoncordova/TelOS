@@ -17,6 +17,25 @@ del cierre de una fase, sin señal de que tiene que escribir algo para
 que continúe. La única excepción es al llegar a Fase 5: ese cierre es
 el fin natural de la sesión (el spec dice que Fase 5 se dispara "al
 abrir una conversación nueva", no en el mismo turno que cierra Fase 4).
+Este encadenado -- y no un prompt que le pida al modelo "avisale a la
+persona que sigue otro agente" -- es la máquina de estados real del
+producto: vive en código Python plano, se puede leer de punta a punta
+en este archivo, y no depende de que un LLM decida correctamente cuándo
+rutear. Los agentes de fase, en paralelo, tienen instrucciones explícitas
+de no narrar el mecanismo (agents/_modelo.py::REGLA_TRANSICION_ES/EN) —
+la persona nunca debería enterarse de que hay más de un agente.
+
+Paso 0, antes de la Fase 1: si todavía no se guardó un nombre de pila
+para este usuario_id (tools/perfil.py), la sesión completa arranca
+pidiéndolo -- sin invocar ningún agente de fase todavía, sin costo de
+Bedrock salvo la extracción del nombre en sí (ver `_extraer_nombre`).
+Esto es intencionalmente código, no un tool de ningún agente: el nombre
+no es una decisión conversacional de un agente de fase, es un dato de
+sesión que después se inyecta en los 5 prompts (`nombre=` en cada
+fábrica de agents/*.py) para que se dirijan a la persona por su nombre.
+Una vez capturado, la sesión sigue exactamente por la fase en la que ya
+estaba (no reinicia a Fase 1) -- esto cubre tanto a alguien nuevo como a
+una ficha vieja de antes de que existiera esta función.
 
 `enviar_mensaje` es un generador, no devuelve un string: cuando hay
 cascada, entrega el mensaje de la fase que cierra y el de la fase
@@ -25,13 +44,20 @@ tener los dos para mostrar todo junto de una — con el Sintetizador
 generando más contenido ahora (propósito + explicación + ejemplo por
 candidato), esperar a los dos combinados se sentía como que la app se
 había colgado. Quien llama (`ui/app.py`, `scripts/chat_terminal.py`)
-itera y muestra cada parte a medida que llega.
+itera y muestra cada parte a medida que llega. Cada elemento entregado es
+una tupla (fase, texto, opciones): `opciones` es una lista de strings (a
+veces vacía) que un agente de fase puede ofrecer vía la tool
+`presentar_opciones` (agents/_modelo.py) para que la interfaz la muestre
+como botones en vez de obligar a la persona a escribir la elección --
+por ahora solo la usa el Sintetizador, para elegir el propósito
+candidato.
 """
 
 import time
 
 from strands.agent import Agent
 
+from agents._modelo import crear_modelo
 from agents.coach_validacion import crear_agente_coach_validacion
 from agents.estratega_sistemas import crear_agente_estratega_sistemas
 from agents.explorador import crear_agente_explorador
@@ -41,6 +67,7 @@ from tools.conversacion import guardar_intercambio, leer_turnos
 from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
 from tools.ficha import leer_ficha_usuario
 from tools.limite_uso import excedio_limite_diario, mensaje_limite_alcanzado, registrar_invocacion
+from tools.perfil import guardar_nombre_usuario, leer_nombre_usuario
 
 _FABRICAS_POR_FASE = {
     1: crear_agente_explorador,
@@ -58,11 +85,101 @@ _KICKOFF = {
     "en": "Let's continue.",
 }
 
+# Paso 0: pedido de nombre, antes de que exista ninguna fase. Determinístico
+# y sin costo de Bedrock -- ver docstring del módulo.
+_PEDIR_NOMBRE = {
+    "es": "Antes de arrancar, ¿cómo te llamas? Así puedo llamarte por tu nombre en el resto de la conversación.",
+    "en": "Before we start, what's your first name? That way I can call you by it for the rest of our conversation.",
+}
+
+_EXTRAER_NOMBRE_PROMPT = {
+    "es": (
+        'Vas a recibir la respuesta de una persona a la pregunta "¿cómo te '
+        "llamas?\". Devolvé ÚNICAMENTE su primer nombre, con mayúscula "
+        "inicial, sin nada más -- ni saludo, ni puntuación, ni explicación. "
+        "Si el texto realmente no contiene ningún nombre, devolvé "
+        "exactamente: SIN_NOMBRE"
+    ),
+    "en": (
+        "You'll receive a person's reply to \"what's your first name?\". "
+        "Return ONLY their first name, capitalized, nothing else -- no "
+        "greeting, no punctuation, no explanation. If the text truly "
+        "contains no name, return exactly: NO_NAME"
+    ),
+}
+
+# Tope de preguntas del Explorador (Fase 1) antes de que el Orquestador
+# empiece a insistir por código en que cierre -- ver agents/explorador.py
+# para la instrucción equivalente en el prompt. Los dos frenos conviven a
+# propósito (ver docstring de ese archivo): el del prompt es el criterio
+# normal, este es la red de seguridad cuando el modelo no lo aplica solo
+# (bug real visto en producción: una conversación real pasó de 25
+# preguntas sin cerrar, hasta que la persona tuvo que pedirlo ella misma).
+_UMBRAL_NUDGE_EXPLORADOR = 8
+_UMBRAL_NUDGE_EXPLORADOR_FUERTE = 12
+_NUDGE_EXPLORADOR = {
+    "es": (
+        "\n\n[Nota interna del sistema, no se la muestres a la persona: ya "
+        "van bastantes preguntas en esta fase. Si ya tenés sustancia en 4 "
+        "de los 5 ejes, cerrá la fase en tu respuesta a este mismo mensaje "
+        "con guardar_ficha_usuario, en vez de seguir preguntando.]"
+    ),
+    "en": (
+        "\n\n[Internal system note, don't show this to the person: this "
+        "phase has had quite a few questions already. If you have "
+        "substance in 4 of the 5 areas, close the phase in your reply to "
+        "this very message with guardar_ficha_usuario instead of asking "
+        "more.]"
+    ),
+}
+_NUDGE_EXPLORADOR_FUERTE = {
+    "es": (
+        "\n\n[Nota interna del sistema, no se la muestres a la persona: "
+        "esta fase ya se extendió demasiado -- cerrala en tu respuesta a "
+        "este mismo mensaje con guardar_ficha_usuario, aunque algún eje "
+        "haya quedado con menos detalle del ideal. No hagas más preguntas "
+        "nuevas.]"
+    ),
+    "en": (
+        "\n\n[Internal system note, don't show this to the person: this "
+        "phase has run too long -- close it in your reply to this very "
+        "message with guardar_ficha_usuario, even if some area ended up "
+        "with less detail than ideal. Don't ask any more new questions.]"
+    ),
+}
+
 
 def _turnos_a_mensajes(turnos: list[dict]) -> list[dict]:
     """Convierte los turnos guardados (tools/conversacion.py) al formato
     de `Message` que espera Strands (`Agent(messages=...)`)."""
     return [{"role": t["rol"], "content": [{"text": t["texto"]}]} for t in turnos]
+
+
+def _extraer_nombre(texto: str, idioma: str, usuario_id: str) -> str:
+    """Extrae el primer nombre de la respuesta libre de la persona con una
+    llamada mínima al modelo (sin tools, sin historial) -- una respuesta
+    real como "me llamo Simón Cordova" o "soy Ana" no se puede parsear
+    con un split() confiable, así que esto es justo el tipo de tarea de
+    texto libre que conviene delegarle al modelo en vez de a una regex.
+    Respeta el límite diario igual que cualquier invocación real (cuenta
+    para `registrar_invocacion`); si ya se alcanzó el límite, o si la
+    extracción no devuelve nada usable, cae a un respaldo determinístico
+    (primer token de lo que escribió la persona tal cual)."""
+    marcador_vacio = "NO_NAME" if idioma == "en" else "SIN_NOMBRE"
+    if not excedio_limite_diario(usuario_id):
+        agente = Agent(
+            system_prompt=_EXTRAER_NOMBRE_PROMPT[idioma],
+            model=crear_modelo(),
+            callback_handler=None,
+        )
+        resultado = str(agente(texto)).strip()
+        registrar_invocacion(usuario_id)
+        if resultado and resultado.upper() != marcador_vacio:
+            return resultado.split()[0].strip(".,;:!¡?¿-").capitalize()
+
+    token = texto.strip().split()[0] if texto.strip() else ""
+    limpio = token.strip(".,;:!¡?¿-").capitalize()
+    return limpio or ("Friend" if idioma == "en" else "Amigo/a")
 
 
 class SesionTelos:
@@ -78,13 +195,26 @@ class SesionTelos:
     def __init__(self, usuario_id: str, idioma: str = "es"):
         self.usuario_id = usuario_id
         self.idioma = idioma
+        self.nombre = leer_nombre_usuario(usuario_id)
+        self._pidiendo_nombre = not bool(self.nombre)
+        # Contenedor mutable compartido con el agente de fase actual (ver
+        # agents._modelo.crear_tool_presentar_opciones): la tool de un
+        # agente lo llena durante self._agente(texto); _invocar lo limpia
+        # antes de cada invocación y quien llama a enviar_mensaje/
+        # abrir_conversacion lee la instantánea apenas termina esa
+        # invocación puntual.
+        self._contenedor_opciones: list = []
         self.fase_actual = self._determinar_fase_inicial()
-        self._agente: Agent = self._crear_agente_fase(self.fase_actual)
+        self._agente: Agent | None = None if self._pidiendo_nombre else self._crear_agente_fase(self.fase_actual)
 
     def _crear_agente_fase(self, fase: int) -> Agent:
         turnos = leer_turnos(self.usuario_id, fase)
         return _FABRICAS_POR_FASE[fase](
-            self.usuario_id, self.idioma, mensajes_previos=_turnos_a_mensajes(turnos)
+            self.usuario_id,
+            self.idioma,
+            mensajes_previos=_turnos_a_mensajes(turnos),
+            nombre=self.nombre,
+            contenedor_opciones=self._contenedor_opciones,
         )
 
     def _invocar(self, texto: str) -> str:
@@ -97,9 +227,24 @@ class SesionTelos:
         igual, así que cada una cuenta para el límite."""
         if excedio_limite_diario(self.usuario_id):
             return mensaje_limite_alcanzado(self.idioma)
+        self._contenedor_opciones.clear()
         respuesta = str(self._agente(texto))
         registrar_invocacion(self.usuario_id)
         return respuesta
+
+    def _con_nudge_si_corresponde(self, texto: str) -> str:
+        """Le agrega al texto que ve el modelo (nunca a lo que se guarda
+        en tools/conversacion.py) un recordatorio interno de cerrar la
+        fase si el Explorador ya lleva demasiados turnos -- ver
+        _UMBRAL_NUDGE_EXPLORADOR arriba."""
+        if self.fase_actual != 1:
+            return texto
+        turnos_previos = len(leer_turnos(self.usuario_id, 1)) // 2
+        if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR_FUERTE:
+            return texto + _NUDGE_EXPLORADOR_FUERTE[self.idioma]
+        if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR:
+            return texto + _NUDGE_EXPLORADOR[self.idioma]
+        return texto
 
     def abrir_conversacion(self):
         """Generador: el agente de la fase actual habla primero, sin
@@ -109,12 +254,19 @@ class SesionTelos:
         incluso en Fase 5, que según el spec tiene que mostrar la Vista
         de resumen apenas se abre la conversación, no después.
 
+        Si todavía no se capturó el nombre de la persona (Paso 0), lo
+        pide directo en código, sin invocar ningún agente.
+
         No revisa el guardrail de crisis (no hay texto de la persona
         que revisar) ni avanza de fase (abrir no cierra nada)."""
+        if self._pidiendo_nombre:
+            yield 0, _PEDIR_NOMBRE[self.idioma], []
+            return
+
         kickoff = _KICKOFF[self.idioma]
         respuesta = self._invocar(kickoff)
         guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
-        yield self.fase_actual, respuesta
+        yield self.fase_actual, respuesta, list(self._contenedor_opciones)
 
     def _determinar_fase_inicial(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)
@@ -125,20 +277,46 @@ class SesionTelos:
         # sesión nueva entra directo a seguimiento, no retoma la fase 4.
         return 5 if fase_guardada >= 4 else fase_guardada
 
+    def _capturar_nombre(self, texto: str):
+        """Cierra el Paso 0: guarda el nombre, arma recién ahora el
+        agente de la fase en la que ya estaba esta persona (nueva o
+        retomada) y lo hace hablar primero en el mismo turno, con el
+        mismo mecanismo de arranque que una cascada de cambio de fase --
+        así la persona nunca ve un chat esperando en silencio después de
+        contestar."""
+        nombre = _extraer_nombre(texto, self.idioma, self.usuario_id)
+        guardar_nombre_usuario(self.usuario_id, nombre)
+        self.nombre = nombre
+        self._pidiendo_nombre = False
+        self._agente = self._crear_agente_fase(self.fase_actual)
+
+        kickoff = _KICKOFF[self.idioma]
+        respuesta = self._invocar(kickoff)
+        guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
+        yield self.fase_actual, respuesta, list(self._contenedor_opciones)
+
     def enviar_mensaje(self, texto: str):
-        """Generador: entrega (fase, texto) por cada mensaje, en el orden
-        en que se van generando -- no un solo string con todo junto."""
+        """Generador: entrega (fase, texto, opciones) por cada mensaje, en
+        el orden en que se van generando -- no un solo string con todo
+        junto. `opciones` es la lista (posiblemente vacía) que haya
+        dejado la tool `presentar_opciones` en esta invocación -- ver
+        docstring del módulo."""
         resultado_crisis = detectar_señal_crisis(texto)
         if resultado_crisis["disparado"]:
             registrar_evento_crisis(self.usuario_id, resultado_crisis["categoria"])
-            yield self.fase_actual, mensaje_crisis(self.idioma)
+            yield self.fase_actual, mensaje_crisis(self.idioma), []
+            return
+
+        if self._pidiendo_nombre:
+            yield from self._capturar_nombre(texto)
             return
 
         fase_antes = self.fase_actual
         total_versiones_antes = self._contar_versiones()
-        respuesta = self._invocar(texto)
+        texto_efectivo = self._con_nudge_si_corresponde(texto)
+        respuesta = self._invocar(texto_efectivo)
         guardar_intercambio(self.usuario_id, fase_antes, texto, respuesta)
-        yield fase_antes, respuesta
+        yield fase_antes, respuesta, list(self._contenedor_opciones)
 
         self._avanzar_fase_si_corresponde(total_versiones_antes)
 
@@ -153,7 +331,7 @@ class SesionTelos:
             kickoff = _KICKOFF[self.idioma]
             continuacion = self._invocar(kickoff)
             guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, continuacion)
-            yield self.fase_actual, continuacion
+            yield self.fase_actual, continuacion, list(self._contenedor_opciones)
 
     def _contar_versiones(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)

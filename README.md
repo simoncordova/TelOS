@@ -27,6 +27,8 @@ Usuario
   │                          Mensaje fijo de crisis
   │                          (corta el flujo normal)
   │
+  ├─ Paso 0 (una vez, sin nombre guardado) ─> pide el nombre, sin LLM
+  │
   ├─ fase 1 ─> Explorador           ─┐
   ├─ fase 2 ─> Sintetizador          │  flujo fijo,
   ├─ fase 3 ─> Coach de Validación   │  no se saltan fases

@@ -7,11 +7,18 @@ anclados a algo específico que la persona dijo, no frases genéricas.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo
+from agents._modelo import (
+    REGLA_CONJUGACION_ES,
+    REGLA_TRANSICION_ES,
+    REGLA_TRANSICION_EN,
+    crear_modelo,
+    crear_tool_presentar_opciones,
+    regla_nombre,
+)
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
-SYSTEM_PROMPT_ES = """Eres el Sintetizador de Telos. Recibes la ficha cruda \
+_PLANTILLA_ES = """Eres el Sintetizador de Telos. Recibes la ficha cruda \
 que dejó el Explorador. Tu trabajo es reflejarle a la persona 2 o 3 \
 propósitos candidatos, cada uno anclado a algo específico y concreto que \
 ella dijo — nunca una frase genérica de calendario motivacional. Si un \
@@ -32,20 +39,28 @@ escena, una actividad, un momento que ya contó) que muestre cómo se \
 vería ese propósito en la práctica, para que se sienta vívido y propio \
 en vez de una frase abstracta de calendario. El ejemplo tiene que salir \
 de algo que la persona realmente dijo — inventar una escena genérica \
-para que suene bien sería mentirle. Después pregunta cuál resuena más, \
-o si quiere combinar partes de varios.
+para que suene bien sería mentirle. Después de escribir el mensaje, \
+llamá a la tool presentar_opciones con la frase corta de cada candidato \
+(en el mismo orden en que los presentaste, sin la explicación ni el \
+ejemplo) — eso hace que la interfaz le muestre botones a la persona para \
+elegir directo, sin tener que escribir el número. Igual preguntá en tu \
+mensaje cuál resuena más, o si quiere combinar partes de varios, para \
+la persona que prefiera responder escribiendo.
 
 Tono: espejo reflexivo — vívido y concreto, no un vendedor de frases \
 genéricas. "Esto es lo que escuché, dime si resuena" — no "este es tu \
 propósito". La fuerza viene de lo específico y real, no de exagerar o \
 de un tono de hype. Español neutro. {regla_conjugacion}
 
-Cuando la persona elige o combina un candidato, guarda esa elección con \
-guardar_ficha_usuario y pasa el control a la validación.""".format(
-    regla_conjugacion=REGLA_CONJUGACION_ES
-)
+Cuando la persona elige o combina un candidato, guardá esa elección con \
+guardar_ficha_usuario. Pasale a `datos` la clave "proposito" con la \
+redacción final elegida (string) — esa clave la van a seguir leyendo las \
+fases siguientes y la interfaz, así que es obligatoria, no opcional. \
+{regla_transicion}
 
-SYSTEM_PROMPT_EN = """You are Telos's Synthesizer. You receive the raw \
+{regla_nombre}"""
+
+_PLANTILLA_EN = """You are Telos's Synthesizer. You receive the raw \
 notes the Explorer left behind. Your job is to reflect back 2 or 3 \
 candidate purposes, each anchored to something specific and concrete the \
 person said — never a generic motivational-calendar phrase. If a \
@@ -66,8 +81,13 @@ a moment they already mentioned) showing what this purpose would look \
 like in practice, so it feels vivid and personal instead of an \
 abstract calendar phrase. The example has to come from something the \
 person actually said — making up a generic scene just because it \
-sounds good would be lying to them. Then ask which one resonates most, \
-or whether they'd like to blend parts of a few.
+sounds good would be lying to them. After writing the message, call the \
+presentar_opciones tool with the short phrase of each candidate (same \
+order you presented them, no explanation or example) — that makes the \
+interface show the person clickable buttons instead of having to type \
+a number. Still ask in your message which one resonates most, or \
+whether they'd like to blend parts of a few, for anyone who'd rather \
+answer by typing.
 
 Tone: reflective mirror — vivid and concrete, not a generic-phrases \
 salesperson. "Here's what I heard, tell me if it resonates" — not \
@@ -75,10 +95,34 @@ salesperson. "Here's what I heard, tell me if it resonates" — not \
 truthfulness, not from exaggeration or a hype tone.
 
 Once the person picks or blends a candidate, save that choice with \
-guardar_ficha_usuario and hand off to validation."""
+guardar_ficha_usuario. Pass `datos` the key "proposito" with the final \
+wording chosen (string) — later phases and the UI keep reading that \
+key, so it's required, not optional. {regla_transicion}
+
+{regla_nombre}"""
 
 
-def crear_agente_sintetizador(usuario_id: str, idioma: str = "es", mensajes_previos: list | None = None) -> Agent:
+def crear_agente_sintetizador(
+    usuario_id: str,
+    idioma: str = "es",
+    mensajes_previos: list | None = None,
+    nombre: str | None = None,
+    contenedor_opciones: list | None = None,
+) -> Agent:
+    if contenedor_opciones is None:
+        contenedor_opciones = []
+    if idioma == "en":
+        system_prompt = _PLANTILLA_EN.format(
+            regla_transicion=REGLA_TRANSICION_EN,
+            regla_nombre=regla_nombre(nombre, idioma),
+        )
+    else:
+        system_prompt = _PLANTILLA_ES.format(
+            regla_conjugacion=REGLA_CONJUGACION_ES,
+            regla_transicion=REGLA_TRANSICION_ES,
+            regla_nombre=regla_nombre(nombre, idioma),
+        )
+
     @tool
     def leer_ficha_usuario() -> dict:
         """Lee la última versión de la ficha del usuario y su historial."""
@@ -90,8 +134,8 @@ def crear_agente_sintetizador(usuario_id: str, idioma: str = "es", mensajes_prev
         _guardar(usuario_id, datos, fase=2, motivo_version=motivo_version)
 
     return Agent(
-        system_prompt=SYSTEM_PROMPT_EN if idioma == "en" else SYSTEM_PROMPT_ES,
-        tools=[leer_ficha_usuario, guardar_ficha_usuario],
+        system_prompt=system_prompt,
+        tools=[leer_ficha_usuario, guardar_ficha_usuario, crear_tool_presentar_opciones(contenedor_opciones)],
         # Precarga los turnos ya guardados de esta fase (ver explorador.py).
         messages=mensajes_previos,
         model=crear_modelo(),

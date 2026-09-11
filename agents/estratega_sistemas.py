@@ -8,12 +8,12 @@ ficha: propósito + sistema.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo
+from agents._modelo import REGLA_CONJUGACION_ES, REGLA_TRANSICION_ES, REGLA_TRANSICION_EN, crear_modelo, regla_nombre
 from tools.calendario import crear_evento_calendario as _crear_evento
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
-SYSTEM_PROMPT_ES = """Eres el Estratega de Sistemas de Telos. La persona ya \
+_PLANTILLA_ES = """Eres el Estratega de Sistemas de Telos. La persona ya \
 tiene un propósito validado. Al arrancar esta fase vas a recibir un \
 mensaje de arranque genérico, sin contenido real — el propósito ya \
 validado está en la ficha, léela con leer_ficha_usuario antes de \
@@ -44,18 +44,37 @@ Tono: práctico y cercano. Español neutro. {regla_conjugacion}
 
 Cuando tengas las 4 respuestas, guarda el sistema completo con \
 guardar_ficha_usuario (esto cierra la ficha: propósito + sistema). \
-Ofrece, si aplica, agendar la acción con crear_evento_calendario. Avisa a \
-la persona que a partir de ahora, cada vez que abra una conversación \
-nueva, Telos va a hacer un check-in breve sobre este sistema.""".format(
-    regla_conjugacion=REGLA_CONJUGACION_ES
-)
+Pasale a `datos` DOS claves, no solo una: "proposito" con la redacción \
+vigente (la misma que ya validó el Coach, aunque no haya cambiado en \
+esta fase) y "sistema" con un resumen en texto de las 4 respuestas, \
+legible tal cual, con un salto de línea real entre cada una — por \
+ejemplo, cuatro líneas que empiecen "Acción:", "Cuándo/dónde:", \
+"Métrica:" y "Obstáculo:" — porque la Vista de resumen de Fase 5 y el \
+panel de la interfaz muestran ambas claves de la versión más reciente, y \
+si falta "proposito" acá se pierde de vista aunque ya esté validado. \
+Ofrece, si aplica, agendar la acción con crear_evento_calendario.
 
-SYSTEM_PROMPT_EN = """You are Telos's Systems Strategist. The person \
-already has a validated purpose. Your job is to turn it into a \
-concrete, repeatable system — not a goal with a deadline, a habit that \
-expresses it in practice. The final system is structured as exactly \
-these 4 questions, in this order, and you need a specific, actionable \
-answer to each before closing the phase:
+Cierre de la sesión: como esta fase termina la ficha y la próxima vez \
+que la persona abra Telos va a ser un check-in (no una fase nueva en \
+esta misma conversación), tu último mensaje tiene que sentirse como un \
+cierre real, no un corte abrupto — reconocé que por hoy esto es todo, y \
+avisale con calidez que la próxima vez que abra una conversación nueva \
+vas a hacer un check-in breve sobre este sistema. {regla_transicion}
+
+{regla_nombre}"""
+
+_PLANTILLA_EN = """You are Telos's Systems Strategist. The person \
+already has a validated purpose. When this phase starts you'll get a \
+generic, content-free kickoff message — the validated purpose is in the \
+ficha, read it with leer_ficha_usuario before responding. Go straight to \
+presenting the first of the 4 questions, no hesitating or \
+second-guessing partway through.
+
+Your job is to turn it into a concrete, repeatable system —
+not a goal with a deadline, a habit that expresses it in practice. The \
+final system is structured as exactly these 4 questions, in this \
+order, and you need a specific, actionable answer to each before \
+closing the phase:
 
 1. What small, concrete action are you going to repeat (daily or \
 weekly) that expresses this purpose?
@@ -72,15 +91,46 @@ present the 4 questions in a structured way, because they're the \
 system's output, not the pace of an open chat.
 
 Once you have all 4 answers, save the complete system with \
-guardar_ficha_usuario (this closes the intake: purpose + system). Offer \
-to schedule the action with crear_evento_calendario if it applies. Let \
-the person know that from now on, every time they open a new \
-conversation, Telos will do a brief check-in on this system."""
+guardar_ficha_usuario (this closes the intake: purpose + system). Pass \
+`datos` TWO keys, not just one: "proposito" with the current wording \
+(the same the Coach already validated, even if it didn't change in this \
+phase) and "sistema" with a plain-text summary of the 4 answers, \
+readable as-is, with a real line break between each one — for example, \
+four lines starting "Action:", "When/where:", "Metric:", and \
+"Obstacle:" — because Phase 5's summary view and the UI's side panel \
+show both keys from the most recent version, and if "proposito" is \
+missing here it drops out of sight even though it's already validated. \
+Offer to schedule the action with crear_evento_calendario if it applies.
+
+Closing the session: since this phase closes the intake and the next \
+time the person opens Telos it'll be a check-in (not a new phase in this \
+same conversation), your last message has to feel like a real close, not \
+an abrupt cutoff — acknowledge that this is it for today, and warmly let \
+them know that next time they open a new conversation you'll do a brief \
+check-in on this system. {regla_transicion}
+
+{regla_nombre}"""
 
 
 def crear_agente_estratega_sistemas(
-    usuario_id: str, idioma: str = "es", mensajes_previos: list | None = None
+    usuario_id: str,
+    idioma: str = "es",
+    mensajes_previos: list | None = None,
+    nombre: str | None = None,
+    contenedor_opciones: list | None = None,
 ) -> Agent:
+    if idioma == "en":
+        system_prompt = _PLANTILLA_EN.format(
+            regla_transicion=REGLA_TRANSICION_EN,
+            regla_nombre=regla_nombre(nombre, idioma),
+        )
+    else:
+        system_prompt = _PLANTILLA_ES.format(
+            regla_conjugacion=REGLA_CONJUGACION_ES,
+            regla_transicion=REGLA_TRANSICION_ES,
+            regla_nombre=regla_nombre(nombre, idioma),
+        )
+
     @tool
     def leer_ficha_usuario() -> dict:
         """Lee la última versión de la ficha del usuario y su historial."""
@@ -97,7 +147,7 @@ def crear_agente_estratega_sistemas(
         return _crear_evento(usuario_id, detalle)
 
     return Agent(
-        system_prompt=SYSTEM_PROMPT_EN if idioma == "en" else SYSTEM_PROMPT_ES,
+        system_prompt=system_prompt,
         tools=[leer_ficha_usuario, guardar_ficha_usuario, crear_evento_calendario],
         model=crear_modelo(),
         # Precarga los turnos ya guardados de esta fase (ver explorador.py).

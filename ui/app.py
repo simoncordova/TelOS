@@ -7,6 +7,15 @@ Cognito (ui/auth.py) — ver ese módulo para la config necesaria.
 Idioma: selector explícito ES/EN (no autodetección) — ver sección 0.5 de
 docs/agente-proposito-de-vida-prompts.md. El guardrail de crisis revisa
 ambos idiomas siempre, sin importar lo que esté seleccionado acá.
+
+Layout: el chat ocupa la columna principal; al lado, un panel angosto
+("Tus resultados") muestra el propósito y el sistema tal como están
+guardados en la ficha en este momento -- no hay que esperar a que la
+conversación termine ni desplazarse para encontrarlos (ver PLAN.md /
+feedback de UX: los activos que se van logrando tienen que verse, no
+vivir escondidos adentro del chat). Se relee la ficha en cada rerun de
+Streamlit, así que se actualiza solo apenas un agente guarda una versión
+nueva.
 """
 
 import os
@@ -19,12 +28,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ui.auth as auth  # noqa: E402
 from agents.orquestador import SesionTelos  # noqa: E402
+from tools.ficha import leer_ficha_usuario  # noqa: E402
 
 st.set_page_config(page_title="Telos", page_icon="🧭")
 
 _NOMBRES_FASE = {
-    "es": {1: "Explorador", 2: "Sintetizador", 3: "Coach de Validación", 4: "Estratega de Sistemas", 5: "Seguimiento"},
-    "en": {1: "Explorer", 2: "Synthesizer", 3: "Validation Coach", 4: "Systems Strategist", 5: "Follow-up"},
+    "es": {0: "Bienvenida", 1: "Explorador", 2: "Sintetizador", 3: "Coach de Validación", 4: "Estratega de Sistemas", 5: "Seguimiento"},
+    "en": {0: "Welcome", 1: "Explorer", 2: "Synthesizer", 3: "Validation Coach", 4: "Systems Strategist", 5: "Follow-up"},
 }
 
 _TEXTOS = {
@@ -33,6 +43,7 @@ _TEXTOS = {
         "login_button": "Iniciar sesión",
         "logout_button": "Cerrar sesión",
         "connected_as": "Conectado como {usuario_id}",
+        "saludo_nombre": "Hola, {nombre}",
         "cognito_missing": (
             "Falta configurar Cognito (COGNITO_DOMAIN / COGNITO_USER_POOL_ID / "
             "COGNITO_CLIENT_ID / COGNITO_CLIENT_SECRET / APP_URL). Si estás "
@@ -45,12 +56,20 @@ _TEXTOS = {
         "chat_placeholder": "Escribe aquí...",
         "spinner": "...",
         "idioma_label": "Idioma / Language",
+        "panel_titulo": "Tus resultados",
+        "panel_proposito": "Propósito",
+        "panel_sistema": "Sistema",
+        "panel_vacio_proposito": "Todavía no lo definiste.",
+        "panel_vacio_sistema": "Todavía no lo definiste.",
+        "opciones_titulo": "Elegí una opción, o escribí tu respuesta abajo:",
+        "opciones_submit": "Elegir",
     },
     "en": {
         "caption": "Purpose isn't a goal to reach, it's a horizon.",
         "login_button": "Sign in",
         "logout_button": "Sign out",
         "connected_as": "Signed in as {usuario_id}",
+        "saludo_nombre": "Hi, {nombre}",
         "cognito_missing": (
             "Cognito isn't configured (COGNITO_DOMAIN / COGNITO_USER_POOL_ID / "
             "COGNITO_CLIENT_ID / COGNITO_CLIENT_SECRET / APP_URL). If you're "
@@ -63,6 +82,13 @@ _TEXTOS = {
         "chat_placeholder": "Type here...",
         "spinner": "...",
         "idioma_label": "Idioma / Language",
+        "panel_titulo": "Your results",
+        "panel_proposito": "Purpose",
+        "panel_sistema": "System",
+        "panel_vacio_proposito": "Not defined yet.",
+        "panel_vacio_sistema": "Not defined yet.",
+        "opciones_titulo": "Pick one, or type your own answer below:",
+        "opciones_submit": "Choose",
     },
 }
 
@@ -139,40 +165,105 @@ if st.session_state.get("clave_sesion") != clave_sesion:
     nueva_sesion = SesionTelos(usuario_id, idioma=idioma)
     st.session_state["sesion"] = nueva_sesion
     st.session_state["mensajes"] = []
+    st.session_state["opciones_pendientes"] = []
     # El agente habla primero, siempre -- nueva conversación o retomada
     # (Fase 5 en particular tiene que mostrar la Vista de resumen apenas
-    # se abre, no después de que la persona adivine qué escribir).
+    # se abre, no después de que la persona adivine qué escribir). Si
+    # todavía no se sabe el nombre de la persona, esto es el Paso 0
+    # (agents/orquestador.py) pidiéndolo, sin invocar ningún agente.
     with st.spinner(t["spinner"]):
-        for _fase, parte in nueva_sesion.abrir_conversacion():
+        for _fase, parte, opciones in nueva_sesion.abrir_conversacion():
             st.session_state["mensajes"].append({"rol": "assistant", "texto": parte})
+            st.session_state["opciones_pendientes"] = opciones
 
 sesion: SesionTelos = st.session_state["sesion"]
 
-with st.sidebar:
-    st.metric(t["fase_label"], _NOMBRES_FASE[idioma].get(sesion.fase_actual, sesion.fase_actual))
 
-for mensaje in st.session_state["mensajes"]:
-    with st.chat_message(mensaje["rol"]):
-        st.markdown(mensaje["texto"])
-
-texto_usuario = st.chat_input(t["chat_placeholder"])
-if texto_usuario:
-    st.session_state["mensajes"].append({"rol": "user", "texto": texto_usuario})
+def _procesar_turno(texto: str) -> None:
+    """Consume el generador de la sesión, mostrando cada parte apenas
+    está lista (ver docstring de agents.orquestador.SesionTelos) y
+    dejando registradas las últimas opciones ofrecidas, si las hay."""
+    st.session_state["mensajes"].append({"rol": "user", "texto": texto})
     with st.chat_message("user"):
-        st.markdown(texto_usuario)
+        st.markdown(texto)
 
-    # Generador: si hay cambio de fase en este turno, cada mensaje se
-    # muestra apenas está listo (burbuja aparte), no se espera a tener
-    # los dos juntos -- con el Sintetizador generando más contenido
-    # ahora, esperar a los dos combinados se sentía como que la app se
-    # había colgado.
-    generador = sesion.enviar_mensaje(texto_usuario)
+    generador = sesion.enviar_mensaje(texto)
+    opciones_finales: list[str] = []
     while True:
         with st.spinner(t["spinner"]):
             try:
-                _fase, parte = next(generador)
+                _fase, parte, opciones = next(generador)
             except StopIteration:
                 break
         with st.chat_message("assistant"):
             st.markdown(parte)
         st.session_state["mensajes"].append({"rol": "assistant", "texto": parte})
+        opciones_finales = opciones
+    st.session_state["opciones_pendientes"] = opciones_finales
+
+
+with st.sidebar:
+    st.metric(t["fase_label"], _NOMBRES_FASE[idioma].get(sesion.fase_actual, sesion.fase_actual))
+
+col_chat, col_panel = st.columns([2, 1])
+
+with col_chat:
+    if sesion.nombre:
+        st.caption(t["saludo_nombre"].format(nombre=sesion.nombre))
+
+    for mensaje in st.session_state["mensajes"]:
+        with st.chat_message(mensaje["rol"]):
+            st.markdown(mensaje["texto"])
+
+    # Formulario: cuando el agente de la fase actual ofreció opciones
+    # cerradas (por ahora, el candidato de propósito en el Sintetizador —
+    # ver agents/_modelo.py::crear_tool_presentar_opciones), se muestran
+    # como botones de radio en vez de obligar a escribir la elección.
+    # Igual queda disponible el chat_input de abajo para quien prefiera
+    # escribir su propia respuesta.
+    opciones_pendientes = st.session_state.get("opciones_pendientes") or []
+    if opciones_pendientes:
+        with st.form(key=f"opciones_{len(st.session_state['mensajes'])}"):
+            st.caption(t["opciones_titulo"])
+            eleccion = st.radio(
+                t["opciones_titulo"],
+                options=opciones_pendientes,
+                label_visibility="collapsed",
+            )
+            enviado = st.form_submit_button(t["opciones_submit"])
+        if enviado:
+            st.session_state["opciones_pendientes"] = []
+            _procesar_turno(eleccion)
+            st.rerun()
+
+    texto_usuario = st.chat_input(t["chat_placeholder"])
+    if texto_usuario:
+        st.session_state["opciones_pendientes"] = []
+        _procesar_turno(texto_usuario)
+        st.rerun()
+
+with col_panel:
+    st.subheader(t["panel_titulo"])
+    ficha = leer_ficha_usuario(usuario_id)
+    datos = ficha["actual"]["datos"] if ficha["existe"] and ficha["actual"] else {}
+    proposito = (datos or {}).get("proposito")
+    sistema = (datos or {}).get("sistema")
+
+    st.markdown(f"**{t['panel_proposito']}**")
+    st.text_area(
+        t["panel_proposito"],
+        value=proposito or t["panel_vacio_proposito"],
+        disabled=True,
+        label_visibility="collapsed",
+        height=100,
+        key="panel_proposito",
+    )
+    st.markdown(f"**{t['panel_sistema']}**")
+    st.text_area(
+        t["panel_sistema"],
+        value=sistema or t["panel_vacio_sistema"],
+        disabled=True,
+        label_visibility="collapsed",
+        height=160,
+        key="panel_sistema",
+    )

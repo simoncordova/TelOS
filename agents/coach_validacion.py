@@ -7,11 +7,11 @@ futura) y afina la redacción hasta que la persona la sienta propia.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo
+from agents._modelo import REGLA_CONJUGACION_ES, REGLA_TRANSICION_ES, REGLA_TRANSICION_EN, crear_modelo, regla_nombre
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
-SYSTEM_PROMPT_ES = """Eres el Coach de Validación de Telos. La persona ya \
+_PLANTILLA_ES = """Eres el Coach de Validación de Telos. La persona ya \
 eligió un propósito candidato. Tu trabajo es ponerlo a prueba contra la \
 realidad, no aplaudirlo sin más.
 
@@ -35,12 +35,16 @@ tipo "¡qué bonito objetivo!" sin sustancia detrás. Español neutro. \
 {regla_conjugacion}
 
 Cuando la persona confirma la redacción final, guárdala con \
-guardar_ficha_usuario junto con la evidencia que la respalda, y pasa el \
-control al diseño del sistema.""".format(
-    regla_conjugacion=REGLA_CONJUGACION_ES
-)
+guardar_ficha_usuario junto con la evidencia que la respalda. Pasale a \
+`datos` la clave "proposito" con la redacción final (string) — es la \
+misma clave que usó el Sintetizador, tiene que seguir presente acá \
+aunque solo hayas ajustado la redacción, porque las fases siguientes y \
+la interfaz la leen de la versión más reciente de la ficha, no de \
+versiones viejas. {regla_transicion}
 
-SYSTEM_PROMPT_EN = """You are Telos's Validation Coach. The person \
+{regla_nombre}"""
+
+_PLANTILLA_EN = """You are Telos's Validation Coach. The person \
 already picked a candidate purpose. Your job is to stress-test it \
 against reality, not just applaud it.
 
@@ -64,11 +68,34 @@ Tone: warm but rigorous. Socratic questions. Never empty cheerleading \
 like "what a great goal!" with no substance behind it.
 
 Once the person confirms the final wording, save it with \
-guardar_ficha_usuario along with the supporting evidence, and hand off \
-to system design."""
+guardar_ficha_usuario along with the supporting evidence. Pass `datos` \
+the key "proposito" with the final wording (string) — the same key the \
+Synthesizer used; it has to stay present here even if you only tweaked \
+the wording, because later phases and the UI read it from the most \
+recent ficha version, not from older ones. {regla_transicion}
+
+{regla_nombre}"""
 
 
-def crear_agente_coach_validacion(usuario_id: str, idioma: str = "es", mensajes_previos: list | None = None) -> Agent:
+def crear_agente_coach_validacion(
+    usuario_id: str,
+    idioma: str = "es",
+    mensajes_previos: list | None = None,
+    nombre: str | None = None,
+    contenedor_opciones: list | None = None,
+) -> Agent:
+    if idioma == "en":
+        system_prompt = _PLANTILLA_EN.format(
+            regla_transicion=REGLA_TRANSICION_EN,
+            regla_nombre=regla_nombre(nombre, idioma),
+        )
+    else:
+        system_prompt = _PLANTILLA_ES.format(
+            regla_conjugacion=REGLA_CONJUGACION_ES,
+            regla_transicion=REGLA_TRANSICION_ES,
+            regla_nombre=regla_nombre(nombre, idioma),
+        )
+
     @tool
     def leer_ficha_usuario() -> dict:
         """Lee la última versión de la ficha del usuario y su historial."""
@@ -80,7 +107,7 @@ def crear_agente_coach_validacion(usuario_id: str, idioma: str = "es", mensajes_
         _guardar(usuario_id, datos, fase=3, motivo_version=motivo_version)
 
     return Agent(
-        system_prompt=SYSTEM_PROMPT_EN if idioma == "en" else SYSTEM_PROMPT_ES,
+        system_prompt=system_prompt,
         tools=[leer_ficha_usuario, guardar_ficha_usuario],
         # Precarga los turnos ya guardados de esta fase (ver explorador.py).
         messages=mensajes_previos,

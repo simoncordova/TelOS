@@ -152,6 +152,52 @@ otra fase, o el hecho de que la conversación "pasa" a otro lado; cada uno
 de los 5 prompts la referencia y tiene que cerrar su parte con una frase
 breve y cálida en vez de explicar el mecanismo.
 
+La primera versión de esta regla solo prohibía nombrar la fase o el
+agente que sigue ("Sintetizador", "Validador") -- en producción el
+modelo encontró el hueco: dijo "ahora te va a recibir quien va a
+reflejar lo que escuché" sin nombrar a nadie específico, técnicamente
+sin violar la regla literal, pero anunciando el traspaso igual. La regla
+ahora prohíbe la idea de un cambio de interlocutor, no solo el nombre
+propio de quién sigue.
+
+**Decir que cerraste no es lo mismo que cerrar:** otro bug real, más
+serio, encontrado en la misma prueba: el Explorador, presionado por el
+aviso fuerte de cierre (sección 1, punto 8), ESCRIBIÓ que ya había
+guardado todo el avance y que la conversación seguía de largo — pero
+nunca llamó a `guardar_ficha_usuario`. El Orquestador nunca vio una
+versión nueva, así que nunca cascadeó a Fase 2, y el mismo Explorador
+siguió respondiendo turno tras turno — terminó improvisando, él solo, el
+trabajo de las fases siguientes (eligió un "patrón" de propósito, lo dio
+por validado con una sola pregunta de confirmación, y hasta empezó a
+diseñar un sistema de hábito), todo sin salir nunca de Fase 1, hasta que
+finalmente sí llamó a la tool varios turnos después. Un LLM puede
+describir una acción en el texto sin ejecutarla — esto necesita las dos
+capas de siempre: `agents/_modelo.py::REGLA_CIERRE_REAL_ES/EN` (regla
+compartida por los 5 prompts, deja explícito que cerrar significa llamar
+a la tool en ese mismo turno, no describirlo, y que ninguna fase debe
+adelantarse a hacer el trabajo de otra aunque la persona pregunte "¿y
+ahora?" o parezca ansiosa por terminar) y, como red de seguridad por
+código, `agents/orquestador.py::SesionTelos._preparar_texto_y_forzado` /
+`_fase_avanzo`: si el aviso fuerte de cierre ya se aplicó y, después de
+invocar al agente, la ficha sigue sin una versión nueva, el Orquestador
+fuerza un segundo intento en el mismo turno con una instrucción sin
+ambigüedad ("llamá a la tool AHORA, no lo describas") antes de
+resignarse. Igual que el resto de los reintentos acotados del proyecto
+(GuardaEstilo, la relectura de la ficha): como mucho un reintento extra,
+nunca un loop sin límite.
+
+**Una respuesta vacía no puede llegar a AgentCore Memory:** bug de
+crash real, distinto de los dos de arriba — cuando la cascada a la fase
+siguiente invocaba al agente nuevo y este devolvía un string vacío (pasa
+ocasionalmente con Bedrock), `guardar_intercambio` intentaba guardar ese
+turno igual y AgentCore Memory lo rechazaba
+(`ParamValidationError: Invalid length ... valid min length: 1`),
+tumbando toda la sesión de Streamlit. `SesionTelos._invocar` ahora nunca
+devuelve un string vacío: si la respuesta viene vacía, reintenta una vez
+con un empujón explícito, y si sigue vacía, cae a un aviso fijo no vacío
+en el idioma de la sesión, en vez de dejar pasar el string vacío hacia
+`guardar_intercambio`.
+
 ## 1. Orquestador
 
 **Rol:** no conversa directamente con contenido de propósito — rutea y
@@ -250,6 +296,21 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
    terreno") igual puede fallar, y una conversación real llegó a más de
    25 preguntas sin que el Explorador cerrara solo, hasta que la persona
    tuvo que pedirlo explícitamente.
+9. Cuando se aplicó el aviso fuerte del punto 8, el Orquestador verifica
+   después de invocar si la ficha realmente cambió de versión — no si el
+   texto de la respuesta *sonaba* a un cierre. Si no cambió, fuerza un
+   segundo intento en el mismo turno con una instrucción sin ambigüedad
+   ("llamá a la tool AHORA, no la describas") antes de resignarse. Ver
+   sección 0.7 para el bug real que motivó esto: el Explorador dijo que
+   había guardado todo sin haber llamado a la tool, y terminó
+   improvisando el trabajo de las fases siguientes sin salir nunca de
+   Fase 1.
+10. `SesionTelos._invocar` nunca devuelve un string vacío: si la
+    respuesta del modelo viene vacía, reintenta una vez con un empujón
+    explícito, y si sigue vacía, cae a un aviso fijo no vacío. Necesario
+    porque `guardar_intercambio` contra AgentCore Memory exige longitud
+    mínima 1 y tira `ParamValidationError` (bug real que tumbaba toda la
+    sesión de Streamlit) si se le pasa un string vacío.
 
 ## 2. Fase 1 — Explorador
 
@@ -296,7 +357,10 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
 > turno: guarda el avance con `guardar_ficha_usuario`. No seas
 > exhaustivo — material suficiente es mejor que material perfecto. [regla
 > de transición compartida — sección 0.7: no anuncies que sigue otro
-> agente, cerrá con una frase breve y cálida]. [regla de nombre
+> agente, cerrá con una frase breve y cálida]. [regla de cierre real
+> compartida — sección 0.7: cerrar significa llamar a la tool en ese
+> mismo turno, no describirlo; nunca te adelantes a hacer el trabajo de
+> otra fase aunque la persona pregunte "¿y ahora?"]. [regla de nombre
 > compartida — sección 0.7: si sabés el nombre, usalo en el saludo]
 
 La versión original de esta regla de cierre decía "cuando sientas que
@@ -305,7 +369,12 @@ cubriste suficiente terreno" — resultó demasiado elástica en producción
 redacción, hasta que la persona tuvo que pedir explícitamente que
 cerrara). El tope numérico de arriba es el reemplazo; el Orquestador
 además reintroduce el mismo tope por código como red de seguridad
-(sección 1, punto 8).
+(sección 1, punto 8). Un bug posterior, más serio, mostró que ni
+siquiera ese tope alcanza del todo: el Explorador llegó a decir que
+había cerrado sin haber llamado a la tool, y terminó improvisando el
+trabajo de las fases siguientes sin salir nunca de Fase 1 — de ahí la
+regla de cierre real de arriba y la verificación por código que la
+respalda (sección 1, punto 9).
 
 **System prompt (English):**
 
@@ -345,7 +414,10 @@ además reintroduce el mismo tope por código como red de seguridad
 > turn: save the progress with `guardar_ficha_usuario`. Don't be
 > exhaustive — good-enough material beats perfect material. [shared
 > transition rule — section 0.7: don't announce another agent is next,
-> close with a brief warm line] [shared name rule — section 0.7: if you
+> close with a brief warm line] [shared real-close rule — section 0.7:
+> closing means calling the tool this same turn, not describing it;
+> never get ahead of yourself and do another phase's job even if the
+> person asks "so now what?"] [shared name rule — section 0.7: if you
 > know their name, use it in the greeting]
 
 **Tools:** `guardar_ficha_usuario(usuario_id, datos, fase=1, motivo_version="avance exploración")`
@@ -398,7 +470,8 @@ además reintroduce el mismo tope por código como red de seguridad
 > `guardar_ficha_usuario`. Pasale a `datos` la clave "proposito" con la
 > redacción final (string) — obligatoria, la leen las fases siguientes y
 > la interfaz. [regla de transición compartida — sección 0.7] [regla de
-> nombre compartida — sección 0.7]
+> cierre real compartida — sección 0.7] [regla de nombre compartida —
+> sección 0.7]
 
 **System prompt (English):**
 
@@ -438,7 +511,8 @@ además reintroduce el mismo tope por código como red de seguridad
 > Once the person picks or blends a candidate, save that choice with
 > `guardar_ficha_usuario`. Pass `datos` the key "proposito" with the
 > final wording (string) — required, later phases and the UI read it.
-> [shared transition rule — section 0.7] [shared name rule — section 0.7]
+> [shared transition rule — section 0.7] [shared real-close rule —
+> section 0.7] [shared name rule — section 0.7]
 
 **Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=2, motivo_version="propósito candidato elegido")`, `presentar_opciones(opciones: list[str])`
 
@@ -480,7 +554,8 @@ además reintroduce el mismo tope por código como red de seguridad
 > a `datos` la clave "proposito" con la redacción final (string) — la
 > misma clave que usó el Sintetizador, tiene que seguir presente acá
 > aunque solo hayas ajustado la redacción. [regla de transición
-> compartida — sección 0.7] [regla de nombre compartida — sección 0.7]
+> compartida — sección 0.7] [regla de cierre real compartida — sección
+> 0.7] [regla de nombre compartida — sección 0.7]
 
 **System prompt (English):**
 
@@ -512,7 +587,7 @@ además reintroduce el mismo tope por código como red de seguridad
 > `datos` the key "proposito" with the final wording (string) — the same
 > key the Synthesizer used, it has to stay present here even if you only
 > tweaked the wording. [shared transition rule — section 0.7] [shared
-> name rule — section 0.7]
+> real-close rule — section 0.7] [shared name rule — section 0.7]
 
 **Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=3, motivo_version="propósito validado con evidencia")`
 
@@ -573,7 +648,8 @@ además reintroduce el mismo tope por código como red de seguridad
 > abrupto — reconocé que por hoy esto es todo, y avisale con calidez que
 > la próxima vez que abra una conversación nueva vas a hacer un check-in
 > breve sobre este sistema. [regla de transición compartida — sección
-> 0.7] [regla de nombre compartida — sección 0.7]
+> 0.7] [regla de cierre real compartida — sección 0.7] [regla de nombre
+> compartida — sección 0.7]
 
 **System prompt (English):**
 
@@ -620,8 +696,8 @@ además reintroduce el mismo tope por código como red de seguridad
 > last message has to feel like a real close, not an abrupt cutoff —
 > acknowledge this is it for today, and warmly let them know that next
 > time they open a new conversation you'll do a brief check-in on this
-> system. [shared transition rule — section 0.7] [shared name rule —
-> section 0.7]
+> system. [shared transition rule — section 0.7] [shared real-close rule
+> — section 0.7] [shared name rule — section 0.7]
 
 **Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=4, motivo_version="sistema de 4 preguntas definido")`, `crear_evento_calendario(usuario_id, detalle)` (P2 — ver sección 7)
 
@@ -686,7 +762,8 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 > los haya ajustado) — si las omitís, el panel de la interfaz y el
 > próximo check-in dejan de verlas; y, si corresponde re-entrar a una
 > fase anterior, la clave "reentrada" con "fase3" o "fase4". [regla de
-> nombre compartida — sección 0.7]
+> cierre real compartida — sección 0.7] [regla de nombre compartida —
+> sección 0.7]
 
 **System prompt (English, for the check-in's conversational part):**
 
@@ -709,8 +786,8 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 > current values you already read (unchanged, unless this check-in
 > adjusted them) — omitting them makes the UI's side panel and the next
 > check-in lose track of them; and, if re-entering an earlier phase
-> applies, the key "reentrada" with "fase3" or "fase4". [shared name
-> rule — section 0.7]
+> applies, the key "reentrada" with "fase3" or "fase4". [shared
+> real-close rule — section 0.7] [shared name rule — section 0.7]
 
 **Tipos de check-in (English):** compliance ("How did the system go
 since last time?"), self-perception ("Does this purpose still feel like

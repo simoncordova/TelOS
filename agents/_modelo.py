@@ -46,24 +46,75 @@ REGLA_CONJUGACION_ES = (
 # sistema en vez de vivirlo como una sola conversación. La transición
 # tiene que sentirse invisible: cerrar con calidez y, si corresponde,
 # seguir de largo -- nunca nombrar "agente", "fase" ni "otro sistema".
+#
+# Primera versión de esta regla solo prohibía nombrar la fase o el
+# agente ("Sintetizador", "Validador") -- en producción el modelo
+# encontró el hueco: decía "ahora te va a recibir quien va a
+# reflejar..." sin nombrar a nadie, técnicamente sin violar la regla
+# literal, pero anunciando el traspaso igual. Por eso ahora la regla
+# prohíbe la IDEA de que cambia el interlocutor, no solo el nombre
+# propio de quién sigue.
 REGLA_TRANSICION_ES = (
-    "IMPORTANTE sobre las transiciones: nunca anuncies que la conversación "
-    "va a pasar a \"otro agente\", que \"cambias de rol\", ni menciones el "
-    "nombre de una fase o de otro agente (Explorador, Sintetizador, Coach, "
-    "Estratega, Seguimiento). Para la persona esto tiene que sentirse como "
-    "una sola conversación fluida con un solo interlocutor, nunca como un "
-    "traspaso entre sistemas. Cierra tu parte con una frase breve y cálida "
-    "que reconozca lo que se logró, sin explicar el mecanismo interno."
+    "IMPORTANTE sobre las transiciones: nunca digas ni insinúes que la "
+    'conversación va a pasar a otra persona, sistema o "agente" -- ni '
+    'nombrándolo ("el Sintetizador", "el Validador") ni de forma genérica '
+    '("alguien más te va a recibir", "ahora te van a atender", "vas a '
+    'hablar con otra persona", "te van a pasar con"). Cualquier frase que '
+    "implique un cambio de interlocutor rompe la ilusión, aunque no "
+    "nombres a nadie específico. Para la persona esto tiene que sentirse "
+    "como una sola conversación fluida con una sola presencia todo el "
+    "tiempo. Cierra tu parte con una frase breve y cálida que reconozca "
+    "lo que se logró, sin explicar ni insinuar el mecanismo interno."
 )
 REGLA_TRANSICION_EN = (
-    "IMPORTANT about transitions: never announce that the conversation is "
-    "handing off to \"another agent,\" never say you're \"switching roles,\" "
-    "and never name a phase or another agent (Explorer, Synthesizer, Coach, "
-    "Strategist, Follow-up). To the person this has to feel like one "
-    "continuous conversation with a single presence, never a handoff "
-    "between systems. Close your part with a brief, warm line "
-    "acknowledging what was accomplished, without explaining the internal "
-    "mechanism."
+    "IMPORTANT about transitions: never say or imply that the "
+    'conversation is moving to another person, system, or "agent" -- '
+    'neither by name ("the Synthesizer", "the Coach") nor generically '
+    '("someone else will take it from here," "you\'ll be helped by '
+    'someone else," "you\'ll be talking to another person now"). Any '
+    "phrase implying a change of interlocutor breaks the illusion, even "
+    "without naming anyone specific. To the person this has to feel like "
+    "one continuous conversation with a single presence the whole time. "
+    "Close your part with a brief, warm line acknowledging what was "
+    "accomplished, without explaining or implying the internal mechanism."
+)
+
+# Compartida por los 5 prompts: bug real visto en producción, distinto
+# del de arriba -- el Explorador, al intentar cerrar, ESCRIBIÓ que ya
+# había guardado todo y que la conversación seguía de largo, pero nunca
+# LLAMÓ a guardar_ficha_usuario. El Orquestador nunca vio una versión
+# nueva, así que nunca cascadeó a la fase siguiente, y el mismo agente
+# siguió respondiendo turno tras turno -- terminó inventando, él solo,
+# contenido que le correspondía a Sintetizador/Coach/Estratega (eligió
+# un "patrón" de propósito, lo dio por validado, y hasta empezó a pedir
+# un sistema de hábito), todo todavía adentro de Fase 1. Describir una
+# acción en el texto no es lo mismo que ejecutar la tool -- esta regla
+# lo hace explícito, y agents/orquestador.py además fuerza un reintento
+# por código si el turno debía cerrar y la ficha no cambió (ver
+# _UMBRAL_NUDGE_EXPLORADOR_FUERTE).
+REGLA_CIERRE_REAL_ES = (
+    "IMPORTANTE sobre cerrar: si tu mensaje dice (o da a entender) que ya "
+    "guardaste el avance, tiene que ser verdad -- llamá a la tool "
+    "guardar_ficha_usuario en ESE MISMO turno, no lo describas como algo "
+    "que ya pasó o que va a pasar. Nunca sigas de largo haciendo el "
+    "trabajo de otra fase (elegir o pulir el propósito, ponerlo a prueba "
+    "con evidencia, diseñar el sistema de hábito) aunque la persona "
+    'pregunte "¿y ahora?" o parezca ansiosa por terminar -- si todavía no '
+    "cerraste, respondé con calidez que seguís con ella y quedate en tu "
+    "propio trabajo; si ya tenés con qué cerrar, cerrá de verdad llamando "
+    "a la tool en vez de seguir conversando."
+)
+REGLA_CIERRE_REAL_EN = (
+    "IMPORTANT about closing: if your message says (or implies) that you "
+    "already saved the progress, it has to be true -- call the "
+    "guardar_ficha_usuario tool in THAT SAME turn, don't describe it as "
+    "something that already happened or is about to happen. Never keep "
+    "going and do another phase's job (picking or polishing the purpose, "
+    "stress-testing it with evidence, designing the habit system) even if "
+    'the person asks "so now what?" or seems eager to be done -- if you '
+    "haven't closed yet, warmly reassure them you're still with them and "
+    "stay in your own lane; if you do have enough to close, actually "
+    "close by calling the tool instead of continuing to chat."
 )
 
 # Compartida por los 5 prompts: el nombre de pila se captura una sola vez

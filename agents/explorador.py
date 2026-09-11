@@ -9,6 +9,8 @@ from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
 from agents._modelo import (
+    REGLA_CIERRE_REAL_ES,
+    REGLA_CIERRE_REAL_EN,
     REGLA_CONJUGACION_ES,
     REGLA_TRANSICION_ES,
     REGLA_TRANSICION_EN,
@@ -65,6 +67,8 @@ ESE MISMO turno: guarda el avance con guardar_ficha_usuario. No seas \
 exhaustivo ni busques pulir cada eje al detalle — material suficiente es \
 mejor que material perfecto. {regla_transicion}
 
+{regla_cierre_real}
+
 {regla_nombre}"""
 
 _PLANTILLA_EN = """You are Telos's Explorer. Your only job in this \
@@ -106,6 +110,8 @@ phase in THAT SAME turn: save the progress with guardar_ficha_usuario. \
 Don't be exhaustive or try to polish every area — good-enough material \
 beats perfect material. {regla_transicion}
 
+{regla_cierre_real}
+
 {regla_nombre}"""
 
 
@@ -122,6 +128,7 @@ def crear_agente_explorador(
         system_prompt = plantilla.format(
             instruccion_saludo=instruccion_saludo,
             regla_transicion=REGLA_TRANSICION_EN,
+            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
         )
     else:
@@ -131,6 +138,7 @@ def crear_agente_explorador(
             instruccion_saludo=instruccion_saludo,
             regla_conjugacion=REGLA_CONJUGACION_ES,
             regla_transicion=REGLA_TRANSICION_ES,
+            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
         )
 

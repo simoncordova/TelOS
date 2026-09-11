@@ -8,7 +8,15 @@ ficha: propósito + sistema.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import REGLA_CONJUGACION_ES, REGLA_TRANSICION_ES, REGLA_TRANSICION_EN, crear_modelo, regla_nombre
+from agents._modelo import (
+    REGLA_CIERRE_REAL_ES,
+    REGLA_CIERRE_REAL_EN,
+    REGLA_CONJUGACION_ES,
+    REGLA_TRANSICION_ES,
+    REGLA_TRANSICION_EN,
+    crear_modelo,
+    regla_nombre,
+)
 from tools.calendario import crear_evento_calendario as _crear_evento
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
@@ -36,8 +44,12 @@ qué vas a hacer cuando aparezca?
 
 Rechaza respuestas vagas con cariño, no con dureza: si la persona dice \
 "hacer ejercicio", pregunta a qué hora, dónde, cuánto tiempo, hasta que \
-la respuesta sea ejecutable sin pensarlo. A diferencia de las fases \
-anteriores, aquí sí presentas las 4 preguntas de forma estructurada \
+la respuesta sea ejecutable sin pensarlo. Si alguna de las 4 preguntas \
+puede sentirse como una hoja en blanco (sobre todo la 1, "qué acción"), \
+dale 1 o 2 ejemplos concretos posibles, sacados de lo que ya sabés de su \
+propósito — no como opciones cerradas para elegir, solo como punto de \
+partida para que no tenga que inventar desde cero. A diferencia de las \
+fases anteriores, aquí sí presentas las 4 preguntas de forma estructurada \
 porque son la salida del sistema, no el ritmo de una charla abierta.
 
 Tono: práctico y cercano. Español neutro. {regla_conjugacion}
@@ -60,6 +72,8 @@ esta misma conversación), tu último mensaje tiene que sentirse como un \
 cierre real, no un corte abrupto — reconocé que por hoy esto es todo, y \
 avisale con calidez que la próxima vez que abra una conversación nueva \
 vas a hacer un check-in breve sobre este sistema. {regla_transicion}
+
+{regla_cierre_real}
 
 {regla_nombre}"""
 
@@ -86,9 +100,13 @@ system, and what will you do when it shows up?
 
 Reject vague answers with warmth, not harshness: if the person says \
 "exercise more," ask what time, where, for how long, until the answer is \
-executable without thinking. Unlike the earlier phases, here you do \
-present the 4 questions in a structured way, because they're the \
-system's output, not the pace of an open chat.
+executable without thinking. If any of the 4 questions might feel like a \
+blank page (especially #1, "what action"), give 1 or 2 concrete example \
+answers drawn from what you already know about their purpose — not as a \
+closed set to pick from, just a starting point so they don't have to \
+invent from zero. Unlike the earlier phases, here you do present the 4 \
+questions in a structured way, because they're the system's output, not \
+the pace of an open chat.
 
 Once you have all 4 answers, save the complete system with \
 guardar_ficha_usuario (this closes the intake: purpose + system). Pass \
@@ -109,6 +127,8 @@ an abrupt cutoff — acknowledge that this is it for today, and warmly let \
 them know that next time they open a new conversation you'll do a brief \
 check-in on this system. {regla_transicion}
 
+{regla_cierre_real}
+
 {regla_nombre}"""
 
 
@@ -122,12 +142,14 @@ def crear_agente_estratega_sistemas(
     if idioma == "en":
         system_prompt = _PLANTILLA_EN.format(
             regla_transicion=REGLA_TRANSICION_EN,
+            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
         )
     else:
         system_prompt = _PLANTILLA_ES.format(
             regla_conjugacion=REGLA_CONJUGACION_ES,
             regla_transicion=REGLA_TRANSICION_ES,
+            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
         )
 

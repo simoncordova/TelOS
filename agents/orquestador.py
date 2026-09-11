@@ -148,6 +148,45 @@ _NUDGE_EXPLORADOR_FUERTE = {
     ),
 }
 
+# Freno de seguridad para un bug real visto en producción, distinto del
+# de arriba: con el aviso fuerte ya en el texto, el Explorador escribió
+# que había guardado todo y que la conversación seguía de largo, pero
+# nunca LLAMÓ a guardar_ficha_usuario -- el Orquestador nunca vio una
+# versión nueva, nunca cascadeó, y el mismo agente terminó improvisando
+# él solo el trabajo de las fases siguientes (eligió un patrón de
+# propósito, lo dio por validado, empezó a diseñar un sistema de hábito)
+# sin salir nunca de Fase 1. Describir una acción en el texto no es lo
+# mismo que ejecutarla -- ver agents/_modelo.py::REGLA_CIERRE_REAL_ES/EN
+# para la instrucción equivalente en el prompt; esto es la red de
+# seguridad por código si igual no alcanza.
+_FORZAR_CIERRE = {
+    "es": (
+        "No llamaste a la tool guardar_ficha_usuario en tu respuesta "
+        "anterior, aunque el texto sonaba a que ya habías cerrado. Si ya "
+        "tenés material suficiente, llamá a esa tool AHORA en tu "
+        "respuesta a este mensaje -- no lo describas en texto, ejecutá "
+        "la tool de verdad. Si de verdad todavía te falta material, "
+        "hacé como mucho una pregunta más, breve."
+    ),
+    "en": (
+        "You didn't call the guardar_ficha_usuario tool in your previous "
+        "reply, even though the text sounded like you'd already closed. "
+        "If you already have enough material, call that tool NOW in your "
+        "reply to this message -- don't describe it in text, actually "
+        "call the tool. If you genuinely still need more material, ask "
+        "at most one more short question."
+    ),
+}
+
+_RESPUESTA_VACIA_RETRY = {
+    "es": "Tu respuesta anterior llegó vacía. Respondé de nuevo, con contenido real.",
+    "en": "Your previous reply came back empty. Reply again, with real content this time.",
+}
+_RESPUESTA_VACIA_FALLBACK = {
+    "es": "Disculpá, tuve un problema para generar la respuesta. ¿Podés escribir tu último mensaje de nuevo?",
+    "en": "Sorry, I had trouble generating a reply. Could you send your last message again?",
+}
+
 
 def _turnos_a_mensajes(turnos: list[dict]) -> list[dict]:
     """Convierte los turnos guardados (tools/conversacion.py) al formato
@@ -217,6 +256,12 @@ class SesionTelos:
             contenedor_opciones=self._contenedor_opciones,
         )
 
+    def _invocar_una_vez(self, texto: str) -> str:
+        self._contenedor_opciones.clear()
+        respuesta = str(self._agente(texto)).strip()
+        registrar_invocacion(self.usuario_id)
+        return respuesta
+
     def _invocar(self, texto: str) -> str:
         """Invoca al agente de la fase actual, salvo que esta cuenta ya
         haya llegado al límite diario de invocaciones reales
@@ -224,27 +269,39 @@ class SesionTelos:
         y devuelve el aviso fijo, sin generar costo. Cuenta cada
         invocación real, no cada mensaje de la persona: una cascada de
         cambio de fase dispara más de una por mensaje, y cada una cuesta
-        igual, así que cada una cuenta para el límite."""
+        igual, así que cada una cuenta para el límite.
+
+        Nunca devuelve un string vacío: AgentCore Memory rechaza guardar
+        un turno con texto de largo 0 (`ParamValidationError`, bug real
+        visto en producción que tumbaba toda la app) y una burbuja en
+        blanco tampoco le sirve a la persona. Si la respuesta viene
+        vacía, reintenta una vez con un empujón explícito antes de
+        resignarse a un aviso fijo -- mismo criterio que el resto de los
+        reintentos acotados del proyecto (GuardaEstilo, la relectura de
+        la ficha): como mucho un reintento, nunca un loop sin límite."""
         if excedio_limite_diario(self.usuario_id):
             return mensaje_limite_alcanzado(self.idioma)
-        self._contenedor_opciones.clear()
-        respuesta = str(self._agente(texto))
-        registrar_invocacion(self.usuario_id)
-        return respuesta
+        respuesta = self._invocar_una_vez(texto)
+        if not respuesta and not excedio_limite_diario(self.usuario_id):
+            respuesta = self._invocar_una_vez(_RESPUESTA_VACIA_RETRY[self.idioma])
+        return respuesta or _RESPUESTA_VACIA_FALLBACK[self.idioma]
 
-    def _con_nudge_si_corresponde(self, texto: str) -> str:
+    def _preparar_texto_y_forzado(self, texto: str) -> tuple[str, bool]:
         """Le agrega al texto que ve el modelo (nunca a lo que se guarda
         en tools/conversacion.py) un recordatorio interno de cerrar la
         fase si el Explorador ya lleva demasiados turnos -- ver
-        _UMBRAL_NUDGE_EXPLORADOR arriba."""
+        _UMBRAL_NUDGE_EXPLORADOR arriba. El segundo valor de la tupla
+        indica si se aplicó el aviso fuerte: en ese caso, `enviar_mensaje`
+        verifica después de invocar si la fase realmente cerró (no solo
+        si el texto *sonaba* a un cierre) y fuerza un reintento si no."""
         if self.fase_actual != 1:
-            return texto
+            return texto, False
         turnos_previos = len(leer_turnos(self.usuario_id, 1)) // 2
         if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR_FUERTE:
-            return texto + _NUDGE_EXPLORADOR_FUERTE[self.idioma]
+            return texto + _NUDGE_EXPLORADOR_FUERTE[self.idioma], True
         if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR:
-            return texto + _NUDGE_EXPLORADOR[self.idioma]
-        return texto
+            return texto + _NUDGE_EXPLORADOR[self.idioma], False
+        return texto, False
 
     def abrir_conversacion(self):
         """Generador: el agente de la fase actual habla primero, sin
@@ -313,8 +370,18 @@ class SesionTelos:
 
         fase_antes = self.fase_actual
         total_versiones_antes = self._contar_versiones()
-        texto_efectivo = self._con_nudge_si_corresponde(texto)
+        texto_efectivo, forzar_verificacion = self._preparar_texto_y_forzado(texto)
         respuesta = self._invocar(texto_efectivo)
+
+        if forzar_verificacion and not self._fase_avanzo(total_versiones_antes):
+            # Freno de seguridad: el aviso fuerte ya le pedía cerrar en
+            # este mismo turno, pero la ficha no cambió -- el texto puede
+            # sonar a que cerró ("ya guardé todo...") sin que la tool se
+            # haya ejecutado de verdad (bug real visto en producción, ver
+            # _FORZAR_CIERRE). Un reintento más, sin ambigüedad, antes de
+            # dejarlo pasar.
+            respuesta = self._invocar(_FORZAR_CIERRE[self.idioma])
+
         guardar_intercambio(self.usuario_id, fase_antes, texto, respuesta)
         yield fase_antes, respuesta, list(self._contenedor_opciones)
 
@@ -336,6 +403,19 @@ class SesionTelos:
     def _contar_versiones(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)
         return len(ficha["historial"]) + (1 if ficha["existe"] else 0)
+
+    def _fase_avanzo(self, total_versiones_antes: int) -> bool:
+        """Chequeo rápido (reintento corto, no el largo de
+        _leer_ficha_con_reintento) de si ya se guardó una versión nueva --
+        lo usa el freno de _FORZAR_CIERRE para decidir si hace falta
+        insistir. La decisión autoritativa de cascadear sigue siendo la
+        de _avanzar_fase_si_corresponde más abajo, con su propio
+        reintento largo; este solo evita forzar un reintento de más
+        cuando el guardado real ya pasó pero todavía no es visible por
+        consistencia eventual."""
+        ficha = self._leer_ficha_con_reintento(total_versiones_antes, intentos=2, espera_segundos=0.5)
+        total_versiones = len(ficha["historial"]) + (1 if ficha["existe"] else 0)
+        return total_versiones > total_versiones_antes
 
     def _leer_ficha_con_reintento(self, total_versiones_antes: int, intentos: int = 4, espera_segundos: float = 1.0) -> dict:
         """AgentCore Memory puede tardar un instante en reflejar en

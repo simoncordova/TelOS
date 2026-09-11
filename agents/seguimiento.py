@@ -10,7 +10,15 @@ sin repetir check-in), y un prompt no las garantiza.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import REGLA_CONJUGACION_ES, REGLA_TRANSICION_ES, REGLA_TRANSICION_EN, crear_modelo, regla_nombre
+from agents._modelo import (
+    REGLA_CIERRE_REAL_ES,
+    REGLA_CIERRE_REAL_EN,
+    REGLA_CONJUGACION_ES,
+    REGLA_TRANSICION_ES,
+    REGLA_TRANSICION_EN,
+    crear_modelo,
+    regla_nombre,
+)
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
@@ -75,6 +83,8 @@ re-entrar a una fase anterior, la clave "reentrada" con el valor \
 "fase3" (el propósito ya no resuena) o "fase4" (el sistema necesita \
 rediseño), o sin esa clave (u omitida) si no hace falta re-entrar.
 
+{regla_cierre_real}
+
 {regla_nombre}"""
 
 SYSTEM_PROMPT_BASE_EN = """You are Telos's Follow-up agent. The person \
@@ -116,6 +126,8 @@ check-in lose track of them; and, if re-entering an earlier phase \
 applies, the key "reentrada" with the value "fase3" (the purpose no \
 longer resonates) or "fase4" (the system needs a redesign), or without \
 that key (or omitted) if no re-entry is needed.
+
+{regla_cierre_real}
 
 {regla_nombre}"""
 
@@ -185,6 +197,7 @@ def crear_agente_seguimiento(
             vista_resumen=vista_resumen,
             pregunta_sugerida=_PREGUNTAS_POR_TIPO["en"][tipo_checkin],
             regla_transicion=REGLA_TRANSICION_EN,
+            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
         )
     else:
@@ -193,6 +206,7 @@ def crear_agente_seguimiento(
             pregunta_sugerida=_PREGUNTAS_POR_TIPO["es"][tipo_checkin],
             regla_conjugacion=REGLA_CONJUGACION_ES,
             regla_transicion=REGLA_TRANSICION_ES,
+            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
         )
 

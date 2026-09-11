@@ -8,6 +8,8 @@ from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
 from agents._modelo import (
+    REGLA_CIERRE_REAL_ES,
+    REGLA_CIERRE_REAL_EN,
     REGLA_CONJUGACION_ES,
     REGLA_TRANSICION_ES,
     REGLA_TRANSICION_EN,
@@ -58,6 +60,8 @@ redacción final elegida (string) — esa clave la van a seguir leyendo las \
 fases siguientes y la interfaz, así que es obligatoria, no opcional. \
 {regla_transicion}
 
+{regla_cierre_real}
+
 {regla_nombre}"""
 
 _PLANTILLA_EN = """You are Telos's Synthesizer. You receive the raw \
@@ -99,6 +103,8 @@ guardar_ficha_usuario. Pass `datos` the key "proposito" with the final \
 wording chosen (string) — later phases and the UI keep reading that \
 key, so it's required, not optional. {regla_transicion}
 
+{regla_cierre_real}
+
 {regla_nombre}"""
 
 
@@ -114,12 +120,14 @@ def crear_agente_sintetizador(
     if idioma == "en":
         system_prompt = _PLANTILLA_EN.format(
             regla_transicion=REGLA_TRANSICION_EN,
+            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
         )
     else:
         system_prompt = _PLANTILLA_ES.format(
             regla_conjugacion=REGLA_CONJUGACION_ES,
             regla_transicion=REGLA_TRANSICION_ES,
+            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
         )
 

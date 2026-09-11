@@ -7,7 +7,15 @@ futura) y afina la redacción hasta que la persona la sienta propia.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import REGLA_CONJUGACION_ES, REGLA_TRANSICION_ES, REGLA_TRANSICION_EN, crear_modelo, regla_nombre
+from agents._modelo import (
+    REGLA_CIERRE_REAL_ES,
+    REGLA_CIERRE_REAL_EN,
+    REGLA_CONJUGACION_ES,
+    REGLA_TRANSICION_ES,
+    REGLA_TRANSICION_EN,
+    crear_modelo,
+    regla_nombre,
+)
 from tools.ficha import guardar_ficha_usuario as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
 
@@ -42,6 +50,8 @@ aunque solo hayas ajustado la redacción, porque las fases siguientes y \
 la interfaz la leen de la versión más reciente de la ficha, no de \
 versiones viejas. {regla_transicion}
 
+{regla_cierre_real}
+
 {regla_nombre}"""
 
 _PLANTILLA_EN = """You are Telos's Validation Coach. The person \
@@ -74,6 +84,8 @@ Synthesizer used; it has to stay present here even if you only tweaked \
 the wording, because later phases and the UI read it from the most \
 recent ficha version, not from older ones. {regla_transicion}
 
+{regla_cierre_real}
+
 {regla_nombre}"""
 
 
@@ -87,12 +99,14 @@ def crear_agente_coach_validacion(
     if idioma == "en":
         system_prompt = _PLANTILLA_EN.format(
             regla_transicion=REGLA_TRANSICION_EN,
+            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
         )
     else:
         system_prompt = _PLANTILLA_ES.format(
             regla_conjugacion=REGLA_CONJUGACION_ES,
             regla_transicion=REGLA_TRANSICION_ES,
+            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
         )
 

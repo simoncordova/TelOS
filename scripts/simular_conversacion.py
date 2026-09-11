@@ -109,7 +109,7 @@ def _imprimir_turno(sesion: SesionTelos, patron, fase_antes: int, texto: str, op
 
 def main() -> None:
     usuario_id = sys.argv[1] if len(sys.argv) > 1 else "prueba-simulada"
-    idioma = sys.argv[2] if len(sys.argv) > 2 else "es"
+    idioma = sys.argv[2] if len(sys.argv) > 2 else "en"
     ruta_guion = sys.argv[3] if len(sys.argv) > 3 else None
     guion = json.loads(Path(ruta_guion).read_text(encoding="utf-8")) if ruta_guion else _GUION_DEFAULT
     patron = _FRASE_CIERRE_FALSO.get(idioma, _FRASE_CIERRE_FALSO["es"])

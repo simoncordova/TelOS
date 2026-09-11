@@ -43,7 +43,7 @@ def configurado() -> bool:
     return bool(_DOMAIN and _USER_POOL_ID and _CLIENT_ID and _CLIENT_SECRET)
 
 
-def url_login(idioma: str = "es") -> str:
+def url_login(idioma: str = "en") -> str:
     # El idioma va en `state`: Cognito lo devuelve intacto en el
     # callback (?state=...), y sin esto se pierde -- el link de login es
     # una navegación de página completa hacia otro dominio (Cognito) y

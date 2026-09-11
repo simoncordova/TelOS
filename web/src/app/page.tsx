@@ -15,7 +15,8 @@ export default async function Home({
   searchParams: Promise<{ idioma?: string }>;
 }) {
   const { idioma: idiomaParam } = await searchParams;
-  const idioma: Idioma = idiomaParam === "en" ? "en" : "es";
+  // Default en inglés: solo cae a español si el ?idioma= lo pide explícito.
+  const idioma: Idioma = idiomaParam === "es" ? "es" : "en";
 
   const [usuario, config] = await Promise.all([obtenerUsuarioActual(), obtenerAuthConfig()]);
 

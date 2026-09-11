@@ -7,12 +7,12 @@ from pydantic import BaseModel
 
 
 class AbrirSesionRequest(BaseModel):
-    idioma: str = "es"
+    idioma: str = "en"
 
 
 class EnviarMensajeRequest(BaseModel):
     texto: str
-    idioma: str = "es"
+    idioma: str = "en"
 
 
 class FichaVersion(BaseModel):
@@ -49,4 +49,4 @@ class EliminarSuscripcionPushRequest(BaseModel):
 
 
 class EnviarPruebaPushRequest(BaseModel):
-    idioma: str = "es"
+    idioma: str = "en"

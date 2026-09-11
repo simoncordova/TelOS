@@ -327,7 +327,7 @@ class SesionTelos:
     cualquier momento sin perder contexto.
     """
 
-    def __init__(self, usuario_id: str, idioma: str = "es"):
+    def __init__(self, usuario_id: str, idioma: str = "en"):
         self.usuario_id = usuario_id
         self.idioma = idioma
         self.nombre = leer_nombre_usuario(usuario_id)

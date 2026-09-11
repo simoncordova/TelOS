@@ -42,7 +42,7 @@ def _imprimir(fase: int, parte: str, opciones: list[str]) -> None:
 
 def main() -> None:
     usuario_id = sys.argv[1] if len(sys.argv) > 1 else "prueba-cloudshell"
-    idioma = sys.argv[2] if len(sys.argv) > 2 else "es"
+    idioma = sys.argv[2] if len(sys.argv) > 2 else "en"
     sesion = SesionTelos(usuario_id, idioma=idioma)
 
     print(f"--- Telos (usuario_id={usuario_id}, idioma={idioma}) ---")

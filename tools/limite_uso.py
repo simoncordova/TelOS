@@ -70,5 +70,5 @@ def registrar_invocacion(usuario_id: str) -> int:
     return todo[clave]
 
 
-def mensaje_limite_alcanzado(idioma: str = "es") -> str:
-    return _MENSAJE_LIMITE["en" if idioma == "en" else "es"]
+def mensaje_limite_alcanzado(idioma: str = "en") -> str:
+    return _MENSAJE_LIMITE["es" if idioma == "es" else "en"]

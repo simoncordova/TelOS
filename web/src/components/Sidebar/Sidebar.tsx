@@ -40,7 +40,7 @@ export function Sidebar({
       </div>
 
       <div className="flex gap-2 text-xs">
-        {(["es", "en"] as const).map((opcion) => (
+        {(["en", "es"] as const).map((opcion) => (
           <button
             key={opcion}
             onClick={() => onCambiarIdioma(opcion)}

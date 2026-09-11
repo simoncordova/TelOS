@@ -94,12 +94,12 @@ def salud() -> dict:
 
 
 @app.get("/api/auth/login")
-def login(idioma: str = "es") -> RedirectResponse:
+def login(idioma: str = "en") -> RedirectResponse:
     return RedirectResponse(cognito.url_login(idioma))
 
 
 @app.get("/api/auth/callback")
-def callback(code: str, state: str = "es") -> Response:
+def callback(code: str, state: str = "en") -> Response:
     try:
         id_token = cognito.intercambiar_codigo_por_id_token(code)
     except ValueError as e:
@@ -168,13 +168,13 @@ def enviar_mensaje(body: EnviarMensajeRequest, usuario_id: str = Depends(obtener
 
 
 @app.get("/api/ficha")
-def obtener_ficha(idioma: str = "es", usuario_id: str = Depends(obtener_usuario_actual)) -> dict:
+def obtener_ficha(idioma: str = "en", usuario_id: str = Depends(obtener_usuario_actual)) -> dict:
     nombre = leer_nombre_usuario(usuario_id)
     return _ficha_snapshot(usuario_id, idioma, nombre)
 
 
 @app.get("/api/ficha/exportar")
-def exportar_ficha(idioma: str = "es", usuario_id: str = Depends(obtener_usuario_actual)) -> PlainTextResponse:
+def exportar_ficha(idioma: str = "en", usuario_id: str = Depends(obtener_usuario_actual)) -> PlainTextResponse:
     nombre = leer_nombre_usuario(usuario_id)
     ficha = leer_ficha_usuario(usuario_id)
     resumen = construir_vista_resumen(ficha["actual"], idioma, nombre, ficha["historial"])
@@ -224,17 +224,17 @@ def enviar_recordatorios() -> dict:
     mismo recordatorio fijo, respetando el mismo tono que el resto del
     proyecto (sin racha, sin "hace X días") -- ver
     push.construir_recordatorio."""
-    # El idioma elegido no se persiste en ningún lado hoy (es
-    # st.session_state efímero en ui/app.py, se pierde al cerrar la
-    # pestaña) -- un recordatorio async no tiene de dónde leerlo, así
-    # que usa "es" para todos, el mismo default del resto de la app. Si
-    # hace falta un recordatorio en el idioma real de cada persona, hay
-    # que agregar ese campo al perfil primero (tools/perfil.py) -- no
-    # inventado acá sin que el spec lo pida.
+    # El idioma elegido no se persiste en ningún lado hoy (es estado
+    # efímero del navegador, se pierde al cerrar la pestaña) -- un
+    # recordatorio async no tiene de dónde leerlo, así que usa "en" para
+    # todos, el mismo default del resto de la app. Si hace falta un
+    # recordatorio en el idioma real de cada persona, hay que agregar ese
+    # campo al perfil primero (tools/perfil.py) -- no inventado acá sin
+    # que el spec lo pida.
     total_enviados = 0
     total_invalidas = 0
     for usuario_id, suscripciones in listar_todas_las_suscripciones().items():
-        enviados, invalidas = _enviar_a_suscripciones(usuario_id, suscripciones, push.construir_recordatorio("es"))
+        enviados, invalidas = _enviar_a_suscripciones(usuario_id, suscripciones, push.construir_recordatorio("en"))
         total_enviados += enviados
         total_invalidas += invalidas
     return {"enviados": total_enviados, "invalidasEliminadas": total_invalidas}

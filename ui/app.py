@@ -227,7 +227,9 @@ with st.sidebar:
     st.title("Telos")
     idioma = st.radio(
         _TEXTOS["es"]["idioma_label"],
-        options=["es", "en"],
+        # "en" primero: default en inglés (sin sesión/idioma previo,
+        # st.radio usa el primer elemento de options).
+        options=["en", "es"],
         format_func=lambda i: "Español" if i == "es" else "English",
         horizontal=True,
         key="idioma",

@@ -18,7 +18,7 @@ export function LoginScreen({ idioma }: { idioma: Idioma }) {
       </div>
 
       <div className="flex gap-2 text-sm">
-        {(["es", "en"] as const).map((opcion) => (
+        {(["en", "es"] as const).map((opcion) => (
           <a
             key={opcion}
             href={`?idioma=${opcion}`}

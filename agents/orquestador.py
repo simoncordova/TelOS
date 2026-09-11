@@ -224,6 +224,34 @@ def _turnos_a_mensajes(turnos: list[dict]) -> list[dict]:
     return [{"role": t["rol"], "content": [{"text": t["texto"]}]} for t in turnos]
 
 
+def _texto_completo_del_turno(mensajes_nuevos: list[dict]) -> str:
+    """Concatena el texto de TODOS los mensajes de assistant generados en
+    una invocación, no solo el último -- causa raíz real (no una
+    casualidad de Bedrock) de buena parte de las "respuestas vacías" que
+    venían apareciendo: cada prompt de fase le pide al modelo "escribí tu
+    mensaje, DESPUÉS llamá a la tool" (guardar_ficha_usuario,
+    presentar_opciones). Cuando el modelo hace exactamente eso, Strands
+    arma DOS mensajes de assistant en la misma invocación: uno con el
+    texto real + la tool call, y otro después del resultado de la tool
+    que suele quedar vacío (el modelo ya dijo todo lo que tenía que
+    decir). `str(self._agente(texto))` usa `AgentResult.__str__`, que
+    según su propio docstring solo devuelve "the last message generated
+    by the agent" -- si ese último mensaje es el vacío, el texto real del
+    mensaje anterior se perdía en el camino, aunque el modelo lo hubiera
+    generado perfectamente bien. Por eso acá se reconstruye a mano desde
+    `Agent.messages` (la conversación completa, donde Strands va
+    agregando cada mensaje del loop) en vez de confiar en el resultado
+    final."""
+    partes = []
+    for mensaje in mensajes_nuevos:
+        if mensaje.get("role") != "assistant":
+            continue
+        for bloque in mensaje.get("content", []):
+            if isinstance(bloque, dict) and bloque.get("text"):
+                partes.append(bloque["text"])
+    return "\n\n".join(partes)
+
+
 def _extraer_nombre(texto: str, idioma: str, usuario_id: str) -> str:
     """Extrae el primer nombre de la respuesta libre de la persona con una
     llamada mínima al modelo (sin tools, sin historial) -- una respuesta
@@ -296,9 +324,12 @@ class SesionTelos:
     def _invocar_una_vez(self, texto: str) -> str:
         self._contenedor_opciones.clear()
         self._contenedor_guardado.clear()
-        respuesta = str(self._agente(texto)).strip()
+        indice_previo = len(self._agente.messages)
+        self._agente(texto)
         registrar_invocacion(self.usuario_id)
-        return respuesta
+        # Reconstruye el texto desde Agent.messages en vez de confiar en
+        # str(resultado) -- ver docstring de _texto_completo_del_turno.
+        return _texto_completo_del_turno(self._agente.messages[indice_previo:]).strip()
 
     def _invocar(self, texto: str) -> str:
         """Invoca al agente de la fase actual, salvo que esta cuenta ya

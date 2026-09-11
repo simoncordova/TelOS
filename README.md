@@ -58,11 +58,20 @@ tocar los agentes — ver [Persistencia](#persistencia) abajo.
 
 ```
 /agents/     agentes de Strands, uno por archivo (+ _modelo.py compartido)
-/tools/      tools de los agentes: ficha, crisis, calendario
-/ui/         interfaz Streamlit (100% Python)
+/tools/      tools de los agentes: ficha, crisis, calendario, push
+/ui/         interfaz Streamlit (100% Python) -- rama main, fallback estable
+/api/        backend FastAPI (rama gamificacion) -- expone agents/tools por SSE
+/web/        frontend Next.js/TypeScript (rama gamificacion)
 /infra/      stack de AWS CDK (Python)
 /docs/       spec de arquitectura de agentes
 ```
+
+`ui/` (Streamlit) y `api/`+`web/` (Next.js) conviven en la rama
+`gamificacion`: el segundo par existe porque Streamlit no puede
+registrar un Service Worker, necesario para notificaciones push reales
+de navegador — ver [Despliegue del frontend Next.js y push real](#despliegue-del-frontend-nextjs-y-push-real-rama-gamificacion)
+más abajo. Ambos consumen exactamente el mismo `agents/`+`tools/`, sin
+duplicar lógica de agentes.
 
 ## Correr localmente
 
@@ -301,6 +310,72 @@ prueba, y recorré las 4 fases. El rol IAM (`ArnRolAgentes`) ya tiene
 todos los permisos que necesita (Bedrock + AgentCore Memory) — no hace
 falta nada más para que la app funcione de punta a punta.
 
+## Despliegue del frontend Next.js y push real (rama gamificacion)
+
+Aditivo sobre lo de arriba: crea `InstanciaWeb` + `DistribucionWeb`
+propias, nunca toca `InstanciaUI`/`DistribucionUI` (Streamlit sigue
+funcionando igual, sin importar si hacés esto o no). Todavía sin
+Cognito real acá — el login queda en modo `TELOS_REQUIRE_LOGIN=0`
+(mismo mecanismo que Streamlit) hasta que se decida activarlo; este
+deploy prueba la app/API/push de punta a punta, no el login por
+persona.
+
+### Paso 5 — Generar las claves VAPID y un secreto para el scheduler
+
+Necesario para que el push real funcione; sin esto, `/api/push/config`
+devuelve `configurado: false` y la sección de notificaciones no aparece
+(no rompe nada, solo queda inactiva).
+
+```bash
+cd TelOS
+pip install pywebpush   # trae py-vapid/cryptography, no está en requirements.txt de la raíz
+python scripts/generar_claves_vapid.py
+```
+
+Guardá las tres líneas que imprime (`VapidPublicKey`, `VapidPrivateKey`,
+`VapidSubject`) en un lugar seguro — nunca en el repo. Generá también un
+secreto para `PushSchedulerSecret` (por ejemplo `openssl rand -hex 32`
+o `python -c "import secrets; print(secrets.token_hex(32))"`).
+
+### Paso 6 — CDK, primera pasada del frontend
+
+```bash
+cd infra
+npx aws-cdk deploy --parameters VapidPublicKey=<la del paso anterior> \
+  --parameters VapidPrivateKey=<la del paso anterior> \
+  --parameters VapidSubject=<mailto:tu-email@ejemplo.com> \
+  --parameters PushSchedulerSecret=<el secreto que generaste>
+```
+
+Guardá el output `UrlServicioWeb`. Igual que con `AppUrl` en el Paso 1
+de Streamlit, esta primera pasada no conoce todavía la URL real.
+
+### Paso 7 — CDK, segunda pasada (con la URL real)
+
+```bash
+npx aws-cdk deploy --parameters WebUrl=<el UrlServicioWeb del paso anterior>
+```
+
+Igual que el Paso 2 de Streamlit: solo hace falta pasar el parámetro que
+cambió (`WebUrl`), CDK conserva los valores de VAPID/secreto que ya
+quedaron seteados en el Paso 6. Mismo tiempo de propagación de
+CloudFront que en el Paso 1 de Streamlit (a veces 10-15 minutos).
+
+### Paso 8 — Verificar
+
+- `https://<UrlServicioWeb>/api/salud` → `{"estado": "ok"}`.
+- Entrar a `UrlServicioWeb` — como el login está en modo bypass, entra
+  directo como usuario `prueba-local`, sin pedir credenciales.
+- Con las claves VAPID configuradas, la barra lateral muestra
+  "Notifications" → "Enable notifications" → aceptar el permiso del
+  navegador → "Send a test one" manda una notificación real.
+- **A partir de acá, el Scheduler de EventBridge ya queda activo**
+  (`rate(1 day)`) — cualquier persona que se suscriba a partir de este
+  deploy va a recibir un recordatorio real una vez por día, no hace
+  falta ningún paso extra para activarlo.
+- `IdInstanciaWeb` (output) sirve igual que `IdInstanciaUI` para entrar
+  por SSM y mirar `docker ps`/`docker logs` si algo no levanta.
+
 ### (Opcional, no bloquea nada) — AgentCore Runtime real
 
 Bonus de puntaje ("Technical Implementation" del reglamento del
@@ -333,11 +408,33 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
   sigue aplicando igual, pero es una mejora obvia si sobra tiempo.
 - `crear_evento_calendario` está mockeado — devuelve una confirmación
   simulada, no crea eventos reales en Google Calendar.
-- El seguimiento (Fase 5) se dispara "al abrir conversación", no hay
-  scheduler real que envíe recordatorios proactivos.
+- El seguimiento (Fase 5) se dispara "al abrir conversación"; el
+  recordatorio proactivo *fuera* de la app (rama `gamificacion`, ver
+  [Despliegue del frontend Next.js y push real](#despliegue-del-frontend-nextjs-y-push-real-rama-gamificacion))
+  es un push del sistema operativo, no el chat en sí reabriéndose solo.
 - El paso opcional de AgentCore Runtime (`agentcore configure`/`launch`)
   no se ha ejercitado todavía — no bloquea el despliegue principal, es
   bonus de puntaje.
+
+**Rama `gamificacion` específicamente** (frontend Next.js/API/push):
+
+- Login con Cognito real todavía no está wireado en el frontend Next.js
+  — sigue en modo bypass (`TELOS_REQUIRE_LOGIN=0`) ahí, aunque Streamlit
+  ya lo tiene andando. Es el paso pendiente antes de un corte real.
+- Nada de esta rama se desplegó todavía contra una cuenta de AWS real —
+  validado con `cdk synth` + inspección manual del JSON, no con un
+  `cdk deploy` real.
+- Los `Dockerfile` de `api/`/`web/` nunca se construyeron de verdad (sin
+  Docker disponible en el entorno donde se escribió esto) — revisados a
+  mano, el primer build real pasa en el Paso 6 de arriba.
+- e2e con Playwright (`web/e2e/`) cubre lo que no necesita Bedrock real
+  (pedir el nombre, manejo de errores, idioma, PWA) — con credenciales
+  de Bedrock reales, faltan specs que completen una fase entera de
+  punta a punta.
+- El idioma de cada persona no se persiste en ningún lado (es estado
+  efímero del navegador) — los recordatorios push automáticos (Fase 4)
+  salen siempre en inglés, sin importar el idioma que la persona haya
+  usado en el chat.
 
 ## Licencia
 

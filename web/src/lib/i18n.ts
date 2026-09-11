@@ -44,6 +44,15 @@ export type Textos = {
   bienvenida_titulo: string;
   bienvenida_texto: string;
   error_generico: string;
+  push_titulo: string;
+  push_no_soportado: string;
+  push_activar: string;
+  push_activando: string;
+  push_activado: string;
+  push_desactivar: string;
+  push_probar: string;
+  push_error: string;
+  push_prueba_resultado: string;
 };
 
 export const TEXTOS: Record<Idioma, Textos> = {
@@ -81,6 +90,15 @@ export const TEXTOS: Record<Idioma, Textos> = {
       "5. 🔁 **Seguimiento** — check-ins breves cada vez que vuelvas\n\n" +
       "No es una meta con fecha límite — es un horizonte. Para arrancar, contame cómo te llamas 👇",
     error_generico: "Uy, algo falló de nuestro lado. Probá de nuevo en un momento.",
+    push_titulo: "Notificaciones",
+    push_no_soportado: "Tu navegador no soporta notificaciones push.",
+    push_activar: "🔔 Activar notificaciones",
+    push_activando: "Activando...",
+    push_activado: "🔔 Notificaciones activadas",
+    push_desactivar: "Desactivar",
+    push_probar: "Enviar una de prueba",
+    push_error: "No se pudo activar. Revisá los permisos de notificaciones del navegador.",
+    push_prueba_resultado: "Enviadas: {enviados}",
   },
   en: {
     caption: "Purpose isn't a goal to reach, it's a horizon.",
@@ -116,5 +134,14 @@ export const TEXTOS: Record<Idioma, Textos> = {
       "5. 🔁 **Follow-up** — brief check-ins every time you come back\n\n" +
       "It's not a goal with a deadline — it's a horizon. To get started, tell me your name 👇",
     error_generico: "Oops, something failed on our end. Try again in a moment.",
+    push_titulo: "Notifications",
+    push_no_soportado: "Your browser doesn't support push notifications.",
+    push_activar: "🔔 Enable notifications",
+    push_activando: "Enabling...",
+    push_activado: "🔔 Notifications enabled",
+    push_desactivar: "Disable",
+    push_probar: "Send a test one",
+    push_error: "Couldn't enable it. Check your browser's notification permissions.",
+    push_prueba_resultado: "Sent: {enviados}",
   },
 };

@@ -46,3 +46,39 @@ export function urlLogin(idioma: Idioma): string {
 export function urlLogout(): string {
   return "/api/auth/logout";
 }
+
+// --- Push (Fase 3) ---
+
+async function jsonFetch<T>(ruta: string, init: RequestInit): Promise<T> {
+  const respuesta = await fetch(ruta, { credentials: "include", ...init });
+  if (!respuesta.ok) throw new Error(`${ruta} devolvió ${respuesta.status}`);
+  return respuesta.status === 204 ? (undefined as T) : respuesta.json();
+}
+
+export function obtenerConfigPush(): Promise<{ configurado: boolean; clavePublica: string }> {
+  return jsonFetch("/api/push/config", { method: "GET" });
+}
+
+export function suscribirPush(suscripcion: PushSubscriptionJSON): Promise<void> {
+  return jsonFetch("/api/push/suscripcion", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(suscripcion),
+  });
+}
+
+export function desuscribirPush(endpoint: string): Promise<void> {
+  return jsonFetch("/api/push/suscripcion", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint }),
+  });
+}
+
+export function enviarPruebaPush(idioma: Idioma): Promise<{ enviados: number; invalidasEliminadas: number }> {
+  return jsonFetch("/api/push/enviar-prueba", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idioma }),
+  });
+}

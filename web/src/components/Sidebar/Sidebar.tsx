@@ -2,6 +2,7 @@ import type { Textos } from "@/lib/i18n";
 import { formatear } from "@/lib/formato";
 import { urlLogout } from "@/lib/apiCliente";
 import type { FichaSnapshot, Idioma } from "@/lib/types";
+import { PushOptIn } from "../Notifications/PushOptIn";
 import { EvolucionHistorial } from "./EvolucionHistorial";
 import { ExportarButton } from "./ExportarButton";
 import { FaseActual } from "./FaseActual";
@@ -72,6 +73,8 @@ export function Sidebar({
       {ficha && <EvolucionHistorial idioma={idioma} t={t} ficha={ficha} />}
 
       <ExportarButton idioma={idioma} t={t} tieneProposito={Boolean(datos.proposito)} />
+
+      <PushOptIn idioma={idioma} t={t} />
     </aside>
   );
 }

@@ -426,3 +426,114 @@ class TelosStack(Stack):
                 "entrar a la instancia si el user data falla (ver README)."
             ),
         )
+
+        # --- API (rama gamificacion): backend delgado para el frontend
+        # Node.js nuevo -- ver C:\Users\Wendy\.claude\plans\
+        # cosmic-zooming-tarjan.md sección C. Instancia y distribución
+        # propias, separadas de InstanciaUI/DistribucionUI a propósito:
+        # así un despliegue de la API (incluyendo un reemplazo por
+        # user_data_causes_replacement) nunca puede interrumpir la
+        # instancia que sirve Streamlit -- "mantener Streamlit
+        # desplegado" tiene que ser literal, no solo conceptual. Login
+        # todavía sin Cognito real acá (TELOS_REQUIRE_LOGIN=0, mismo
+        # mecanismo que ui/app.py) -- el App Client de Cognito recién se
+        # toca cuando el frontend Next.js exista de verdad (Fase 2 del
+        # plan), no antes.
+        api_url = CfnParameter(
+            self,
+            "ApiUrl",
+            type="String",
+            default="https://localhost:8000",
+            description=(
+                "URL pública de la API. El primer deploy no la conoce "
+                "todavía -- deja el default, y haz un segundo deploy "
+                "pasando --parameters ApiUrl=<el output UrlServicioApi "
+                "del primer deploy> para que el redirect_uri de Cognito "
+                "quede bien configurado cuando se active el login real."
+            ),
+        )
+
+        imagen_api = ecr_assets.DockerImageAsset(
+            self,
+            "ImagenApi",
+            directory=str(_REPO_ROOT),
+            file="api/Dockerfile",
+            exclude=[".venv", ".git", "infra", "data", "ui/app.py", "**/__pycache__", "*.md"],
+        )
+        imagen_api.repository.grant_pull(rol_agentes)
+
+        sg_instancia_web = ec2.SecurityGroup(
+            self,
+            "SgInstanciaWeb",
+            vpc=vpc,
+            description="Permite trafico HTTP entrante a la API (8000).",
+            allow_all_outbound=True,
+        )
+        sg_instancia_web.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(8000), "API FastAPI (directo o via CloudFront)")
+
+        comandos_usuario_api = ec2.UserData.for_linux()
+        comandos_usuario_api.add_commands(
+            "dnf install -y docker",
+            "systemctl enable --now docker",
+            f"aws ecr get-login-password --region {self.region} | "
+            f"docker login --username AWS --password-stdin {self.account}.dkr.ecr.{self.region}.amazonaws.com",
+            "docker run -d --restart unless-stopped -p 8000:8000 "
+            f'-e TELOS_AWS_REGION="{self.region}" '
+            '-e TELOS_FICHA_BACKEND="agentcore" '
+            '-e TELOS_REQUIRE_LOGIN="0" '
+            f'-e COGNITO_DOMAIN="{user_pool_domain.base_url()}" '
+            f'-e COGNITO_USER_POOL_ID="{user_pool.user_pool_id}" '
+            f'-e COGNITO_CLIENT_ID="{user_pool_client.user_pool_client_id}" '
+            f'-e COGNITO_CLIENT_SECRET="{user_pool_client.user_pool_client_secret.unsafe_unwrap()}" '
+            f'-e APP_URL="{api_url.value_as_string}" '
+            f"{imagen_api.image_uri}",
+        )
+
+        instancia_web = ec2.Instance(
+            self,
+            "InstanciaWeb",
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO),
+            machine_image=ec2.MachineImage.latest_amazon_linux2023(),
+            security_group=sg_instancia_web,
+            role=rol_agentes,
+            user_data=comandos_usuario_api,
+            user_data_causes_replacement=True,
+            associate_public_ip_address=True,
+        )
+
+        distribucion_api = cloudfront.Distribution(
+            self,
+            "DistribucionApi",
+            default_behavior=cloudfront.BehaviorOptions(
+                origin=origins.HttpOrigin(
+                    instancia_web.instance_public_dns_name,
+                    protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+                    http_port=8000,
+                ),
+                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
+            ),
+        )
+
+        CfnOutput(
+            self,
+            "UrlServicioApi",
+            value=f"https://{distribucion_api.distribution_domain_name}",
+            description=(
+                "Pasar como --parameters ApiUrl=<esta URL> en un segundo "
+                "deploy. Probar con GET /api/salud."
+            ),
+        )
+        CfnOutput(
+            self,
+            "IdInstanciaWeb",
+            value=instancia_web.instance_id,
+            description=(
+                "Usar con `aws ssm start-session --target <esto>` para "
+                "entrar a la instancia de la API si el user data falla."
+            ),
+        )

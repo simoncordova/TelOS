@@ -421,7 +421,7 @@ for numero_fase, columna in zip(range(1, 6), columnas_camino):
 if sesion.fase_actual == 5:
     with st.container(border=True):
         st.subheader(t["resumen_titulo"])
-        st.markdown(construir_vista_resumen(ficha["actual"], idioma, sesion.nombre).replace("\n", "  \n"))
+        st.markdown(construir_vista_resumen(ficha["actual"], idioma, sesion.nombre, ficha["historial"]).replace("\n", "  \n"))
 
 if sesion.nombre:
     st.caption(t["saludo_nombre"].format(nombre=sesion.nombre))

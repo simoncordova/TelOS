@@ -55,7 +55,7 @@ def main() -> None:
     if sesion.fase_actual == 5:
         ficha = leer_ficha_usuario(usuario_id)
         print("--- Tu resumen ---")
-        print(construir_vista_resumen(ficha["actual"], idioma, sesion.nombre))
+        print(construir_vista_resumen(ficha["actual"], idioma, sesion.nombre, ficha["historial"]))
         print("------------------\n")
 
     # El agente habla primero, siempre -- nueva conversación o retomada.

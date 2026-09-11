@@ -230,7 +230,10 @@ _CAMPOS_REQUERIDOS_AL_CERRAR = {
     2: ("proposito",),
     3: ("proposito",),
     4: ("proposito", "sistema"),
-    5: ("proposito", "sistema"),
+    # "cumplido" (booleano) es de la rama `gamificacion` -- sin él,
+    # agents/seguimiento.py::calcular_racha no tiene de qué derivar la
+    # racha, así que es tan obligatorio como "proposito"/"sistema".
+    5: ("proposito", "sistema", "cumplido"),
 }
 
 _FALTAN_CAMPOS = {
@@ -438,7 +441,12 @@ class SesionTelos:
             return ()
         ficha = leer_ficha_usuario(self.usuario_id)
         datos = (ficha["actual"] or {}).get("datos", {}) if ficha["existe"] else {}
-        return tuple(campo for campo in requeridos if not (datos or {}).get(campo))
+        # "is None" y no una verificación de verdad -- un campo booleano
+        # como "cumplido" (rama gamificacion) es legítimamente `False`
+        # cuando la persona no sostuvo el hábito, y eso NO es lo mismo
+        # que faltar. Solo la ausencia real de la clave (o un `None`
+        # explícito) cuenta como faltante.
+        return tuple(campo for campo in requeridos if (datos or {}).get(campo) is None)
 
     def _invocar_verificado(self, texto: str) -> str:
         """Invoca y, si la respuesta suena a que ya guardó pero la tool

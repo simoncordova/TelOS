@@ -911,7 +911,7 @@ current system: ... / Last updated: ...".
 
 | Tool | Firma | Usado por | Notas |
 |---|---|---|---|
-| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Cada `agents/*.py` en realidad llama a `tools.ficha.guardar_ficha_usuario_fusionada`, no a la función base: fusiona `datos` sobre la última versión guardada (las claves nuevas ganan) antes de escribir, así una fase que se olvida de re-incluir "proposito"/"sistema" no los borra — ver sección 1, puntos 13-14. Vía AgentCore Memory (o backend JSON local en desarrollo); cada llamada crea una nueva versión, nunca sobrescribe el historial. Convención de claves de `datos`: desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas) — si una clave nunca se puso ni una sola vez, la fusión no tiene nada de qué heredarla, así que `SesionTelos._campos_faltantes` fuerza un reintento (sección 1, punto 14). El cuerpo real de la tool, en cada `agents/*.py`, también marca `SesionTelos._contenedor_guardado` (mismo patrón que `presentar_opciones`, fila de abajo) para que el Orquestador sepa con certeza que se ejecutó, sin depender de releer la ficha — ver sección 0.7. |
+| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Cada `agents/*.py` en realidad llama a `tools.ficha.guardar_ficha_usuario_fusionada`, no a la función base: fusiona `datos` sobre la última versión guardada (las claves nuevas ganan) antes de escribir, así una fase que se olvida de re-incluir "proposito"/"sistema" no los borra — ver sección 1, puntos 13-14. Vía AgentCore Memory (o backend JSON local en desarrollo); cada llamada crea una nueva versión, nunca sobrescribe el historial. Convención de claves de `datos`: desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas); desde Fase 5 (rama `gamificacion`), además `datos["cumplido"]` (booleano, no string — `agents/orquestador.py::_campos_faltantes` usa `is None` para detectar que falta, justamente para no confundir un `false` legítimo con una clave ausente) del que `agents/seguimiento.py::calcular_racha` deriva la racha — si una clave nunca se puso ni una sola vez, la fusión no tiene nada de qué heredarla, así que `SesionTelos._campos_faltantes` fuerza un reintento (sección 1, punto 14). El cuerpo real de la tool, en cada `agents/*.py`, también marca `SesionTelos._contenedor_guardado` (mismo patrón que `presentar_opciones`, fila de abajo) para que el Orquestador sepa con certeza que se ejecutó, sin depender de releer la ficha — ver sección 0.7. |
 | `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 3, 4, 5 | Devuelve la última versión y el historial de versiones anteriores, cada una con su `datos` completo (no solo fase/fecha/motivo) — necesario para la vista "Tu evolución" de la interfaz, que muestra cómo cambió el propósito/sistema con el tiempo, no solo cuándo. |
 | `presentar_opciones` | `(opciones: list[str]) -> str` | 2 (Sintetizador) | `agents/_modelo.py::crear_tool_presentar_opciones`. No persiste nada — solo le avisa a la sesión (`SesionTelos`) qué opciones mostrar como botones en este turno, vía un contenedor mutable compartido; el Orquestador la limpia antes de cada invocación y la entrega en la tupla `(fase, texto, opciones)`. Pensada para decisiones cerradas de un conjunto chico y conocido (el candidato de propósito); no se le agregó a las fases de preguntas abiertas (1, 3) porque ahí no hay un menú fijo que ofrecer, sería inventar estructura que el spec no pide. |
 | `guardar_nombre_usuario` / `leer_nombre_usuario` | `(usuario_id: str, nombre: str) -> None` / `(usuario_id: str) -> str \| None` | Orquestador, en el Paso 0 (código, no tool de ningún agente de fase) | `tools/perfil.py` (mismo selector de backend `TELOS_FICHA_BACKEND` que la ficha). No versiona -- a diferencia de `guardar_ficha_usuario`, cada guardado reemplaza el nombre vigente. Vive separado de la ficha a propósito: si fuera una clave más dentro de `datos`, se perdería de vista en cuanto una fase posterior guardara una versión nueva sin repetirla (ver la nota de la fila de arriba). |
@@ -923,12 +923,29 @@ current system: ... / Last updated: ...".
 
 ## 8. Reglas de tono (todas las fases, con énfasis en Fase 5)
 
-- Nunca contadores de racha ni "llevas X días/semanas seguidos".
+**Decisión revertida — gamificación:** hasta acá, este documento prohibía
+rachas, puntos, insignias y barras de progreso. Se revierte a pedido
+explícito del dueño del producto, con esta razón: un sistema (Fase 4)
+solo funciona si la persona le es constante, y la constancia se sostiene
+mejor con registro visible y algo de gamificación — negarlo por una
+regla de diseño le restaba a la utilidad real de la app. El matiz que se
+mantiene: la gamificación es del **sistema/hábito** (la constancia día a
+día), no del **propósito** en sí — el propósito sigue sin ser una "meta"
+que se "completa" (de ahí el nombre Telos, un horizonte, no una línea de
+llegada); lo que ahora sí se puede medir y celebrar es si la persona
+sostuvo el hábito que eligió para expresarlo. Ver rama `gamificacion`
+para la implementación; este documento en `main` puede seguir sin este
+cambio hasta que se decida mergear.
+
+- Contadores de racha ("llevas X días seguidos"), barras de progreso del
+  sistema y lenguaje de gamificación (puntos, niveles, insignias) son
+  válidos desde ahora, mostrados con calidez.
+- Nunca tono punitivo o de examen si la racha se corta o el cumplimiento
+  fue bajo — un recordatorio empático ("mañana es una nueva
+  oportunidad"), no una pérdida dramática ni un castigo. La gamificación
+  suma refuerzo positivo, no presión.
 - Nunca repetir literalmente la misma pregunta de check-in dos sesiones
   seguidas.
-- Nunca lenguaje de gamificación: puntos, niveles, insignias, barras de
-  progreso hacia una "meta" (el propósito no es una meta, es un horizonte
-  — de ahí el nombre Telos).
 - Español neutro Latam/España: conjugación de "tú" (tienes, quieres,
   eres, puedes, sientes) — **nunca de "vos"** (tenés, querés, sos,
   podés, sentís). El error concreto que motivó reforzar esta regla: el

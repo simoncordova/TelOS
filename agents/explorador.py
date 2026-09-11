@@ -121,7 +121,10 @@ def crear_agente_explorador(
     mensajes_previos: list | None = None,
     nombre: str | None = None,
     contenedor_opciones: list | None = None,
+    contenedor_guardado: list | None = None,
 ) -> Agent:
+    if contenedor_guardado is None:
+        contenedor_guardado = []
     if idioma == "en":
         plantilla = _PLANTILLA_EN
         instruccion_saludo = f' (use their first name, "{nombre}")' if nombre else ""
@@ -146,6 +149,7 @@ def crear_agente_explorador(
     def guardar_ficha_usuario(datos: dict, motivo_version: str) -> None:
         """Guarda el avance de la ficha del usuario en esta fase (Explorador)."""
         _guardar(usuario_id, datos, fase=1, motivo_version=motivo_version)
+        contenedor_guardado.append(True)
 
     return Agent(
         system_prompt=system_prompt,

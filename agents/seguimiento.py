@@ -186,7 +186,10 @@ def crear_agente_seguimiento(
     mensajes_previos: list | None = None,
     nombre: str | None = None,
     contenedor_opciones: list | None = None,
+    contenedor_guardado: list | None = None,
 ) -> Agent:
+    if contenedor_guardado is None:
+        contenedor_guardado = []
     ficha = _leer(usuario_id)
     tipo_checkin = elegir_tipo_checkin(ficha["historial"])
     vista_resumen = construir_vista_resumen(ficha["actual"], idioma, nombre)
@@ -220,6 +223,7 @@ def crear_agente_seguimiento(
         """Guarda el resultado del check-in de esta sesión."""
         motivo_version = f"check-in:{tipo_checkin}"
         _guardar(usuario_id, datos, fase=5, motivo_version=motivo_version)
+        contenedor_guardado.append(True)
 
     return Agent(
         system_prompt=system_prompt,

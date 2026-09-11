@@ -95,7 +95,10 @@ def crear_agente_coach_validacion(
     mensajes_previos: list | None = None,
     nombre: str | None = None,
     contenedor_opciones: list | None = None,
+    contenedor_guardado: list | None = None,
 ) -> Agent:
+    if contenedor_guardado is None:
+        contenedor_guardado = []
     if idioma == "en":
         system_prompt = _PLANTILLA_EN.format(
             regla_transicion=REGLA_TRANSICION_EN,
@@ -119,6 +122,7 @@ def crear_agente_coach_validacion(
     def guardar_ficha_usuario(datos: dict, motivo_version: str) -> None:
         """Guarda el propósito validado y su evidencia de respaldo."""
         _guardar(usuario_id, datos, fase=3, motivo_version=motivo_version)
+        contenedor_guardado.append(True)
 
     return Agent(
         system_prompt=system_prompt,

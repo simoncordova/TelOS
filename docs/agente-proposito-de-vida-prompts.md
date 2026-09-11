@@ -161,33 +161,47 @@ ahora prohíbe la idea de un cambio de interlocutor, no solo el nombre
 propio de quién sigue.
 
 **Decir que cerraste no es lo mismo que cerrar:** otro bug real, más
-serio, encontrado en la misma prueba: el Explorador, presionado por el
-aviso fuerte de cierre (sección 1, punto 8), ESCRIBIÓ que ya había
-guardado todo el avance y que la conversación seguía de largo — pero
-nunca llamó a `guardar_ficha_usuario`. El Orquestador nunca vio una
-versión nueva, así que nunca cascadeó a Fase 2, y el mismo Explorador
-siguió respondiendo turno tras turno — terminó improvisando, él solo, el
-trabajo de las fases siguientes (eligió un "patrón" de propósito, lo dio
-por validado con una sola pregunta de confirmación, y hasta empezó a
-diseñar un sistema de hábito), todo sin salir nunca de Fase 1, hasta que
-finalmente sí llamó a la tool varios turnos después. Un LLM puede
-describir una acción en el texto sin ejecutarla — esto necesita las dos
-capas de siempre: `agents/_modelo.py::REGLA_CIERRE_REAL_ES/EN` (regla
-compartida por los 5 prompts, deja explícito que cerrar significa llamar
-a la tool en ese mismo turno, no describirlo, y que ninguna fase debe
-adelantarse a hacer el trabajo de otra aunque la persona pregunte "¿y
-ahora?" o parezca ansiosa por terminar) y, como red de seguridad por
-código, `agents/orquestador.py::SesionTelos._preparar_texto_y_forzado` /
-`_fase_avanzo`: si el aviso fuerte de cierre ya se aplicó y, después de
-invocar al agente, la ficha sigue sin una versión nueva, el Orquestador
-fuerza un segundo intento en el mismo turno con una instrucción sin
-ambigüedad ("llamá a la tool AHORA, no lo describas") antes de
-resignarse. Igual que el resto de los reintentos acotados del proyecto
-(GuardaEstilo, la relectura de la ficha): como mucho un reintento extra,
-nunca un loop sin límite.
+serio, encontrado en la misma prueba — y que reapareció después en una
+fase distinta. Primero el Explorador, presionado por el aviso fuerte de
+cierre (sección 1, punto 8), ESCRIBIÓ que ya había guardado todo el
+avance y que la conversación seguía de largo — pero nunca llamó a
+`guardar_ficha_usuario`. El Orquestador nunca vio una versión nueva, así
+que nunca cascadeó a Fase 2, y el mismo Explorador siguió respondiendo
+turno tras turno, improvisando él solo el trabajo de las fases
+siguientes (eligió un "patrón" de propósito, lo dio por validado con una
+sola pregunta de confirmación, y hasta empezó a diseñar un sistema de
+hábito), todo sin salir nunca de Fase 1. Días después, ya con ese primer
+fix desplegado, el mismo patrón apareció en el Sintetizador — sin ningún
+aviso fuerte de por medio, en un turno normal: dijo "ya está guardado"
+sobre un candidato de propósito que la persona ni había visto (la
+presentación real de candidatos se había perdido en un reintento por
+respuesta vacía, ver el bug de abajo) y siguió de largo haciendo
+preguntas de evidencia que le correspondían al Coach de Validación, todo
+todavía adentro de Fase 2. Confirmó que esto no es privativo de una fase
+ni de una situación de "demasiados turnos" — es un problema general de
+un LLM describiendo una acción en el texto sin ejecutarla.
+
+Fix en dos capas, ahora general: `agents/_modelo.py::REGLA_CIERRE_REAL_ES/EN`
+(regla compartida por los 5 prompts: cerrar significa llamar a la tool
+en ese mismo turno, no describirlo, y ninguna fase debe adelantarse a
+hacer el trabajo de otra aunque la persona pregunte "¿y ahora?") y, como
+red de seguridad por código,
+`agents/orquestador.py::SesionTelos._dice_que_guardo_sin_guardar` /
+`_invocar_verificado`: después de CUALQUIER invocación, en CUALQUIER
+fase, si el texto de la respuesta suena a que ya guardó (`_FRASE_CIERRE_FALSO`,
+regex bilingüe) pero `guardar_ficha_usuario` no se ejecutó de verdad, se
+fuerza un reintento con una instrucción sin ambigüedad. Ese "se ejecutó
+de verdad" no se decide releyendo la ficha (con el riesgo de falso
+negativo por consistencia eventual de AgentCore Memory) sino con un
+contenedor mutable que cada `agents/*.py` llena desde el cuerpo real de
+su tool (`SesionTelos._contenedor_guardado`) — el mismo patrón que ya
+usa `presentar_opciones` para las opciones (sección 7). Igual que el
+resto de los reintentos acotados del proyecto (GuardaEstilo, la
+relectura de la ficha): como mucho un reintento extra, nunca un loop sin
+límite.
 
 **Una respuesta vacía no puede llegar a AgentCore Memory:** bug de
-crash real, distinto de los dos de arriba — cuando la cascada a la fase
+crash real, distinto del de arriba — cuando la cascada a la fase
 siguiente invocaba al agente nuevo y este devolvía un string vacío (pasa
 ocasionalmente con Bedrock), `guardar_intercambio` intentaba guardar ese
 turno igual y AgentCore Memory lo rechazaba
@@ -196,7 +210,31 @@ tumbando toda la sesión de Streamlit. `SesionTelos._invocar` ahora nunca
 devuelve un string vacío: si la respuesta viene vacía, reintenta una vez
 con un empujón explícito, y si sigue vacía, cae a un aviso fijo no vacío
 en el idioma de la sesión, en vez de dejar pasar el string vacío hacia
-`guardar_intercambio`.
+`guardar_intercambio`. Efecto colateral real de este bug: cuando ambos
+intentos del Sintetizador vinieron vacíos, el aviso fijo ("tuve un
+problema para generar la respuesta...") quedó grabado en el historial de
+la fase como si fuera contenido real — la persona nunca vio los
+candidatos de propósito, y el turno siguiente del Sintetizador ya no
+tenía ese material en su contexto (de ahí el bug de arriba).
+
+**Retomar una sesión en la fase equivocada:** un tercer bug, más sutil,
+encontrado mientras se armaba la prueba automatizada de abajo (nunca
+reportado directamente, pero hubiera causado el mismo síntoma de "el
+agente no se entera de lo que ya se habló"): `_determinar_fase_inicial`
+devolvía el número de fase guardado en la última versión de la ficha tal
+cual, en vez de sumarle 1 — pero ese campo registra la fase QUE ACABA DE
+CERRAR, no la fase en la que hay que continuar (sección 1, punto 12). Si
+el proceso se reiniciaba (deploy, reciclado del contenedor) justo
+después de que una fase cerrara, una sesión nueva volvía a correr esa
+misma fase desde cero en vez de retomar en la siguiente.
+
+**Herramienta para probar esto sin manos:** `scripts/simular_conversacion.py`
+manda un guion fijo de respuestas contra Bedrock real (no mockea el
+modelo, mockea el lado de la persona) e imprime, turno por turno, si
+`guardar_ficha_usuario` se ejecutó de verdad, si el texto sonaba a que
+guardó sin haberlo hecho, y las claves de `datos` en la ficha — para
+diagnosticar estos tres bugs (y los que vengan) sin depender de
+reproducirlos a mano en el navegador.
 
 ## 1. Orquestador
 
@@ -296,21 +334,44 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
    terreno") igual puede fallar, y una conversación real llegó a más de
    25 preguntas sin que el Explorador cerrara solo, hasta que la persona
    tuvo que pedirlo explícitamente.
-9. Cuando se aplicó el aviso fuerte del punto 8, el Orquestador verifica
-   después de invocar si la ficha realmente cambió de versión — no si el
-   texto de la respuesta *sonaba* a un cierre. Si no cambió, fuerza un
-   segundo intento en el mismo turno con una instrucción sin ambigüedad
-   ("llamá a la tool AHORA, no la describas") antes de resignarse. Ver
-   sección 0.7 para el bug real que motivó esto: el Explorador dijo que
-   había guardado todo sin haber llamado a la tool, y terminó
-   improvisando el trabajo de las fases siguientes sin salir nunca de
-   Fase 1.
-10. `SesionTelos._invocar` nunca devuelve un string vacío: si la
+9. Cuando se aplicó el aviso fuerte del punto 8, el Orquestador exige que
+   la tool `guardar_ficha_usuario` se haya ejecutado de verdad en esa
+   invocación — no que el texto de la respuesta *suene* a un cierre. Lo
+   sabe con certeza (no releyendo la ficha) porque cada `agents/*.py`
+   marca un contenedor compartido (`SesionTelos._contenedor_guardado`)
+   desde el cuerpo real de su tool, el mismo patrón que ya usa
+   `presentar_opciones` para las opciones (punto 7). Si no se marcó,
+   fuerza un segundo intento en el mismo turno con una instrucción sin
+   ambigüedad ("llamá a la tool AHORA, no la describas") antes de
+   resignarse.
+10. Ese mismo chequeo (¿la tool se ejecutó de verdad?) se aplica en
+    CUALQUIER fase, en cualquier turno — no solo tras el aviso fuerte de
+    Fase 1 — cuando el texto de la respuesta suena a que ya guardó
+    (`agents/orquestador.py::_FRASE_CIERRE_FALSO`, una regex bilingüe:
+    "ya guardé", "está guardado", "already saved", etc.). Ver sección
+    0.7 para los dos bugs reales que motivaron esto: primero el
+    Explorador, después el Sintetizador, dijeron que habían guardado sin
+    haber llamado a la tool, y terminaron improvisando el trabajo de
+    fases siguientes sin cerrar la suya.
+11. `SesionTelos._invocar` nunca devuelve un string vacío: si la
     respuesta del modelo viene vacía, reintenta una vez con un empujón
     explícito, y si sigue vacía, cae a un aviso fijo no vacío. Necesario
     porque `guardar_intercambio` contra AgentCore Memory exige longitud
     mínima 1 y tira `ParamValidationError` (bug real que tumbaba toda la
     sesión de Streamlit) si se le pasa un string vacío.
+12. `SesionTelos._determinar_fase_inicial` (se corre al construir una
+    sesión nueva, ej. reconexión o reinicio del proceso) suma 1 a la
+    fase guardada en la última versión de la ficha, no la devuelve tal
+    cual — el campo `fase` de una versión registra la fase QUE ACABA DE
+    CERRAR para producirla, no la fase en la que continúa la persona
+    (mismo criterio que el punto 5: guarda con `fase=fase_actual` y
+    recién después avanza `fase_actual` a `fase + 1`). Bug real
+    corregido acá: sin el `+ 1`, un reinicio del proceso justo después de
+    que una fase cerrara (pero antes de que la sesión en memoria
+    cascadeara) volvía a correr esa fase desde cero en vez de retomar en
+    la siguiente. Fase 4 es la excepción (cierra la ficha entera, así
+    que una sesión nueva entra directo a Fase 5) y una ficha ya en
+    Fase 5 se queda en Fase 5.
 
 ## 2. Fase 1 — Explorador
 
@@ -802,7 +863,7 @@ current system: ... / Last updated: ...".
 
 | Tool | Firma | Usado por | Notas |
 |---|---|---|---|
-| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Vía AgentCore Memory (o backend JSON local en desarrollo). Cada llamada crea una nueva versión; nunca sobrescribe el historial. Convención de claves de `datos` (no forzada por esquema, pero todas las fases ≥2 tienen que respetarla porque Fase 5 y la interfaz leen la versión más reciente sin fusionar versiones viejas): desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas). Cada fase que guarda después de la 2 tiene que re-incluir estas claves aunque no las haya cambiado — omitirlas las hace desaparecer de la Vista de resumen y del panel de la interfaz, aunque sigan "vigentes" conceptualmente. |
+| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | 1, 2, 3, 4, 5 | Vía AgentCore Memory (o backend JSON local en desarrollo). Cada llamada crea una nueva versión; nunca sobrescribe el historial. Convención de claves de `datos` (no forzada por esquema, pero todas las fases ≥2 tienen que respetarla porque Fase 5 y la interfaz leen la versión más reciente sin fusionar versiones viejas): desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas). Cada fase que guarda después de la 2 tiene que re-incluir estas claves aunque no las haya cambiado — omitirlas las hace desaparecer de la Vista de resumen y del panel de la interfaz, aunque sigan "vigentes" conceptualmente. El cuerpo real de la tool, en cada `agents/*.py`, también marca `SesionTelos._contenedor_guardado` (mismo patrón que `presentar_opciones`, fila de abajo) para que el Orquestador sepa con certeza que se ejecutó, sin depender de releer la ficha — ver sección 0.7. |
 | `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 3, 4, 5 | Devuelve la última versión y un resumen del historial de versiones (fase, fecha, motivo — no el contenido completo de versiones viejas). |
 | `presentar_opciones` | `(opciones: list[str]) -> str` | 2 (Sintetizador) | `agents/_modelo.py::crear_tool_presentar_opciones`. No persiste nada — solo le avisa a la sesión (`SesionTelos`) qué opciones mostrar como botones en este turno, vía un contenedor mutable compartido; el Orquestador la limpia antes de cada invocación y la entrega en la tupla `(fase, texto, opciones)`. Pensada para decisiones cerradas de un conjunto chico y conocido (el candidato de propósito); no se le agregó a las fases de preguntas abiertas (1, 3) porque ahí no hay un menú fijo que ofrecer, sería inventar estructura que el spec no pide. |
 | `guardar_nombre_usuario` / `leer_nombre_usuario` | `(usuario_id: str, nombre: str) -> None` / `(usuario_id: str) -> str \| None` | Orquestador, en el Paso 0 (código, no tool de ningún agente de fase) | `tools/perfil.py` (mismo selector de backend `TELOS_FICHA_BACKEND` que la ficha). No versiona -- a diferencia de `guardar_ficha_usuario`, cada guardado reemplaza el nombre vigente. Vive separado de la ficha a propósito: si fuera una clave más dentro de `datos`, se perdería de vista en cuanto una fase posterior guardara una versión nueva sin repetirla (ver la nota de la fila de arriba). |

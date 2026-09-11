@@ -53,6 +53,7 @@ por ahora solo la usa el Sintetizador, para elegir el propósito
 candidato.
 """
 
+import re
 import time
 
 from strands.agent import Agent
@@ -187,6 +188,35 @@ _RESPUESTA_VACIA_FALLBACK = {
     "en": "Sorry, I had trouble generating a reply. Could you send your last message again?",
 }
 
+# El mismo bug de "dijo que guardó pero no llamó a la tool" apareció
+# después en el Sintetizador (Fase 2), no solo en el Explorador -- así
+# que el freno de _FORZAR_CIERRE no puede depender del contador de
+# turnos de Fase 1 (_UMBRAL_NUDGE_EXPLORADOR* arriba), que no tiene
+# sentido para las otras fases. Esta versión general aplica en
+# CUALQUIER fase, en cualquier turno: no adivina "¿ya deberían haber
+# cerrado?" por cantidad de turnos, sino que verifica dos señales
+# concretas después de cada invocación -- (1) ¿el texto de la respuesta
+# suena a que ya guardó? (regex, ver _FRASE_CIERRE_FALSO) y (2) ¿la tool
+# guardar_ficha_usuario se ejecutó de verdad en esa invocación? (el flag
+# `_contenedor_guardado`, que cada agents/*.py llena desde el cuerpo real
+# de su tool -- no una relectura de la ficha con reintentos, así no hay
+# falso negativo por consistencia eventual de AgentCore Memory). Si (1)
+# es cierto y (2) es falso, se fuerza un reintento; si (2) ya es cierto,
+# no hace falta insistir aunque el texto también lo mencione.
+_FRASE_CIERRE_FALSO = {
+    "es": re.compile(
+        r"ya\s+(lo\s+|los\s+|la\s+|las\s+)?(guard[eé]|guardamos)\b"
+        r"|guard[eé]\s+(todo|el\s+avance|tu\s+elecci[oó]n|la\s+redacci[oó]n|el\s+sistema|tu\s+prop[oó]sito)"
+        r"|(ya\s+)?est[aá]\s+guardad[oa]"
+        r"|qued[oó]\s+guardad[oa]",
+        re.IGNORECASE,
+    ),
+    "en": re.compile(
+        r"\b(already\s+saved|i(?:'ve| have)?\s+saved|it'?s\s+(?:already\s+)?saved|saved\s+(?:it|that|everything|your))\b",
+        re.IGNORECASE,
+    ),
+}
+
 
 def _turnos_a_mensajes(turnos: list[dict]) -> list[dict]:
     """Convierte los turnos guardados (tools/conversacion.py) al formato
@@ -243,6 +273,12 @@ class SesionTelos:
         # abrir_conversacion lee la instantánea apenas termina esa
         # invocación puntual.
         self._contenedor_opciones: list = []
+        # Mismo patrón, para saber con certeza (no por relectura de la
+        # ficha, que puede tardar en reflejar un guardado por consistencia
+        # eventual) si guardar_ficha_usuario se ejecutó de verdad en la
+        # última invocación -- cada agents/*.py lo llena desde el cuerpo
+        # real de esa tool. Ver _FRASE_CIERRE_FALSO.
+        self._contenedor_guardado: list = []
         self.fase_actual = self._determinar_fase_inicial()
         self._agente: Agent | None = None if self._pidiendo_nombre else self._crear_agente_fase(self.fase_actual)
 
@@ -254,10 +290,12 @@ class SesionTelos:
             mensajes_previos=_turnos_a_mensajes(turnos),
             nombre=self.nombre,
             contenedor_opciones=self._contenedor_opciones,
+            contenedor_guardado=self._contenedor_guardado,
         )
 
     def _invocar_una_vez(self, texto: str) -> str:
         self._contenedor_opciones.clear()
+        self._contenedor_guardado.clear()
         respuesta = str(self._agente(texto)).strip()
         registrar_invocacion(self.usuario_id)
         return respuesta
@@ -292,8 +330,8 @@ class SesionTelos:
         fase si el Explorador ya lleva demasiados turnos -- ver
         _UMBRAL_NUDGE_EXPLORADOR arriba. El segundo valor de la tupla
         indica si se aplicó el aviso fuerte: en ese caso, `enviar_mensaje`
-        verifica después de invocar si la fase realmente cerró (no solo
-        si el texto *sonaba* a un cierre) y fuerza un reintento si no."""
+        exige que la tool se haya ejecutado de verdad (no alcanza con que
+        el texto *suene* a un cierre) y fuerza un reintento si no."""
         if self.fase_actual != 1:
             return texto, False
         turnos_previos = len(leer_turnos(self.usuario_id, 1)) // 2
@@ -302,6 +340,29 @@ class SesionTelos:
         if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR:
             return texto + _NUDGE_EXPLORADOR[self.idioma], False
         return texto, False
+
+    def _dice_que_guardo_sin_guardar(self, respuesta: str) -> bool:
+        """True si el texto de la respuesta suena a que ya guardó el
+        avance (regex _FRASE_CIERRE_FALSO) pero guardar_ficha_usuario NO
+        se ejecutó de verdad en la última invocación (`_contenedor_guardado`
+        vacío). Bug real visto primero en el Explorador y después en el
+        Sintetizador -- no es privativo de una fase, así que este chequeo
+        se aplica parejo en cualquiera (ver `_invocar_verificado`)."""
+        if self._contenedor_guardado:
+            return False
+        patron = _FRASE_CIERRE_FALSO.get(self.idioma, _FRASE_CIERRE_FALSO["es"])
+        return bool(patron.search(respuesta))
+
+    def _invocar_verificado(self, texto: str) -> str:
+        """Invoca y, si la respuesta suena a que ya guardó pero la tool
+        no se ejecutó de verdad, fuerza un reintento sin ambigüedad antes
+        de devolverla -- envoltorio de `_invocar` que se usa en todos los
+        puntos donde se invoca a un agente de fase, para que esta
+        verificación no dependa de acordarse de aplicarla cada vez."""
+        respuesta = self._invocar(texto)
+        if self._dice_que_guardo_sin_guardar(respuesta):
+            respuesta = self._invocar(_FORZAR_CIERRE[self.idioma])
+        return respuesta
 
     def abrir_conversacion(self):
         """Generador: el agente de la fase actual habla primero, sin
@@ -321,18 +382,33 @@ class SesionTelos:
             return
 
         kickoff = _KICKOFF[self.idioma]
-        respuesta = self._invocar(kickoff)
+        respuesta = self._invocar_verificado(kickoff)
         guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
         yield self.fase_actual, respuesta, list(self._contenedor_opciones)
 
     def _determinar_fase_inicial(self) -> int:
+        """El campo "fase" de una versión de la ficha registra la fase
+        QUE ACABA DE CERRAR para producirla -- no la fase en la que
+        continúa la persona (ver `_avanzar_fase_si_corresponde`: guarda
+        con `fase=self.fase_actual` y recién DESPUÉS avanza
+        `self.fase_actual` a `fase + 1`). Una sesión nueva (reconexión,
+        reinicio del proceso) tiene que retomar en `fase_guardada + 1`,
+        no en `fase_guardada` -- devolver el mismo número reiniciaba de
+        cero una fase que ya había cerrado (bug real: si el proceso se
+        reiniciaba justo después de que el Explorador cerrara pero antes
+        de que la sesión en memoria cascadeara, una sesión nueva volvía a
+        correr el Explorador desde el principio en vez de retomar en el
+        Sintetizador). Fase 4 es la excepción: cierra la ficha entera, así
+        que cualquier sesión nueva entra directo a Fase 5 en vez de
+        "Fase 5 + 1"; y una ficha ya en Fase 5 (check-ins) se queda en
+        Fase 5, no avanza sola a una "Fase 6" inexistente."""
         ficha = leer_ficha_usuario(self.usuario_id)
         if not ficha["existe"]:
             return 1
         fase_guardada = ficha["actual"]["fase"]
-        # Una ficha cerrada (fase 4 ya completa) significa que cualquier
-        # sesión nueva entra directo a seguimiento, no retoma la fase 4.
-        return 5 if fase_guardada >= 4 else fase_guardada
+        if fase_guardada >= 4:
+            return 5
+        return fase_guardada + 1
 
     def _capturar_nombre(self, texto: str):
         """Cierra el Paso 0: guarda el nombre, arma recién ahora el
@@ -348,7 +424,7 @@ class SesionTelos:
         self._agente = self._crear_agente_fase(self.fase_actual)
 
         kickoff = _KICKOFF[self.idioma]
-        respuesta = self._invocar(kickoff)
+        respuesta = self._invocar_verificado(kickoff)
         guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
         yield self.fase_actual, respuesta, list(self._contenedor_opciones)
 
@@ -370,16 +446,19 @@ class SesionTelos:
 
         fase_antes = self.fase_actual
         total_versiones_antes = self._contar_versiones()
-        texto_efectivo, forzar_verificacion = self._preparar_texto_y_forzado(texto)
+        texto_efectivo, forzar_cierre_duro = self._preparar_texto_y_forzado(texto)
         respuesta = self._invocar(texto_efectivo)
 
-        if forzar_verificacion and not self._fase_avanzo(total_versiones_antes):
+        if forzar_cierre_duro and not self._contenedor_guardado:
             # Freno de seguridad: el aviso fuerte ya le pedía cerrar en
-            # este mismo turno, pero la ficha no cambió -- el texto puede
-            # sonar a que cerró ("ya guardé todo...") sin que la tool se
-            # haya ejecutado de verdad (bug real visto en producción, ver
-            # _FORZAR_CIERRE). Un reintento más, sin ambigüedad, antes de
-            # dejarlo pasar.
+            # este mismo turno, pero la tool guardar_ficha_usuario no se
+            # ejecutó -- sin importar si el texto sonaba a que sí cerró.
+            # Un reintento más, sin ambigüedad, antes de dejarlo pasar.
+            respuesta = self._invocar(_FORZAR_CIERRE[self.idioma])
+        elif self._dice_que_guardo_sin_guardar(respuesta):
+            # Mismo bug, en cualquier otra fase (no depende del contador
+            # de turnos de Fase 1): el texto suena a que ya guardó pero
+            # la tool no se ejecutó -- bug real visto en el Sintetizador.
             respuesta = self._invocar(_FORZAR_CIERRE[self.idioma])
 
         guardar_intercambio(self.usuario_id, fase_antes, texto, respuesta)
@@ -396,26 +475,13 @@ class SesionTelos:
         # esperar a que este segundo termine de generarse.
         if self.fase_actual != fase_antes and self.fase_actual != 5:
             kickoff = _KICKOFF[self.idioma]
-            continuacion = self._invocar(kickoff)
+            continuacion = self._invocar_verificado(kickoff)
             guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, continuacion)
             yield self.fase_actual, continuacion, list(self._contenedor_opciones)
 
     def _contar_versiones(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)
         return len(ficha["historial"]) + (1 if ficha["existe"] else 0)
-
-    def _fase_avanzo(self, total_versiones_antes: int) -> bool:
-        """Chequeo rápido (reintento corto, no el largo de
-        _leer_ficha_con_reintento) de si ya se guardó una versión nueva --
-        lo usa el freno de _FORZAR_CIERRE para decidir si hace falta
-        insistir. La decisión autoritativa de cascadear sigue siendo la
-        de _avanzar_fase_si_corresponde más abajo, con su propio
-        reintento largo; este solo evita forzar un reintento de más
-        cuando el guardado real ya pasó pero todavía no es visible por
-        consistencia eventual."""
-        ficha = self._leer_ficha_con_reintento(total_versiones_antes, intentos=2, espera_segundos=0.5)
-        total_versiones = len(ficha["historial"]) + (1 if ficha["existe"] else 0)
-        return total_versiones > total_versiones_antes
 
     def _leer_ficha_con_reintento(self, total_versiones_antes: int, intentos: int = 4, espera_segundos: float = 1.0) -> dict:
         """AgentCore Memory puede tardar un instante en reflejar en

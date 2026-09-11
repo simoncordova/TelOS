@@ -8,14 +8,16 @@ Idioma: selector explícito ES/EN (no autodetección) — ver sección 0.5 de
 docs/agente-proposito-de-vida-prompts.md. El guardrail de crisis revisa
 ambos idiomas siempre, sin importar lo que esté seleccionado acá.
 
-Layout: el chat ocupa la columna principal; al lado, un panel angosto
-("Tus resultados") muestra el propósito y el sistema tal como están
-guardados en la ficha en este momento -- no hay que esperar a que la
-conversación termine ni desplazarse para encontrarlos (ver PLAN.md /
-feedback de UX: los activos que se van logrando tienen que verse, no
-vivir escondidos adentro del chat). Se relee la ficha en cada rerun de
-Streamlit, así que se actualiza solo apenas un agente guarda una versión
-nueva.
+Layout: el chat ocupa el área principal; el panel "Tus resultados"
+(propósito y sistema, tal como están guardados en la ficha en este
+momento) vive en la barra lateral, no en una columna al lado del chat.
+Streamlit desplaza la barra lateral y el área principal por separado --
+una columna normal (`st.columns`) en cambio crece con la conversación y
+el panel terminaba desplazándose fuera de la pantalla en charlas largas
+(bug real reportado: "las cajas de texto se pierden"). La barra lateral
+es la única forma, sin HTML/CSS, de que ese panel se quede siempre a la
+vista. Se relee la ficha en cada rerun de Streamlit, así que se
+actualiza solo apenas un agente guarda una versión nueva.
 """
 
 import os
@@ -205,44 +207,11 @@ def _procesar_turno(texto: str) -> None:
 with st.sidebar:
     st.metric(t["fase_label"], _NOMBRES_FASE[idioma].get(sesion.fase_actual, sesion.fase_actual))
 
-col_chat, col_panel = st.columns([2, 1])
-
-with col_chat:
-    if sesion.nombre:
-        st.caption(t["saludo_nombre"].format(nombre=sesion.nombre))
-
-    for mensaje in st.session_state["mensajes"]:
-        with st.chat_message(mensaje["rol"]):
-            st.markdown(mensaje["texto"])
-
-    # Formulario: cuando el agente de la fase actual ofreció opciones
-    # cerradas (por ahora, el candidato de propósito en el Sintetizador —
-    # ver agents/_modelo.py::crear_tool_presentar_opciones), se muestran
-    # como botones de radio en vez de obligar a escribir la elección.
-    # Igual queda disponible el chat_input de abajo para quien prefiera
-    # escribir su propia respuesta.
-    opciones_pendientes = st.session_state.get("opciones_pendientes") or []
-    if opciones_pendientes:
-        with st.form(key=f"opciones_{len(st.session_state['mensajes'])}"):
-            st.caption(t["opciones_titulo"])
-            eleccion = st.radio(
-                t["opciones_titulo"],
-                options=opciones_pendientes,
-                label_visibility="collapsed",
-            )
-            enviado = st.form_submit_button(t["opciones_submit"])
-        if enviado:
-            st.session_state["opciones_pendientes"] = []
-            _procesar_turno(eleccion)
-            st.rerun()
-
-    texto_usuario = st.chat_input(t["chat_placeholder"])
-    if texto_usuario:
-        st.session_state["opciones_pendientes"] = []
-        _procesar_turno(texto_usuario)
-        st.rerun()
-
-with col_panel:
+    # "Tus resultados" vive acá, no en una columna junto al chat -- ver
+    # docstring del módulo (bug real: se perdía de vista en charlas
+    # largas). Se relee la ficha en cada rerun, así que se actualiza
+    # sola apenas un agente guarda una versión nueva.
+    st.divider()
     st.subheader(t["panel_titulo"])
     ficha = leer_ficha_usuario(usuario_id)
     datos = ficha["actual"]["datos"] if ficha["existe"] and ficha["actual"] else {}
@@ -267,3 +236,37 @@ with col_panel:
         height=160,
         key="panel_sistema",
     )
+
+if sesion.nombre:
+    st.caption(t["saludo_nombre"].format(nombre=sesion.nombre))
+
+for mensaje in st.session_state["mensajes"]:
+    with st.chat_message(mensaje["rol"]):
+        st.markdown(mensaje["texto"])
+
+# Formulario: cuando el agente de la fase actual ofreció opciones
+# cerradas (por ahora, el candidato de propósito en el Sintetizador —
+# ver agents/_modelo.py::crear_tool_presentar_opciones), se muestran
+# como botones de radio en vez de obligar a escribir la elección. Igual
+# queda disponible el chat_input de abajo para quien prefiera escribir
+# su propia respuesta.
+opciones_pendientes = st.session_state.get("opciones_pendientes") or []
+if opciones_pendientes:
+    with st.form(key=f"opciones_{len(st.session_state['mensajes'])}"):
+        st.caption(t["opciones_titulo"])
+        eleccion = st.radio(
+            t["opciones_titulo"],
+            options=opciones_pendientes,
+            label_visibility="collapsed",
+        )
+        enviado = st.form_submit_button(t["opciones_submit"])
+    if enviado:
+        st.session_state["opciones_pendientes"] = []
+        _procesar_turno(eleccion)
+        st.rerun()
+
+texto_usuario = st.chat_input(t["chat_placeholder"])
+if texto_usuario:
+    st.session_state["opciones_pendientes"] = []
+    _procesar_turno(texto_usuario)
+    st.rerun()

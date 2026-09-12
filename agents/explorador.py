@@ -82,13 +82,20 @@ Además de lo que ya pide la instrucción de arriba: en CADA llamado a \
 informar_al_orquestador, pasá también `ejes_cubiertos` con el estado \
 COMPLETO Y ACTUALIZADO de los 5 ejes (no solo los nuevos de este turno) \
 usando estas 5 claves exactas: "valores", "momentos_flow", \
-"haria_sin_pagar", "recordado_por", "evita_o_drena". Si un eje ya tiene \
-sustancia real (de este turno o de uno anterior), el valor es una frase \
-breve citando o parafraseando lo que la persona dijo -- nunca "sí" o \
-"cubierto". Si un eje todavía no tiene nada, el valor es un string \
-vacío "". Esto es lo que arma el estado de arriba en el próximo turno -- \
-si lo dejás vacío para un eje que sí cubriste, el sistema va a volver a \
-preguntarlo."""
+"haria_sin_pagar", "recordado_por", "evita_o_drena". Si la persona te \
+acaba de responder algo directo y on-topic a la pregunta de un eje \
+-- aunque sea una frase corta o poco elaborada, tipo "por mi capacidad \
+de crear" o "como un gran creador" -- ESO YA ES sustancia real: marcalo \
+cubierto con esa misma frase como evidencia, no lo dejes vacío esperando \
+una respuesta más elaborada. "Material suficiente es mejor que material \
+perfecto" (ver arriba) aplica acá exactamente igual: preferí marcarlo \
+cubierto de más a quedarte trabado repitiendo la misma pregunta -- \
+repetir la MISMA pregunta que ya hiciste, aunque sea con otras \
+palabras, es un error grave, mucho peor que un eje con evidencia breve. \
+Si un eje todavía no tiene NINGUNA mención, ahí sí el valor es un \
+string vacío "". Esto es lo que arma el estado de arriba en el próximo \
+turno -- si lo dejás vacío para un eje que la persona ya respondió, el \
+sistema va a repetir la pregunta."""
 
 _PLANTILLA_EN = """You are Telos's Explorer. Your only job in this \
 conversation is to help the person put into words raw material about \
@@ -142,12 +149,20 @@ On top of what the instruction above already asks: on EVERY call to \
 informar_al_orquestador, also pass `ejes_cubiertos` with the FULL, \
 UPDATED state of all 5 areas (not just new ones from this turn) using \
 these exact 5 keys: "valores", "momentos_flow", "haria_sin_pagar", \
-"recordado_por", "evita_o_drena". If an area already has real substance \
-(from this turn or an earlier one), the value is a short phrase quoting \
-or paraphrasing what the person said -- never "yes" or "covered". If an \
-area still has nothing, the value is an empty string "". This is what \
-builds the state shown above on the next turn -- if you leave it empty \
-for an area you actually covered, the system will ask about it again."""
+"recordado_por", "evita_o_drena". If the person just gave you a direct, \
+on-topic answer to an area's question -- even a short or barely \
+elaborated one, like "for my ability to create" or "as a great creator" \
+-- THAT ALREADY COUNTS as real substance: mark it covered with that same \
+phrase as evidence, don't leave it empty waiting for a more elaborate \
+answer. "Good-enough material beats perfect material" (see above) \
+applies here exactly the same way: prefer marking it covered too \
+liberally over getting stuck repeating the same question -- repeating \
+the SAME question you already asked, even in different words, is a \
+serious error, much worse than an area with thin evidence. Only leave \
+an area's value as an empty string "" if it has NO mention at all yet. \
+This is what builds the state shown above on the next turn -- if you \
+leave it empty for an area the person already answered, the system will \
+repeat the question."""
 
 
 _EJES = ("valores", "momentos_flow", "haria_sin_pagar", "recordado_por", "evita_o_drena")

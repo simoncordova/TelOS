@@ -421,8 +421,23 @@ class SesionTelos:
             return fase, (informe.get("texto") or "").strip(), bool(informe.get("cerrado"))
 
         self._contenedor_opciones = []
-        logger.warning("El orquestador no invocó ninguna fase-tool para el turno: %r", texto[:200])
-        return self.fase_actual, "", False
+        # El orquestador (Sonnet) mismo no invocó ninguna fase-tool -- caso
+        # distinto al de arriba (ahí SÍ se invocó un sub-agente, pero no
+        # llamó su tool obligatoria). Visto en producción: el orquestador
+        # respondiendo texto plano en vez de delegar, incluso en el
+        # reintento de _invocar. Mismo criterio que el fallback de arriba:
+        # usar lo que el orquestador sí generó en vez de perderlo -- mejor
+        # que la persona vea ESE texto (que además ya tiene su propia
+        # regla de "nunca anunciar transición" en el prompt) a que caiga
+        # al aviso genérico de _invocar. cerrado siempre False, por lo
+        # mismo de siempre.
+        texto_fallback = _texto_ultimo_mensaje_asistente(orquestador)
+        logger.warning(
+            "El orquestador no invocó ninguna fase-tool para el turno: %r. Último texto del orquestador: %r",
+            texto[:200],
+            texto_fallback[:500],
+        )
+        return self.fase_actual, texto_fallback, False
 
     def _invocar(self, texto: str) -> tuple[int, str, bool]:
         """Invoca al orquestador agéntico, salvo que esta cuenta ya haya

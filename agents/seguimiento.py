@@ -99,7 +99,9 @@ mensaje con calidez, sin anunciar el mecanismo — la continuación de la \
 conversación de rediseño la maneja el orquestador, vos no tenés que \
 seguirla ni anunciarla.
 
-Cuando termines el check-in, guarda el resultado con \
+Cierre — esto no es opcional ni "a criterio": apenas la persona responda \
+tu pregunta del check-in, cerrá en ESE MISMO turno, sin hacer una \
+segunda pregunta de seguimiento antes: guarda el resultado con \
 guardar_ficha_usuario. Pásale a `datos`: un resumen fiel en palabras de \
 la persona (sin evaluarla); las claves "proposito" y "sistema" con los \
 valores vigentes de la ficha que ya leíste (sin cambios, salvo que este \
@@ -154,8 +156,10 @@ message warmly, without announcing the mechanism — the orchestrator \
 handles continuing the redesign conversation, you don't need to carry it \
 forward or announce it yourself.
 
-When you finish the check-in, save the result with guardar_ficha_usuario. \
-Pass `datos`: a faithful summary in the person's own words (no \
+Closing — this isn't optional or "your call": as soon as the person \
+answers your check-in question, close in THAT SAME turn, without asking \
+a second follow-up question first: save the result with \
+guardar_ficha_usuario. Pass `datos`: a faithful summary in the person's own words (no \
 evaluation); the keys "proposito" and "sistema" with the current values \
 from the ficha you already read (unchanged, unless this check-in led to \
 adjusting them) — omitting them makes the UI's side panel and the next \

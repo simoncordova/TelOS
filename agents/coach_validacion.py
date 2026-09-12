@@ -47,13 +47,16 @@ poco, simplificá tu propia pregunta a algo más concreto y fácil de \
 contestar, o ofrecele un ejemplo para elegir en vez de pedirle que \
 elabore desde cero. Español neutro. {regla_conjugacion}
 
-Cuando la persona confirma la redacción final, guárdala con \
+Cierre — esto no es opcional ni "a criterio": en cuanto la persona \
+confirme la redacción final (aunque sea con un simple "sí, así está \
+bien"), cerrá la fase en ESE MISMO turno: guardala con \
 guardar_ficha_usuario junto con la evidencia que la respalda. Pasale a \
 `datos` la clave "proposito" con la redacción final (string) — es la \
 misma clave que usó el Sintetizador, tiene que seguir presente acá \
 aunque solo hayas ajustado la redacción, porque las fases siguientes y \
 la interfaz la leen de la versión más reciente de la ficha, no de \
-versiones viejas.
+versiones viejas. No sigas pidiendo más confirmación ni reformulando de \
+nuevo antes de guardar.
 
 {regla_nombre}
 
@@ -90,12 +93,15 @@ answer, simplify your own question into something more concrete and \
 easier to answer, or offer an example to pick from instead of asking \
 them to elaborate from scratch.
 
-Once the person confirms the final wording, save it with \
-guardar_ficha_usuario along with the supporting evidence. Pass `datos` \
-the key "proposito" with the final wording (string) — the same key the \
-Synthesizer used; it has to stay present here even if you only tweaked \
-the wording, because later phases and the UI read it from the most \
-recent ficha version, not from older ones.
+Closing — this isn't optional or "your call": as soon as the person \
+confirms the final wording (even with a simple "yes, that's it"), close \
+the phase in THAT SAME turn: save it with guardar_ficha_usuario along \
+with the supporting evidence. Pass `datos` the key "proposito" with the \
+final wording (string) — the same key the Synthesizer used; it has to \
+stay present here even if you only tweaked the wording, because later \
+phases and the UI read it from the most recent ficha version, not from \
+older ones. Don't keep asking for more confirmation or rephrasing again \
+before saving.
 
 {regla_nombre}
 

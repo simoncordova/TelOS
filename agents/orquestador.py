@@ -276,6 +276,11 @@ class SesionTelos:
         # (_invocar_una_vez/_invocar_fase_directo); quien llama a
         # enviar_mensaje/abrir_conversacion la lee apenas termina.
         self._contenedor_opciones: list = []
+        # Ver enviar_mensaje -- diagnóstico público, sin valor hasta el
+        # primer mensaje real (abrir_conversacion no los toca, invoca
+        # directo).
+        self.ultima_fase_respondio: int | None = None
+        self.ultimo_cerrado_declarado: bool | None = None
         self.fase_actual = self._determinar_fase_inicial()
 
     def _construir_agentes_fase(self) -> tuple[dict[int, Agent], dict[int, dict[str, list]]]:
@@ -578,6 +583,13 @@ class SesionTelos:
         total_versiones_antes = self._contar_versiones()
         forzar_cierre_duro = self._turno_supera_umbral_fuerte()
         fase_respondio, respuesta, cerrado = self._invocar(texto)
+        # Público, de solo lectura, para diagnóstico (scripts/
+        # simular_conversacion.py): qué fase respondió y qué declaró
+        # ANTES del reintento forzado de _verificar_y_reforzar -- así se
+        # puede ver si el freno tuvo que intervenir, no solo el resultado
+        # final ya corregido.
+        self.ultima_fase_respondio = fase_respondio
+        self.ultimo_cerrado_declarado = cerrado
         respuesta = self._verificar_y_reforzar(
             fase_respondio, respuesta, cerrado, total_versiones_antes, forzar=forzar_cierre_duro
         )

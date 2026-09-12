@@ -33,6 +33,14 @@ class _SesionFalsa:
         yield 1, f"Recibido: {texto}", ["opción A", "opción B"]
         yield 2, "Pasamos a Sintetizador.", []
 
+    def contar_versiones_ficha(self) -> int:
+        return 0
+
+    def ficha_actualizada(self, total_versiones_antes: int) -> dict:
+        # El doble no necesita reintentar de verdad -- basta con devolver
+        # lo que ya haya quedado monkeypatchado como main.leer_ficha_usuario.
+        return main.leer_ficha_usuario(self.usuario_id)
+
 
 _FICHA_FALSA = {
     "existe": True,

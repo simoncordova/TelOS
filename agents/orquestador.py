@@ -589,6 +589,24 @@ class SesionTelos:
             guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, continuacion)
             yield self.fase_actual, continuacion, list(self._contenedor_opciones)
 
+    def contar_versiones_ficha(self) -> int:
+        """Público (a diferencia de _leer_ficha_con_reintento, que sigue
+        siendo un detalle interno): api/main.py lo necesita para saber
+        cuántas versiones había ANTES de un turno, y así poder pedir el
+        snapshot de ficha post-turno con el mismo reintento por
+        consistencia eventual que ya usa el avance de fase -- sin esto,
+        el panel "Tus resultados" del frontend podía mostrar el
+        propósito/sistema vacío durante uno o dos segundos justo después
+        de guardarlo (bug real: el snapshot que viaja por el evento SSE
+        "ficha" leía la ficha una sola vez, sin reintento)."""
+        return self._contar_versiones()
+
+    def ficha_actualizada(self, total_versiones_antes: int) -> dict:
+        """Público -- ver contar_versiones_ficha. Mismo reintento que ya
+        usa _avanzar_fase_si_corresponde, expuesto para que quien llama
+        pueda pedir la ficha ya reflejando un guardado reciente."""
+        return self._leer_ficha_con_reintento(total_versiones_antes)
+
     def _contar_versiones(self) -> int:
         ficha = leer_ficha_usuario(self.usuario_id)
         return len(ficha["historial"]) + (1 if ficha["existe"] else 0)

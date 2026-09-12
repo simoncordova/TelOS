@@ -70,8 +70,9 @@ def _obtener_lock(usuario_id: str, idioma: str) -> threading.Lock:
         return _locks[clave]
 
 
-def _ficha_snapshot(usuario_id: str, idioma: str, nombre: str | None) -> dict:
-    ficha = leer_ficha_usuario(usuario_id)
+def _ficha_snapshot(usuario_id: str, idioma: str, nombre: str | None, ficha: dict | None = None) -> dict:
+    if ficha is None:
+        ficha = leer_ficha_usuario(usuario_id)
     racha = calcular_racha(ficha["historial"], ficha["actual"])
     resumen = construir_vista_resumen(ficha["actual"], idioma, nombre, ficha["historial"])
     return {
@@ -146,13 +147,25 @@ def _eventos_turno(usuario_id: str, idioma: str, correr_generador):
     invocación real al modelo, y el snapshot final de la ficha -- no
     solo al arrancar. `correr_generador(sesion)` es
     `SesionTelos.abrir_conversacion` o `.enviar_mensaje(texto)` ya
-    aplicado, para no atarse a cuál de las dos es."""
+    aplicado, para no atarse a cuál de las dos es.
+
+    El snapshot final relee la ficha con el mismo reintento por
+    consistencia eventual que ya usa el avance de fase
+    (SesionTelos.ficha_actualizada) -- sin esto, justo después de que un
+    agente guardara propósito/sistema, el evento "ficha" podía viajar con
+    la versión ANTERIOR (AgentCore Memory tarda un instante en reflejar
+    un guardado reciente), y el panel "Tus resultados" del frontend se
+    veía vacío un turno entero aunque el guardado real ya hubiera
+    pasado -- bug real reportado por el dueño del producto probando la
+    app desplegada."""
     lock = _obtener_lock(usuario_id, idioma)
     with lock:
         sesion = _obtener_sesion(usuario_id, idioma)
+        total_antes = sesion.contar_versiones_ficha()
         for fase, texto, opciones in correr_generador(sesion):
             yield "mensaje", {"fase": fase, "texto": texto, "opciones": opciones}
-        yield "ficha", _ficha_snapshot(usuario_id, idioma, sesion.nombre)
+        ficha = sesion.ficha_actualizada(total_antes)
+        yield "ficha", _ficha_snapshot(usuario_id, idioma, sesion.nombre, ficha=ficha)
 
 
 @app.post("/api/sesion/abrir")

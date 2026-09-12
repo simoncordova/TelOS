@@ -200,6 +200,50 @@ resto de los reintentos acotados del proyecto (GuardaEstilo, la
 relectura de la ficha): como mucho un reintento extra, nunca un loop sin
 límite.
 
+**Decir que la conversación está pausada tampoco es lo mismo que
+cerrar:** variante del bug de arriba, encontrada probando la app
+desplegada de verdad (rama `gamificacion`) — no ya "escribió que guardó
+sin guardar", sino "escribió que no hace falta nada más por ahora,
+cuando en realidad sí hace falta". El Coach de Validación, a mitad de
+juntar evidencia pasada, le contestó a la persona "ya puedes irte
+tranquilo... ahora solo falta que sigas cuando tengas tiempo" — un turno
+después tuvo que retractarse ("perdón por la confusión, sigo aquí
+contigo") porque en realidad la fase no había cerrado ni cerca. Mismo
+turno, la persona notó además que el Coach repetía preguntas sobre algo
+que ya había contado con detalle (cuándo cantó por última vez, en qué
+contexto) — no por falta de memoria real (`mensajes_previos` sí llega
+completo al agente, ver sección 1) sino porque el modelo no estaba
+usando ese contexto para avanzar la conversación en vez de rehacer el
+mismo terreno. Y por separado, en la misma prueba, el tono se fue al
+otro extremo de "cálido pero riguroso": ante respuestas cortas
+("sí", "supongo"), el modelo le dijo a la persona que estaba "jugando a
+las adivinanzas" y que así no podía ayudarla — un regaño, no
+acompañamiento.
+
+Fix: `REGLA_CIERRE_REAL_ES/EN` ahora prohíbe explícitamente decir o dar
+a entender que la persona puede irse, que "no hace falta nada más por
+ahora" o que retome después, a menos que la fase haya cerrado de verdad
+Y no haya nada pendiente en ese momento (la única excepción real es
+Fase 5 entre check-ins). El tono del Coach de Validación
+(`agents/coach_validacion.py`) se ajustó para que una respuesta corta o
+evasiva se resuelva simplificando la propia pregunta o dando un ejemplo
+concreto para elegir, nunca confrontando a la persona por contestar
+poco.
+
+**`presentar_opciones` no siempre se llamaba:** mismo tipo de bug que
+"decir que guardó sin guardar", pero para la tool de opciones — el
+Sintetizador a veces escribía los 2-3 candidatos en el mensaje pero se
+olvidaba de llamar a `presentar_opciones`, y la persona se quedaba sin
+botones, obligada a escribir la elección a mano (encontrado en la misma
+prueba). A diferencia de `guardar_ficha_usuario`, esta tool no tiene
+todavía una red de seguridad por código equivalente a
+`_dice_que_guardo_sin_guardar` (detectar en texto que se ofrecieron
+candidatos pero el contenedor de opciones quedó vacío, y forzar un
+reintento) — por ahora el fix es solo de prompt
+(`agents/sintetizador.py`: "SIEMPRE, sin excepción" en vez de un pedido
+más suave). Si vuelve a fallar en producción, la red de seguridad por
+código es el siguiente paso, mismo patrón que ya existe para el cierre.
+
 **La "respuesta vacía" no era Bedrock fallando al azar — era
 `str(resultado)` perdiendo el mensaje real:** esto empezó como un bug de
 crash (`guardar_intercambio` recibía un string de largo 0 y AgentCore

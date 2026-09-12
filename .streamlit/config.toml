@@ -1,14 +1,16 @@
 # Tema visual nativo de Streamlit -- sin CSS/HTML propio, respeta la
 # convención del proyecto ("100% Python, sin HTML/JS/CSS"). Rama
-# `gamificacion`: paleta cálida y tranquila (terracota + beige), más
-# cerca del tono "calma" de apps de bienestar (Headspace/Fabulous) que
-# el rojo/gris default de Streamlit. Ver ui/Dockerfile -- esta carpeta
-# se copia a la imagen para que aplique también en producción, no solo
-# en desarrollo local.
+# `gamificacion`: navy noche + dorado, derivada del logo real de Telos
+# (cielo nocturno, anillos dorados, un camino hacia el horizonte) --
+# reemplaza la terracota/beige anterior a pedido explícito del dueño del
+# producto; mismos valores que web/src/app/globals.css, para que las dos
+# interfaces se vean como el mismo producto. Ver ui/Dockerfile -- esta
+# carpeta se copia a la imagen para que aplique también en producción,
+# no solo en desarrollo local.
 [theme]
-base = "light"
-primaryColor = "#E08E6D"
-backgroundColor = "#FFFBF7"
-secondaryBackgroundColor = "#F5EDE4"
-textColor = "#3D3229"
+base = "dark"
+primaryColor = "#D9B26A"
+backgroundColor = "#14142B"
+secondaryBackgroundColor = "#242452"
+textColor = "#F2E8D5"
 font = "sans serif"

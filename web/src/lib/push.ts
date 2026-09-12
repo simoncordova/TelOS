@@ -31,12 +31,25 @@ export async function obtenerSuscripcionActual(): Promise<PushSubscription | nul
 }
 
 // Lanza si el permiso se deniega -- quien llama (PushOptIn) le muestra
-// el error a la persona en vez de fallar en silencio.
+// el error a la persona en vez de fallar en silencio. El mensaje de cada
+// Error es un código corto (no texto para mostrar) -- PushOptIn lo
+// traduce a copy real en el idioma correspondiente.
 export async function suscribirseAPush(clavePublicaVapid: string): Promise<PushSubscriptionJSON> {
+  // Si el navegador ya deniega el permiso de una vez anterior, no vuelve
+  // a mostrar el diálogo -- requestPermission() resuelve "denied" en
+  // silencio, sin que la persona vea ningún prompt. Sin este chequeo
+  // previo, alguien en esa situación hace clic en "Activar", no ve nada
+  // pasar, y termina sin saber si funcionó o no (reportado probando la
+  // app real) -- el mensaje tiene que decirle explícitamente que hace
+  // falta ir a la configuración del sitio en el navegador, reintentar no
+  // alcanza.
+  if (typeof Notification !== "undefined" && Notification.permission === "denied") {
+    throw new Error("PERMISO_DENEGADO_PREVIO");
+  }
   const registro = await registrarServiceWorker();
   const permiso = await Notification.requestPermission();
   if (permiso !== "granted") {
-    throw new Error("Permiso de notificaciones denegado");
+    throw new Error("PERMISO_DENEGADO");
   }
   const existente = await registro.pushManager.getSubscription();
   const suscripcion =

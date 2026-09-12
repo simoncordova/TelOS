@@ -1,16 +1,17 @@
 @import "tailwindcss";
 
-/* Misma paleta que .streamlit/config.toml (rama gamificacion): terracota
-   + beige, tono "calma" (Headspace/Fabulous) en vez del default de
-   Tailwind -- ver ese archivo para el razonamiento completo. Mantener
-   ambos en sync si la paleta cambia: son las dos superficies del mismo
-   producto, coexistiendo durante la migracion. */
+/* Misma paleta que .streamlit/config.toml (rama gamificacion): navy
+   noche + dorado, derivada del logo real de Telos (cielo nocturno,
+   anillos dorados, un camino hacia el horizonte) -- reemplaza la
+   terracota/beige anterior a pedido explícito del dueño del producto.
+   Mantener ambos en sync si la paleta cambia: son las dos superficies
+   del mismo producto, coexistiendo durante la migración. */
 :root {
-  --background: #fffbf7;
-  --foreground: #3d3229;
-  --surface: #f5ede4;
-  --primary: #e08e6d;
-  --primary-foreground: #fffbf7;
+  --background: #14142b;
+  --foreground: #f2e8d5;
+  --surface: #242452;
+  --primary: #d9b26a;
+  --primary-foreground: #14142b;
 }
 
 @theme inline {

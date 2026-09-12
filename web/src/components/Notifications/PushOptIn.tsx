@@ -9,6 +9,7 @@ import { desuscribirseDePush, obtenerSuscripcionActual, pushSoportado, suscribir
 import type { Idioma } from "@/lib/types";
 
 type Estado = "cargando" | "no-soportado" | "no-configurado" | "inactivo" | "activando" | "activo" | "error";
+type TipoError = "denegado-previo" | "denegado" | "tecnico";
 
 // Fase 3 del plan de migración: el motivo real de dejar Streamlit, que
 // no puede registrar un Service Worker. Opt-in explícito SIEMPRE --
@@ -19,6 +20,8 @@ export function PushOptIn({ idioma, t }: { idioma: Idioma; t: Textos }) {
   const [estado, setEstado] = useState<Estado>("cargando");
   const [clavePublica, setClavePublica] = useState("");
   const [resultadoPrueba, setResultadoPrueba] = useState<string | null>(null);
+  const [tipoError, setTipoError] = useState<TipoError>("tecnico");
+  const [detalleError, setDetalleError] = useState("");
 
   useEffect(() => {
     let cancelado = false;
@@ -50,6 +53,20 @@ export function PushOptIn({ idioma, t }: { idioma: Idioma; t: Textos }) {
       setEstado("activo");
     } catch (e) {
       console.error("No se pudo activar push:", e);
+      const mensaje = e instanceof Error ? e.message : String(e);
+      // push.ts lanza códigos cortos, no texto -- acá se traducen al
+      // copy real en el idioma correspondiente. "tecnico" es cualquier
+      // otra cosa (falla de red, VAPID mal configurado, etc.) -- mostrar
+      // el detalle crudo en vez de un genérico ayuda a diagnosticar sin
+      // tener que pedirle a la persona que abra la consola del
+      // navegador (reportado como confuso probando la app real: "activé
+      // pero no sé qué pasó").
+      if (mensaje === "PERMISO_DENEGADO_PREVIO") setTipoError("denegado-previo");
+      else if (mensaje === "PERMISO_DENEGADO") setTipoError("denegado");
+      else {
+        setTipoError("tecnico");
+        setDetalleError(mensaje);
+      }
       setEstado("error");
     }
   }
@@ -82,10 +99,18 @@ export function PushOptIn({ idioma, t }: { idioma: Idioma; t: Textos }) {
       {estado === "activando" && <p className="text-foreground/60">{t.push_activando}</p>}
       {estado === "error" && (
         <div className="flex flex-col gap-2">
-          <p className="text-foreground/60">{t.push_error}</p>
-          <button onClick={activar} className="self-start rounded-full bg-primary px-3 py-1.5 text-xs text-primary-foreground">
-            {t.push_activar}
-          </button>
+          <p className="text-foreground/60">
+            {tipoError === "denegado-previo"
+              ? t.push_error_denegado_previo
+              : tipoError === "tecnico"
+                ? formatear(t.push_error_tecnico, { detalle: detalleError })
+                : t.push_error}
+          </p>
+          {tipoError !== "denegado-previo" && (
+            <button onClick={activar} className="self-start rounded-full bg-primary px-3 py-1.5 text-xs text-primary-foreground">
+              {t.push_activar}
+            </button>
+          )}
         </div>
       )}
       {estado === "activo" && (

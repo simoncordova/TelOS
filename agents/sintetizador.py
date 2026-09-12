@@ -133,6 +133,7 @@ def crear_agente_sintetizador(
     contenedor_opciones: list | None = None,
     contenedor_guardado: list | None = None,
     contenedor_informe: list | None = None,
+    turn_id: str | None = None,
 ) -> Agent:
     if contenedor_opciones is None:
         contenedor_opciones = []
@@ -160,7 +161,7 @@ def crear_agente_sintetizador(
     @tool
     def guardar_ficha_usuario(datos: dict, motivo_version: str) -> None:
         """Guarda el propósito candidato elegido por el usuario en esta fase."""
-        _guardar(usuario_id, datos, fase=2, motivo_version=motivo_version)
+        _guardar(usuario_id, datos, fase=2, motivo_version=motivo_version, turn_id=turn_id)
         contenedor_guardado.append(True)
 
     @tool

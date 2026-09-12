@@ -116,6 +116,7 @@ def crear_agente_coach_validacion(
     contenedor_opciones: list | None = None,
     contenedor_guardado: list | None = None,
     contenedor_informe: list | None = None,
+    turn_id: str | None = None,
 ) -> Agent:
     if contenedor_guardado is None:
         contenedor_guardado = []
@@ -141,7 +142,7 @@ def crear_agente_coach_validacion(
     @tool
     def guardar_ficha_usuario(datos: dict, motivo_version: str) -> None:
         """Guarda el propósito validado y su evidencia de respaldo."""
-        _guardar(usuario_id, datos, fase=3, motivo_version=motivo_version)
+        _guardar(usuario_id, datos, fase=3, motivo_version=motivo_version, turn_id=turn_id)
         contenedor_guardado.append(True)
 
     @tool

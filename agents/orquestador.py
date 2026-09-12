@@ -46,6 +46,7 @@ Sintetizador, para elegir el propósito candidato.
 
 import logging
 import time
+import uuid
 
 from pydantic import BaseModel
 from strands.agent import Agent
@@ -236,6 +237,25 @@ _CAMPOS_REQUERIDOS_AL_CERRAR = {
     5: ("proposito", "sistema", "cumplido"),
 }
 
+
+def exit_criteria_cumplido(fase: int, datos: dict) -> tuple[bool, tuple[str, ...]]:
+    """Única autoridad real sobre si una fase está lista para dejar de
+    reclamar campos faltantes -- ver revisión de arquitectura externa
+    (12/09/2026), sección 6: "reemplazar cerrado por invariantes". El
+    booleano `cerrado` que declara el modelo (`informar_al_orquestador`)
+    es una SEÑAL, no autoridad -- nunca se usa solo para decidir nada acá;
+    `_verificar_y_reforzar` es quien de verdad decide, llamando a esta
+    función contra los `datos` ya persistidos (no contra lo que el modelo
+    dice que guardó).
+
+    Devuelve (cumplido, campos_faltantes). "is None" y no una
+    verificación de verdad -- un campo booleano como "cumplido" (fase 5,
+    rama gamificacion) es legítimamente `False` cuando la persona no
+    sostuvo el hábito, y eso NO es lo mismo que faltar."""
+    requeridos = _CAMPOS_REQUERIDOS_AL_CERRAR.get(fase, ())
+    faltantes = tuple(c for c in requeridos if datos.get(c) is None)
+    return not faltantes, faltantes
+
 _FALTAN_CAMPOS = {
     "es": (
         "Guardaste el avance, pero a `datos` le faltó la clave {campos} "
@@ -333,11 +353,12 @@ class SesionTelos:
         self.ultimo_cerrado_declarado: bool | None = None
         self.fase_actual = self._determinar_fase_inicial()
 
-
-    def _invocar_una_vez(self, texto: str) -> tuple[int, str, bool]:
+    def _invocar_una_vez(self, texto: str, turn_id: str | None = None) -> tuple[int, str, bool]:
         """Invoca directo a la fase actual (`self.fase_actual`), sin pasar
         por ningún router agéntico. Devuelve (fase_que_respondió,
-        texto_para_la_persona, cerrado_declarado).
+        texto_para_la_persona, cerrado_declarado). `turn_id` identifica el
+        turno real de conversación (ver `_invocar`) para que un guardado
+        de ficha durante este turno sea idempotente.
 
         Hasta acá (rama gamificacion) esto pasaba por un `Agent`
         orquestador (Sonnet) con las 5 fases expuestas como tools
@@ -353,7 +374,7 @@ class SesionTelos:
         invocar ninguna fase-tool, visto en producción) y saca una
         invocación real de Bedrock por turno (mejora de latencia)."""
         fase = self.fase_actual
-        texto_respuesta, cerrado = self._invocar_fase_directo(fase, texto)
+        texto_respuesta, cerrado = self._invocar_fase_directo(fase, texto, turn_id=turn_id)
         return fase, texto_respuesta, cerrado
 
     def _invocar(self, texto: str) -> tuple[int, str, bool]:
@@ -370,15 +391,18 @@ class SesionTelos:
         a invocar ninguna tool, o el subagente no llamó a
         informar_al_orquestador), reintenta una vez antes de resignarse a
         un aviso fijo -- como mucho un reintento, nunca un loop sin
-        límite."""
+        límite. El mismo `turn_id` (ver InformeAlOrquestador/
+        tools/ficha.py) se usa en el reintento -- es el mismo turno real
+        de la persona, solo que el primer intento no produjo nada útil."""
         if excedio_limite_diario(self.usuario_id):
             return self.fase_actual, mensaje_limite_alcanzado(self.idioma), False
-        fase, respuesta, cerrado = self._invocar_una_vez(texto)
+        turn_id = str(uuid.uuid4())
+        fase, respuesta, cerrado = self._invocar_una_vez(texto, turn_id=turn_id)
         if not respuesta and not excedio_limite_diario(self.usuario_id):
-            fase, respuesta, cerrado = self._invocar_una_vez(_RESPUESTA_VACIA_RETRY[self.idioma])
+            fase, respuesta, cerrado = self._invocar_una_vez(_RESPUESTA_VACIA_RETRY[self.idioma], turn_id=turn_id)
         return fase, (respuesta or _RESPUESTA_VACIA_FALLBACK[self.idioma]), cerrado
 
-    def _invocar_fase_directo(self, fase: int, texto: str) -> tuple[str, bool]:
+    def _invocar_fase_directo(self, fase: int, texto: str, turn_id: str | None = None) -> tuple[str, bool]:
         """Invoca UNA fase puntual directo, sin pasar por el orquestador
         -- usado solo por los frenos de seguridad de _verificar_y_reforzar
         (forzar cierre, completar campos faltantes) y por los mensajes de
@@ -399,6 +423,7 @@ class SesionTelos:
             contenedor_opciones=contenedor_opciones,
             contenedor_guardado=contenedor_guardado,
             contenedor_informe=contenedor_informe,
+            turn_id=turn_id,
         )
         agente(texto)
         registrar_invocacion(self.usuario_id)
@@ -449,9 +474,10 @@ class SesionTelos:
 
         1. Si se declaró `cerrado=True` pero AgentCore Memory no tiene una
            versión nueva, reintenta con _FORZAR_CIERRE.
-        2. Si sí hay una versión nueva de esta fase, pero le falta alguna
-           clave obligatoria (_CAMPOS_REQUERIDOS_AL_CERRAR), reintenta
-           con _FALTAN_CAMPOS."""
+        2. Si sí hay una versión nueva de esta fase, pero exit_criteria_
+           cumplido() dice que faltan campos obligatorios, reintenta con
+           _FALTAN_CAMPOS. `cerrado_declarado` nunca decide esto por sí
+           solo -- ver exit_criteria_cumplido."""
         if cerrado_declarado and self._contar_versiones() <= total_versiones_antes:
             respuesta, _ = self._invocar_fase_directo(fase, _FORZAR_CIERRE[self.idioma])
 
@@ -459,13 +485,8 @@ class SesionTelos:
         hubo_guardado = (len(ficha["historial"]) + (1 if ficha["existe"] else 0)) > total_versiones_antes
         if hubo_guardado and ficha["actual"]["fase"] == fase:
             datos = ficha["actual"]["datos"] or {}
-            requeridos = _CAMPOS_REQUERIDOS_AL_CERRAR.get(fase, ())
-            # "is None" y no una verificación de verdad -- un campo
-            # booleano como "cumplido" (rama gamificacion) es
-            # legítimamente `False` cuando la persona no sostuvo el
-            # hábito, y eso NO es lo mismo que faltar.
-            faltantes = tuple(c for c in requeridos if datos.get(c) is None)
-            if faltantes:
+            cumplido, faltantes = exit_criteria_cumplido(fase, datos)
+            if not cumplido:
                 campos = ", ".join(f'"{c}"' for c in faltantes)
                 respuesta, _ = self._invocar_fase_directo(fase, _FALTAN_CAMPOS[self.idioma].format(campos=campos))
 
@@ -490,7 +511,7 @@ class SesionTelos:
 
         kickoff = _KICKOFF[self.idioma]
         total_versiones_antes = self._contar_versiones()
-        respuesta, cerrado = self._invocar_fase_directo(self.fase_actual, kickoff)
+        respuesta, cerrado = self._invocar_fase_directo(self.fase_actual, kickoff, turn_id=str(uuid.uuid4()))
         respuesta = self._verificar_y_reforzar(self.fase_actual, respuesta, cerrado, total_versiones_antes)
         guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
         yield self.fase_actual, respuesta, list(self._contenedor_opciones)
@@ -533,7 +554,7 @@ class SesionTelos:
 
         kickoff = _KICKOFF[self.idioma]
         total_versiones_antes = self._contar_versiones()
-        respuesta, cerrado = self._invocar_fase_directo(self.fase_actual, kickoff)
+        respuesta, cerrado = self._invocar_fase_directo(self.fase_actual, kickoff, turn_id=str(uuid.uuid4()))
         respuesta = self._verificar_y_reforzar(self.fase_actual, respuesta, cerrado, total_versiones_antes)
         guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
         yield self.fase_actual, respuesta, list(self._contenedor_opciones)
@@ -588,7 +609,9 @@ class SesionTelos:
         if self.fase_actual != fase_antes and self.fase_actual != 5:
             kickoff = _KICKOFF[self.idioma]
             total_versiones_previas_cascada = self._contar_versiones()
-            continuacion, cerrado_cascada = self._invocar_fase_directo(self.fase_actual, kickoff)
+            continuacion, cerrado_cascada = self._invocar_fase_directo(
+                self.fase_actual, kickoff, turn_id=str(uuid.uuid4())
+            )
             continuacion = self._verificar_y_reforzar(
                 self.fase_actual, continuacion, cerrado_cascada, total_versiones_previas_cascada
             )

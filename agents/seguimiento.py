@@ -268,6 +268,7 @@ def crear_agente_seguimiento(
     contenedor_opciones: list | None = None,
     contenedor_guardado: list | None = None,
     contenedor_informe: list | None = None,
+    turn_id: str | None = None,
 ) -> Agent:
     if contenedor_guardado is None:
         contenedor_guardado = []
@@ -303,7 +304,7 @@ def crear_agente_seguimiento(
     def guardar_ficha_usuario(datos: dict) -> None:
         """Guarda el resultado del check-in de esta sesión."""
         motivo_version = f"check-in:{tipo_checkin}"
-        _guardar(usuario_id, datos, fase=5, motivo_version=motivo_version)
+        _guardar(usuario_id, datos, fase=5, motivo_version=motivo_version, turn_id=turn_id)
         contenedor_guardado.append(True)
 
     @tool

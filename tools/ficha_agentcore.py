@@ -94,13 +94,25 @@ def _decodificar_blob(blob):
     raise TypeError(f"Tipo de blob inesperado de AgentCore Memory: {type(blob)!r}")
 
 
-def guardar_ficha_usuario(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None:
-    """Agrega una nueva versión de la ficha del usuario como blob event. No sobrescribe el historial."""
+def guardar_ficha_usuario(usuario_id: str, datos: dict, fase: int, motivo_version: str, turn_id: str | None = None) -> None:
+    """Agrega una nueva versión de la ficha del usuario como blob event. No
+    sobrescribe el historial. `version` (posición 1-indexada en el log) y
+    `turn_id` (no-op si coincide con la última versión guardada, protege
+    contra guardados duplicados del mismo turno) -- ver el mismo mecanismo
+    y motivo en tools/ficha_local.py. AgentCore Memory no tiene escritura
+    condicional, así que esto es idempotencia a nivel de aplicación, no
+    un compare-and-swap atómico real del lado del servidor."""
+    anterior = leer_ficha_usuario(usuario_id)
+    if turn_id is not None and anterior["existe"] and (anterior["actual"] or {}).get("turn_id") == turn_id:
+        return
+    numero_version = len(anterior["historial"]) + (1 if anterior["existe"] else 0) + 1
     version = {
         "fase": fase,
         "datos": datos,
         "motivo_version": motivo_version,
         "fecha": datetime.now(timezone.utc).isoformat(),
+        "version": numero_version,
+        "turn_id": turn_id,
     }
     _obtener_cliente().create_blob_event(
         memory_id=_obtener_memory_id(),

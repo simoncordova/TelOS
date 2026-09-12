@@ -24,7 +24,9 @@ else:
     from tools.ficha_local import borrar_ficha_usuario, guardar_ficha_usuario, leer_ficha_usuario
 
 
-def guardar_ficha_usuario_fusionada(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None:
+def guardar_ficha_usuario_fusionada(
+    usuario_id: str, datos: dict, fase: int, motivo_version: str, turn_id: str | None = None
+) -> None:
     """Envoltorio de `guardar_ficha_usuario` que fusiona `datos` sobre la
     última versión guardada (las claves nuevas ganan si hay conflicto) en
     vez de reemplazarla entera. Usado por los 5 `agents/*.py` en vez de
@@ -41,11 +43,17 @@ def guardar_ficha_usuario_fusionada(usuario_id: str, datos: dict, fase: int, mot
     fusión lo garantiza por código: si el modelo omite una clave que ya
     tenía valor, el valor anterior sobrevive; si la incluye (por ejemplo,
     al redefinir el sistema en una re-entrada desde Fase 5), la nueva
-    gana, como corresponde."""
+    gana, como corresponde.
+
+    `turn_id`: identificador del turno de conversación real que originó
+    este guardado (ver agents/orquestador.py::enviar_mensaje) -- pasado
+    tal cual a `guardar_ficha_usuario` para que un reintento del mismo
+    turno no genere una versión duplicada. None (default) para llamados
+    que no vienen de un turno de persona real (scripts, tests)."""
     ficha = leer_ficha_usuario(usuario_id)
     datos_previos = (ficha["actual"] or {}).get("datos", {}) if ficha["existe"] else {}
     fusionado = {**(datos_previos or {}), **datos}
-    guardar_ficha_usuario(usuario_id, fusionado, fase, motivo_version)
+    guardar_ficha_usuario(usuario_id, fusionado, fase, motivo_version, turn_id=turn_id)
 
 
 __all__ = ["borrar_ficha_usuario", "guardar_ficha_usuario", "guardar_ficha_usuario_fusionada", "leer_ficha_usuario"]

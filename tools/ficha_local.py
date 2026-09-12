@@ -29,16 +29,32 @@ def _guardar_todo(datos_completos: dict) -> None:
         json.dump(datos_completos, f, ensure_ascii=False, indent=2)
 
 
-def guardar_ficha_usuario(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None:
-    """Agrega una nueva versión de la ficha del usuario. No sobrescribe el historial."""
+def guardar_ficha_usuario(usuario_id: str, datos: dict, fase: int, motivo_version: str, turn_id: str | None = None) -> None:
+    """Agrega una nueva versión de la ficha del usuario. No sobrescribe el
+    historial. `version` es la posición de esta escritura en el log
+    append-only (1-indexado) -- no es un compare-and-swap real (este
+    backend, como AgentCore Memory, no tiene escritura condicional), pero
+    deja un número de revisión explícito y auditable en cada versión,
+    en vez de que "la posición en la lista" sea implícita.
+
+    `turn_id`: si coincide con el de la ÚLTIMA versión guardada, esta
+    llamada es un no-op -- protege contra guardados duplicados si el
+    mismo turno de conversación reintenta guardar (ver revisión de
+    arquitectura externa, 12/09/2026, sección "Reintento del mismo
+    turn_id"). None (el default) nunca coincide con nada, así que un
+    caller que no pase turn_id nunca activa esta protección."""
     todo = _cargar_todo()
     versiones = todo.setdefault(usuario_id, [])
+    if turn_id is not None and versiones and versiones[-1].get("turn_id") == turn_id:
+        return
     versiones.append(
         {
             "fase": fase,
             "datos": datos,
             "motivo_version": motivo_version,
             "fecha": datetime.now(timezone.utc).isoformat(),
+            "version": len(versiones) + 1,
+            "turn_id": turn_id,
         }
     )
     _guardar_todo(todo)

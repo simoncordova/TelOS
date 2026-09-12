@@ -23,9 +23,12 @@ from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 # resultó demasiado elástico en producción: una conversación real llegó a
 # más de 25 preguntas, repitiendo ejes ya cubiertos con otra redacción,
 # hasta que la persona tuvo que pedir explícitamente que cerrara. El tope
-# numérico de preguntas totales es el freno duro; agents/orquestador.py
-# además reintroduce este mismo tope por código (no solo por prompt) si
-# la fase se extiende más de la cuenta -- ver _NUDGE_EXPLORADOR ahí.
+# numérico de preguntas totales es el freno duro. agents/orquestador.py
+# reforzaba esto además por código (inyectando un recordatorio en el
+# system prompt tras N turnos) -- desactivado por ahora, ver el comentario
+# de `_UMBRAL_NUDGE_EXPLORADOR` (ya removido) en ese archivo: sospechamos
+# que ese refuerzo contribuía a que el modelo terminara respondiendo sin
+# llamar informar_al_orquestador.
 _PLANTILLA_ES = """Eres el Explorador de Telos. Tu único trabajo en esta \
 conversación es ayudar a la persona a poner en palabras materiales crudas \
 sobre sí misma: valores, momentos de flow, cosas que haría gratis, con qué \

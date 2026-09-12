@@ -36,6 +36,7 @@ que la interfaz la muestre como botones -- por ahora solo la usa el
 Sintetizador, para elegir el propósito candidato.
 """
 
+import logging
 import time
 
 from strands.agent import Agent
@@ -53,6 +54,8 @@ from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_event
 from tools.ficha import leer_ficha_usuario
 from tools.limite_uso import excedio_limite_diario, mensaje_limite_alcanzado, registrar_invocacion
 from tools.perfil import guardar_nombre_usuario, leer_nombre_usuario
+
+logger = logging.getLogger(__name__)
 
 _FABRICAS_POR_FASE = {
     1: crear_agente_explorador,
@@ -93,46 +96,18 @@ _EXTRAER_NOMBRE_PROMPT = {
     ),
 }
 
-# Tope de preguntas del Explorador (Fase 1) antes de que el Orquestador
-# empiece a insistir por código en que cierre -- ver agents/explorador.py
-# para la instrucción equivalente en el prompt. Los dos frenos conviven a
-# propósito (ver docstring de ese archivo): el del prompt es el criterio
-# normal, este es la red de seguridad cuando el modelo no lo aplica solo
-# (bug real visto en producción: una conversación real pasó de 25
-# preguntas sin cerrar, hasta que la persona tuvo que pedirlo ella misma).
-_UMBRAL_NUDGE_EXPLORADOR = 8
-_UMBRAL_NUDGE_EXPLORADOR_FUERTE = 12
-_NUDGE_EXPLORADOR = {
-    "es": (
-        "\n\n[Nota interna del sistema, no se la muestres a la persona: ya "
-        "van bastantes preguntas en esta fase. Si ya tenés sustancia en 4 "
-        "de los 5 ejes, cerrá la fase en tu respuesta a este mismo mensaje "
-        "con guardar_ficha_usuario, en vez de seguir preguntando.]"
-    ),
-    "en": (
-        "\n\n[Internal system note, don't show this to the person: this "
-        "phase has had quite a few questions already. If you have "
-        "substance in 4 of the 5 areas, close the phase in your reply to "
-        "this very message with guardar_ficha_usuario instead of asking "
-        "more.]"
-    ),
-}
-_NUDGE_EXPLORADOR_FUERTE = {
-    "es": (
-        "\n\n[Nota interna del sistema, no se la muestres a la persona: "
-        "esta fase ya se extendió demasiado -- cerrala en tu respuesta a "
-        "este mismo mensaje con guardar_ficha_usuario, aunque algún eje "
-        "haya quedado con menos detalle del ideal. No hagas más preguntas "
-        "nuevas.]"
-    ),
-    "en": (
-        "\n\n[Internal system note, don't show this to the person: this "
-        "phase has run too long -- close it in your reply to this very "
-        "message with guardar_ficha_usuario, even if some area ended up "
-        "with less detail than ideal. Don't ask any more new questions.]"
-    ),
-}
-
+# Tope de preguntas del Explorador (Fase 1): DESACTIVADO por ahora (rama
+# gamificacion). La idea era una red de seguridad por código además del
+# criterio del prompt (ver agents/explorador.py) para el bug real de una
+# conversación que pasó de 25 preguntas sin cerrar -- pero el mecanismo
+# (`_nudge_explorador` de abajo) agregaba texto extra al system prompt del
+# Explorador turno a turno, y sospechamos que ESO contribuía a que Haiku
+# terminara respondiendo texto plano sin llamar a `informar_al_orquestador`
+# (ver bug documentado más abajo, `_RESPUESTA_VACIA_FALLBACK`). Sacado
+# mientras se confirma esa hipótesis con el logging nuevo de
+# `_invocar_una_vez` -- si el freno de 25 preguntas vuelve a aparecer,
+# reinstalarlo de una forma que no toque el system prompt (ej. un mensaje
+# de usuario aparte, no una concatenación al prompt existente).
 # Freno de seguridad para un bug real visto en producción, distinto del
 # de arriba: con el aviso fuerte ya en el texto, el Explorador escribió
 # que había guardado todo y que la conversación seguía de largo, pero
@@ -252,6 +227,22 @@ _FALTAN_CAMPOS = {
 }
 
 
+def _texto_ultimo_mensaje_asistente(agente: Agent) -> str:
+    """Extrae el texto plano del último turno del asistente en
+    `agente.messages` -- fallback para _invocar_una_vez cuando el
+    sub-agente respondió de verdad pero no llamó a
+    `informar_al_orquestador` ni con el reintento forzado. Strands guarda
+    cada mensaje como {"role": ..., "content": [bloques]}; un bloque de
+    texto tiene la clave "text", uno de tool_use/tool_result no la tiene."""
+    for mensaje in reversed(agente.messages):
+        if mensaje.get("role") != "assistant":
+            continue
+        texto = "".join(bloque.get("text", "") for bloque in mensaje.get("content", []))
+        if texto.strip():
+            return texto.strip()
+    return ""
+
+
 def _turnos_a_mensajes(turnos: list[dict]) -> list[dict]:
     """Convierte los turnos guardados (tools/conversacion.py) al formato
     de `Message` que espera Strands (`Agent(messages=...)`)."""
@@ -343,10 +334,6 @@ class SesionTelos:
                 contenedor_guardado=contenedor_guardado,
                 contenedor_informe=contenedor_informe,
             )
-            if fase == 1:
-                nudge = self._nudge_explorador()
-                if nudge:
-                    agente.system_prompt = agente.system_prompt + nudge
             agentes[fase] = agente
             contenedores[fase] = {
                 "opciones": contenedor_opciones,
@@ -354,30 +341,6 @@ class SesionTelos:
                 "informe": contenedor_informe,
             }
         return agentes, contenedores
-
-    def _nudge_explorador(self) -> str:
-        """Recordatorio inyectado en el SYSTEM PROMPT del Explorador (no
-        en el mensaje de la persona, como antes -- el orquestador es
-        quien arma el input que ve la tool, no el código) si ya lleva
-        demasiados turnos sin cerrar. Ver _UMBRAL_NUDGE_EXPLORADOR* y el
-        docstring de agents/explorador.py."""
-        if self.fase_actual != 1:
-            return ""
-        turnos_previos = len(leer_turnos(self.usuario_id, 1)) // 2
-        if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR_FUERTE:
-            return _NUDGE_EXPLORADOR_FUERTE[self.idioma]
-        if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR:
-            return _NUDGE_EXPLORADOR[self.idioma]
-        return ""
-
-    def _turno_supera_umbral_fuerte(self) -> bool:
-        """True si el Explorador ya lleva turnos como para exigir el
-        cierre sin ambigüedad, sin importar lo que declare -- freno de
-        seguridad equivalente al `forzar_cierre_duro` de antes, ver
-        _verificar_y_reforzar."""
-        if self.fase_actual != 1:
-            return False
-        return (len(leer_turnos(self.usuario_id, 1)) // 2) >= _UMBRAL_NUDGE_EXPLORADOR_FUERTE
 
     def _resumir_estado_ficha(self) -> str:
         """Texto corto que el orquestador agéntico ve en su prompt --
@@ -431,6 +394,24 @@ class SesionTelos:
                 agente(_FORZAR_INFORME[self.idioma])
                 registrar_invocacion(self.usuario_id)
             if not contenedor["informe"]:
+                # Ni siquiera el reintento forzado logró que llamara la
+                # tool -- bug real de Haiku (ver docstring del módulo).
+                # En vez de perder la respuesta real que sí generó y caer
+                # al aviso genérico de _invocar (_RESPUESTA_VACIA_FALLBACK),
+                # se usa ese texto tal cual. `cerrado` siempre False acá:
+                # nunca se avanza de fase sin el booleano explícito
+                # verificado contra AgentCore Memory -- _verificar_y_reforzar
+                # sigue siendo la única autoridad real de cierre.
+                texto_fallback = _texto_ultimo_mensaje_asistente(agente)
+                logger.warning(
+                    "Fase %s no llamó informar_al_orquestador ni tras el reintento forzado. "
+                    "Último texto del modelo: %r",
+                    fase,
+                    texto_fallback[:500],
+                )
+                if texto_fallback:
+                    self._contenedor_opciones = []
+                    return fase, texto_fallback, False
                 continue
             informe = contenedor["informe"][-1]
             self._contenedor_opciones = list(contenedor["opciones"])
@@ -440,6 +421,7 @@ class SesionTelos:
             return fase, (informe.get("texto") or "").strip(), bool(informe.get("cerrado"))
 
         self._contenedor_opciones = []
+        logger.warning("El orquestador no invocó ninguna fase-tool para el turno: %r", texto[:200])
         return self.fase_actual, "", False
 
     def _invocar(self, texto: str) -> tuple[int, str, bool]:
@@ -495,7 +477,15 @@ class SesionTelos:
             registrar_invocacion(self.usuario_id)
         self._contenedor_opciones = list(contenedor_opciones)
         if not contenedor_informe:
-            return "", False
+            # Mismo fallback que _invocar_una_vez -- ver ese comentario.
+            texto_fallback = _texto_ultimo_mensaje_asistente(agente)
+            logger.warning(
+                "Fase %s (invocación directa) no llamó informar_al_orquestador ni tras el reintento forzado. "
+                "Último texto del modelo: %r",
+                fase,
+                texto_fallback[:500],
+            )
+            return texto_fallback, False
         informe = contenedor_informe[-1]
         dato_nuevo = informe.get("dato_nuevo")
         if dato_nuevo:
@@ -503,7 +493,7 @@ class SesionTelos:
         return (informe.get("texto") or "").strip(), bool(informe.get("cerrado"))
 
     def _verificar_y_reforzar(
-        self, fase: int, respuesta: str, cerrado_declarado: bool, total_versiones_antes: int, forzar: bool = False
+        self, fase: int, respuesta: str, cerrado_declarado: bool, total_versiones_antes: int
     ) -> str:
         """Después de invocar `fase` (por el orquestador o directo),
         confirma contra AgentCore Memory -- no contra lo que el modelo
@@ -512,13 +502,12 @@ class SesionTelos:
         fase (no vuelve a pasar por el orquestador, ya no hay ninguna
         decisión de ruteo pendiente):
 
-        1. Si se declaró `cerrado=True` (o `forzar=True`, freno de
-           turnos del Explorador) pero AgentCore Memory no tiene una
+        1. Si se declaró `cerrado=True` pero AgentCore Memory no tiene una
            versión nueva, reintenta con _FORZAR_CIERRE.
         2. Si sí hay una versión nueva de esta fase, pero le falta alguna
            clave obligatoria (_CAMPOS_REQUERIDOS_AL_CERRAR), reintenta
            con _FALTAN_CAMPOS."""
-        if (cerrado_declarado or forzar) and self._contar_versiones() <= total_versiones_antes:
+        if cerrado_declarado and self._contar_versiones() <= total_versiones_antes:
             respuesta, _ = self._invocar_fase_directo(fase, _FORZAR_CIERRE[self.idioma])
 
         ficha = self._leer_ficha_con_reintento(total_versiones_antes)
@@ -628,7 +617,6 @@ class SesionTelos:
 
         fase_antes = self.fase_actual
         total_versiones_antes = self._contar_versiones()
-        forzar_cierre_duro = self._turno_supera_umbral_fuerte()
         fase_respondio, respuesta, cerrado = self._invocar(texto)
         # Público, de solo lectura, para diagnóstico (scripts/
         # simular_conversacion.py): qué fase respondió y qué declaró
@@ -637,9 +625,7 @@ class SesionTelos:
         # final ya corregido.
         self.ultima_fase_respondio = fase_respondio
         self.ultimo_cerrado_declarado = cerrado
-        respuesta = self._verificar_y_reforzar(
-            fase_respondio, respuesta, cerrado, total_versiones_antes, forzar=forzar_cierre_duro
-        )
+        respuesta = self._verificar_y_reforzar(fase_respondio, respuesta, cerrado, total_versiones_antes)
 
         guardar_intercambio(self.usuario_id, fase_antes, texto, respuesta)
         yield fase_antes, respuesta, list(self._contenedor_opciones)

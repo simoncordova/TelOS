@@ -17,10 +17,10 @@ propio es solo una lista de strings en orden, ej.:
     ["cuando estaba creando una app nueva", "...", ...]
 
 Cada turno imprime, además del texto de la respuesta:
-  - la fase que el orquestador agéntico realmente invocó, y la fase
-    antes/después (para ver cuándo cascadea de verdad, no cuándo el
-    texto *dice* que cascadeó, y si el orquestador alguna vez elige una
-    fase fuera de secuencia -- ver agents/orquestador_agente.py)
+  - la fase que realmente respondió (`self.fase_actual`, código
+    determinístico -- ver agents/orquestador.py, ya no hay un
+    orquestador agéntico eligiendo), y la fase antes/después (para ver
+    cuándo cascadea de verdad, no cuándo el texto *dice* que cascadeó)
   - si ese subagente declaró `cerrado=True` en su tool
     informar_al_orquestador ANTES de cualquier reintento forzado (se lee
     de SesionTelos.ultimo_cerrado_declarado, ver agents/orquestador.py)

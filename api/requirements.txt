@@ -20,7 +20,7 @@
 #                tools/calendario_agentcore.py). api/main.py expone la
 #                ruta de callback de ese flujo, así que el contenedor de
 #                la API los necesita igual que los de agents/tools.
-strands-agents>=0.1.0
+strands-agents>=1.55.1
 boto3>=1.34.0
 bedrock-agentcore>=1.0.0
 requests>=2.31.0

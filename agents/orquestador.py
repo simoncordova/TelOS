@@ -1,14 +1,22 @@
-"""Orquestador. Ver docs/agente-proposito-de-vida-prompts.md sección 1 y
-C:\\Users\\Wendy\\.claude\\plans\\cosmic-zooming-tarjan.md (orquestador
-agéntico, rama gamificacion).
+"""Orquestador. Ver docs/agente-proposito-de-vida-prompts.md sección 1.
 
 No conversa directamente sobre contenido de propósito: aplica el
 guardrail de crisis en cada turno, antes que cualquier otra cosa, y
-después arma un `Agent` orquestador (agents/orquestador_agente.py) con
-los 5 agentes de fase expuestos como tools, para que decida con juicio
-semántico a cuál invocar -- Fase 1→2→3→4 sigue siendo un flujo fijo (no
-se saltan pasos, reforzado por la descripción de cada tool), Fase 5 es
-dinámica y puede reinyectar al usuario en Fase 3 o 4.
+después invoca DIRECTO al agente de la fase actual (`self.fase_actual`,
+mantenido por código -- ver `_avanzar_fase_si_corresponde`). Fase 1→2→3→4
+es un flujo fijo (no se saltan pasos), Fase 5 es dinámica y puede
+reinyectar al usuario en Fase 3 o 4.
+
+Hasta el 12/09/2026 (rama gamificacion) el ruteo pasaba por un `Agent`
+orquestador (Sonnet, `agents/orquestador_agente.py`, borrado en este
+commit) con las 5 fases expuestas como tools (`Agent.as_tool()`),
+decidiendo con "juicio semántico" a cuál invocar. Se sacó (revisión de
+arquitectura externa) porque ese juicio era redundante -- el propio
+prompt del orquestador se armaba pasándole `self.fase_actual`, que el
+código ya conocía con certeza -- y porque agregaba una clase entera de
+fallo real (el orquestador respondiendo texto plano sin invocar ninguna
+fase-tool) y una invocación completa de Bedrock por turno sin
+necesidad. Recuperable de git history si hace falta comparar.
 
 Cada agente de fase, según el spec, guarda su ficha exactamente una vez,
 al cerrar su fase (no hay saves parciales a mitad de fase). A diferencia
@@ -46,10 +54,9 @@ from agents._modelo import crear_modelo_subagente
 from agents.coach_validacion import crear_agente_coach_validacion
 from agents.estratega_sistemas import crear_agente_estratega_sistemas
 from agents.explorador import crear_agente_explorador
-from agents.orquestador_agente import crear_agente_orquestador
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
-from tools.contexto_usuario import agregar_insight, leer_insights
+from tools.contexto_usuario import agregar_insight
 from tools.conversacion import guardar_intercambio, leer_turnos
 from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
 from tools.ficha import leer_ficha_usuario
@@ -326,157 +333,28 @@ class SesionTelos:
         self.ultimo_cerrado_declarado: bool | None = None
         self.fase_actual = self._determinar_fase_inicial()
 
-    def _construir_agentes_fase(self) -> tuple[dict[int, Agent], dict[int, dict[str, list]]]:
-        """Arma los 5 agentes de fase, siempre los 5 -- el orquestador
-        agéntico elige con su propio juicio semántico a cuál invocar (ver
-        agents/orquestador_agente.py), en vez de que el código restrinja
-        el toolset a "solo la fase actual". El freno real sigue siendo
-        _verificar_y_reforzar más abajo, que confirma contra AgentCore
-        Memory lo que se haya declarado antes de confiar en nada.
-
-        Cada fase tiene su propia tripleta de contenedores (opciones/
-        guardado/informe) para poder distinguir cuál de las 5 respondió
-        este turno -- no se puede compartir un solo contenedor entre las
-        5 porque, si el orquestador llegara a invocar más de una (no
-        debería, pero nada lo impide a nivel de tipos), se pisarían entre
-        sí."""
-        agentes: dict[int, Agent] = {}
-        contenedores: dict[int, dict[str, list]] = {}
-        for fase, fabrica in _FABRICAS_POR_FASE.items():
-            contenedor_opciones: list = []
-            contenedor_guardado: list = []
-            contenedor_informe: list = []
-            turnos = leer_turnos(self.usuario_id, fase)
-            agente = fabrica(
-                self.usuario_id,
-                self.idioma,
-                mensajes_previos=_turnos_a_mensajes(turnos),
-                nombre=self.nombre,
-                contenedor_opciones=contenedor_opciones,
-                contenedor_guardado=contenedor_guardado,
-                contenedor_informe=contenedor_informe,
-            )
-            agentes[fase] = agente
-            contenedores[fase] = {
-                "opciones": contenedor_opciones,
-                "guardado": contenedor_guardado,
-                "informe": contenedor_informe,
-            }
-        return agentes, contenedores
-
-    def _resumir_estado_ficha(self) -> str:
-        """Texto corto que el orquestador agéntico ve en su prompt --
-        derivado de la ficha real (AgentCore Memory), no una suposición
-        del modelo sobre en qué fase está la persona."""
-        ficha = leer_ficha_usuario(self.usuario_id)
-        if not ficha["existe"]:
-            return "No ficha yet -- no phase has closed." if self.idioma == "en" else "Todavía no hay ficha -- ninguna fase cerró."
-        actual = ficha["actual"] or {}
-        fase_cerrada = actual.get("fase")
-        reentrada = (actual.get("datos") or {}).get("reentrada")
-        if self.idioma == "en":
-            base = f"Last closed phase: {fase_cerrada}. Continuing in phase: {self.fase_actual}."
-            if reentrada:
-                base += f" Pending re-entry into {reentrada}."
-            return base
-        base = f"Última fase cerrada: {fase_cerrada}. Continúa en la fase: {self.fase_actual}."
-        if reentrada:
-            base += f" Reingreso pendiente a {reentrada}."
-        return base
 
     def _invocar_una_vez(self, texto: str) -> tuple[int, str, bool]:
-        """Arma el orquestador agéntico (con los 5 subagentes como tools)
-        y lo invoca una vez. Devuelve (fase_que_respondió,
-        texto_para_la_persona, cerrado_declarado) -- el texto sale del
-        informe estructurado que el subagente le dejó al orquestador
-        (`informar_al_orquestador`), nunca del propio texto del
-        orquestador (ver plan de migración, sección 6: no hay garantía
-        de que el `AgentResult` del orquestador conserve el texto
-        completo del subagente delegado). Cualquier `dato_nuevo` del
-        informe se persiste como insight de una vez."""
-        agentes, contenedores = self._construir_agentes_fase()
-        estado = self._resumir_estado_ficha()
-        insights = leer_insights(self.usuario_id)
-        orquestador = crear_agente_orquestador(agentes, estado, insights, self.idioma)
+        """Invoca directo a la fase actual (`self.fase_actual`), sin pasar
+        por ningún router agéntico. Devuelve (fase_que_respondió,
+        texto_para_la_persona, cerrado_declarado).
 
-        mensajes_antes = {fase: len(agente.messages) for fase, agente in agentes.items()}
-        orquestador(texto)
-        registrar_invocacion(self.usuario_id)  # la llamada del orquestador
-
-        for fase, agente in agentes.items():
-            contenedor = contenedores[fase]
-            fue_invocado = len(agente.messages) > mensajes_antes[fase]
-            if not fue_invocado:
-                continue
-            if not contenedor["informe"] and not excedio_limite_diario(self.usuario_id):
-                # La tool obligatoria no se llamó -- reintento apuntado
-                # sobre ESTE MISMO agente (ya invocado este turno, no se
-                # pierde lo que generó), forzando la forma de la respuesta
-                # con structured_output_model en vez de solo pedirle de
-                # nuevo y esperar que llame la tool -- ver
-                # InformeAlOrquestador.
-                try:
-                    resultado_forzado = agente(
-                        _FORZAR_INFORME[self.idioma], structured_output_model=InformeAlOrquestador
-                    )
-                    registrar_invocacion(self.usuario_id)
-                except Exception:  # noqa: BLE001 -- fallo real forzando la forma, no un caso esperado
-                    logger.exception("Fase %s: structured_output_model del reintento forzado falló", fase)
-                    resultado_forzado = None
-                if resultado_forzado is not None and resultado_forzado.structured_output is not None:
-                    informe_forzado = resultado_forzado.structured_output
-                    contenedor["informe"].append(
-                        {
-                            "texto": informe_forzado.texto_para_persona,
-                            "cerrado": informe_forzado.cerrado,
-                            "dato_nuevo": informe_forzado.dato_nuevo,
-                        }
-                    )
-            if not contenedor["informe"]:
-                # Ni siquiera el reintento forzado logró que llamara la
-                # tool -- bug real de Haiku (ver docstring del módulo).
-                # En vez de perder la respuesta real que sí generó y caer
-                # al aviso genérico de _invocar (_RESPUESTA_VACIA_FALLBACK),
-                # se usa ese texto tal cual. `cerrado` siempre False acá:
-                # nunca se avanza de fase sin el booleano explícito
-                # verificado contra AgentCore Memory -- _verificar_y_reforzar
-                # sigue siendo la única autoridad real de cierre.
-                texto_fallback = _texto_ultimo_mensaje_asistente(agente)
-                logger.warning(
-                    "Fase %s no llamó informar_al_orquestador ni tras el reintento forzado. "
-                    "Último texto del modelo: %r",
-                    fase,
-                    texto_fallback[:500],
-                )
-                if texto_fallback:
-                    self._contenedor_opciones = []
-                    return fase, texto_fallback, False
-                continue
-            informe = contenedor["informe"][-1]
-            self._contenedor_opciones = list(contenedor["opciones"])
-            dato_nuevo = informe.get("dato_nuevo")
-            if dato_nuevo:
-                agregar_insight(self.usuario_id, dato_nuevo)
-            return fase, (informe.get("texto") or "").strip(), bool(informe.get("cerrado"))
-
-        self._contenedor_opciones = []
-        # El orquestador (Sonnet) mismo no invocó ninguna fase-tool -- caso
-        # distinto al de arriba (ahí SÍ se invocó un sub-agente, pero no
-        # llamó su tool obligatoria). Visto en producción: el orquestador
-        # respondiendo texto plano en vez de delegar, incluso en el
-        # reintento de _invocar. Mismo criterio que el fallback de arriba:
-        # usar lo que el orquestador sí generó en vez de perderlo -- mejor
-        # que la persona vea ESE texto (que además ya tiene su propia
-        # regla de "nunca anunciar transición" en el prompt) a que caiga
-        # al aviso genérico de _invocar. cerrado siempre False, por lo
-        # mismo de siempre.
-        texto_fallback = _texto_ultimo_mensaje_asistente(orquestador)
-        logger.warning(
-            "El orquestador no invocó ninguna fase-tool para el turno: %r. Último texto del orquestador: %r",
-            texto[:200],
-            texto_fallback[:500],
-        )
-        return self.fase_actual, texto_fallback, False
+        Hasta acá (rama gamificacion) esto pasaba por un `Agent`
+        orquestador (Sonnet) con las 5 fases expuestas como tools
+        (`Agent.as_tool()`), que "elegía" con juicio semántico a cuál
+        invocar -- ver revisión de arquitectura externa, 12/09/2026.
+        Sacado: `self.fase_actual` (mantenido por código en
+        `_avanzar_fase_si_corresponde`, incluida la lógica de reingreso a
+        Fase 3/4 desde Fase 5) YA es la respuesta a la única pregunta que
+        el orquestador resolvía -- su propio prompt se armaba pasándole
+        ese mismo valor (`_resumir_estado_ficha`) para que "decidiera"
+        algo que el código ya sabía. Quitarlo elimina de raíz una clase
+        entera de fallo (el orquestador respondiendo texto plano sin
+        invocar ninguna fase-tool, visto en producción) y saca una
+        invocación real de Bedrock por turno (mejora de latencia)."""
+        fase = self.fase_actual
+        texto_respuesta, cerrado = self._invocar_fase_directo(fase, texto)
+        return fase, texto_respuesta, cerrado
 
     def _invocar(self, texto: str) -> tuple[int, str, bool]:
         """Invoca al orquestador agéntico, salvo que esta cuenta ya haya

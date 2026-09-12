@@ -20,8 +20,32 @@ from strands.models import BedrockModel
 MODEL_ID = os.environ.get("TELOS_MODEL_ID", "global.anthropic.claude-sonnet-4-5-20250929-v1:0")
 REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
 
+# Guardrail de Bedrock (infra/stacks/telos_stack.py::GuardrailTelos) --
+# denied topics (pedidos fuera del propósito de la app, intentos de
+# jailbreak, consejo profesional regulado) + filtros de contenido dañino
+# aplicados directo por Bedrock a cada invocación, antes/después del
+# modelo. Complementa, no reemplaza, al guardrail de crisis
+# (tools/crisis.py): ese sigue siendo el único mecanismo para señales de
+# crisis (corre en código, antes de invocar a Bedrock, sin importar este
+# guardrail) -- ver docs/agente-proposito-de-vida-prompts.md sección 10.
+# Vacío en desarrollo local (sin GUARDRAIL_ID seteado) para no requerir
+# el recurso desplegado solo para probar el flujo de agentes.
+GUARDRAIL_ID = os.environ.get("GUARDRAIL_ID", "")
+GUARDRAIL_VERSION = os.environ.get("GUARDRAIL_VERSION", "")
+
 
 def crear_modelo() -> BedrockModel:
+    if GUARDRAIL_ID:
+        return BedrockModel(
+            model_id=MODEL_ID,
+            region_name=REGION,
+            guardrail_id=GUARDRAIL_ID,
+            guardrail_version=GUARDRAIL_VERSION,
+            # "enabled" (no "enabled_full"): alcanza con saber SI algo se
+            # bloqueó, no hace falta el detalle completo de qué texto
+            # exacto disparó cada filtro para esta app.
+            guardrail_trace="enabled",
+        )
     return BedrockModel(model_id=MODEL_ID, region_name=REGION)
 
 

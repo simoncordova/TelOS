@@ -421,6 +421,16 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
 
 **Rama `gamificacion` específicamente** (frontend Next.js/API/push):
 
+- El Guardrail de Bedrock (`infra/stacks/telos_stack.py::GuardrailTelos`
+  — denied topics + filtros de contenido, ver
+  [docs/agente-proposito-de-vida-prompts.md sección 10.1](docs/agente-proposito-de-vida-prompts.md))
+  se crea solo en el próximo `cdk deploy`, no necesita ningún parámetro
+  ni paso extra — pero todavía no se probó contra la cuenta real
+  (verificado con `cdk synth` + inspección manual del JSON generado, no
+  con un deploy real). Probar después de desplegar: un pedido claramente
+  fuera de tema ("ayudame con este código Python") debería devolver el
+  mensaje fijo de "prefiero seguir enfocado en tu propósito", no una
+  respuesta del modelo.
 - Rate limiting de las rutas de conversación (`tools/limite_uso.py`,
   100 invocaciones/día) está atado al `usuario_id` autenticado — con
   Cognito real ya activo esto vuelve a ser efectivo (antes, en modo

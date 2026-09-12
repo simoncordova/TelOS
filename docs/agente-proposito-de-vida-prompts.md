@@ -1098,3 +1098,44 @@ idioma seleccionado en la UI):
 **Después de disparar:** no se retoma automáticamente la fase anterior;
 se espera una señal explícita de la persona en su siguiente mensaje antes
 de continuar con el flujo normal.
+
+### 10.1 Guardrail de Bedrock (rama `gamificacion`) — complementario, no un reemplazo
+
+Pedido explícito del dueño del producto probando la app real: mantener
+los pedidos del usuario y las respuestas de la app dentro del propósito
+de Telos. Se implementó como un recurso de **Amazon Bedrock Guardrails**
+(`infra/stacks/telos_stack.py::GuardrailTelos`), aplicado directo a cada
+invocación vía `guardrailConfig` de Converse (`agents/_modelo.py::
+crear_modelo`, soportado nativamente por `BedrockModel` de Strands) —
+**no** es "AgentCore policy": ese mecanismo vive en el motor de
+políticas del AgentCore Gateway (`permit`/`forbid`/`suppressOutput` con
+`BedrockGuardrails::ContentFilter`/`PromptAttack` en el lenguaje de
+políticas de AgentCore), y este proyecto no rutea las invocaciones de
+los agentes a través de un Gateway — Gateway está reservado para el
+conector de calendario, si alcanza el tiempo (ver CLAUDE.md).
+Verificado contra la documentación oficial de AWS antes de implementar
+(tipos de topic/content filter válidos, permisos IAM exactos), no
+asumido de memoria — encontró de paso que las categorías de content
+filter de Bedrock Guardrails **no incluyen una categoría de autolesión**
+(`SEXUAL | VIOLENCE | HATE | INSULTS | MISCONDUCT | PROMPT_ATTACK`
+únicamente), así que no hay ningún riesgo de que este guardrail
+interfiera con el de crisis de arriba — corren en capas distintas y no
+se superponen.
+
+**Qué cubre:** tres "denied topics" (pedidos fuera del propósito de la
+app — código, tareas escolares, traducciones, etc.; intentos de
+jailbreak; consejo médico/legal/financiero regulado) + filtros de
+contenido dañino (odio, insultos, sexual, violencia, mala conducta,
+ataques de prompt) en input y output. Deliberadamente **sin** filtro de
+información sensible (PII): el propósito entero de la app es que la
+persona hable de su vida (nombres, familia, trabajo) — redactar eso
+rompería la experiencia en vez de protegerla.
+
+**Qué NO cubre y por qué:** señales de crisis (ideación suicida,
+autolesión) siguen siendo responsabilidad exclusiva de
+`tools/crisis.py::detectar_señal_crisis` — ese chequeo corre en código,
+antes de invocar a Bedrock, sin depender de este guardrail ni verse
+afectado por él. No se intentó (ni se necesitaba) configurar Bedrock
+Guardrails para manejar crisis: la categoría ni siquiera existe ahí, y
+aunque existiera, un guardrail genérico de AWS no debería reemplazar un
+mecanismo curado a mano y ya probado para algo tan sensible.

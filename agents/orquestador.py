@@ -208,12 +208,22 @@ _FRASE_CIERRE_FALSO = {
     "es": re.compile(
         r"ya\s+(lo\s+|los\s+|la\s+|las\s+)?(guard[eé]|guardamos)\b"
         r"|guard[eé]\s+(todo|el\s+avance|tu\s+elecci[oó]n|la\s+redacci[oó]n|el\s+sistema|tu\s+prop[oó]sito)"
-        r"|(ya\s+)?est[aá]\s+guardad[oa]"
-        r"|qued[oó]\s+guardad[oa]",
+        r"|(ya\s+)?est[aá]\s+(?:\w+\s+)?guardad[oa]"
+        r"|qued[oó]\s+(?:\w+\s+)?guardad[oa]"
+        r"|ha\s+sido\s+guardad[oa]",
         re.IGNORECASE,
     ),
     "en": re.compile(
-        r"\b(already\s+saved|i(?:'ve| have)?\s+saved|it'?s\s+(?:already\s+)?saved|saved\s+(?:it|that|everything|your))\b",
+        # Bug real (rama gamificacion): "the purpose is now properly
+        # saved" no matcheaba nada de lo de abajo -- tercera persona/voz
+        # pasiva con un adverbio en el medio ("now properly"), en vez de
+        # la primera persona o "it's saved" que ya cubríamos. Los dos
+        # alternativos nuevos (`is ... saved` / `has been saved`)
+        # permiten como mucho una palabra de relleno entre el verbo y
+        # "saved" para cubrir esa forma sin volverse tan laxos que
+        # empiecen a matchear frases sin relación.
+        r"\b(already\s+saved|i(?:'ve| have)?\s+saved|it'?s\s+(?:already\s+)?saved|saved\s+(?:it|that|everything|your)"
+        r"|is\s+(?:now\s+)?(?:\w+\s+)?saved\b|has\s+been\s+saved)\b",
         re.IGNORECASE,
     ),
 }

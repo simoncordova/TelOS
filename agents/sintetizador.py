@@ -8,17 +8,41 @@ from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
 from agents._modelo import (
-    REGLA_CIERRE_REAL_ES,
-    REGLA_CIERRE_REAL_EN,
     REGLA_CONJUGACION_ES,
-    REGLA_TRANSICION_ES,
-    REGLA_TRANSICION_EN,
-    crear_modelo,
+    crear_modelo_subagente,
     crear_tool_presentar_opciones,
     regla_nombre,
 )
 from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
+
+# Instrucción del informe estructurado al orquestador -- reemplaza
+# REGLA_TRANSICION_*/REGLA_CIERRE_REAL_* (esas ahora viven una sola vez en
+# agents/orquestador_agente.py, no repetidas en los 5 prompts). Este
+# subagente ya no le habla directo a la persona: informar_al_orquestador
+# es el único canal, así que "decir que guardaste sin haber guardado" deja
+# de ser un problema de texto libre -- es un booleano que el código
+# verifica contra AgentCore Memory (ver agents/orquestador.py).
+_INSTRUCCION_INFORME_ES = (
+    "Al final de CADA turno, sin excepción, llamá a la tool "
+    "informar_al_orquestador como último paso: texto_para_persona es lo "
+    "que el orquestador le va a mostrar a la persona tal cual, sin "
+    "resumir ni reescribir -- tiene que ser el mensaje completo que "
+    "querés que vea. cerrado=True solo si en ESTE turno llamaste de "
+    "verdad a guardar_ficha_usuario; si no, cerrado=False. dato_nuevo es "
+    "un hecho puntual que valga la pena recordar en fases futuras (o "
+    "None si no hay nada nuevo)."
+)
+_INSTRUCCION_INFORME_EN = (
+    "At the end of EVERY turn, no exception, call the "
+    "informar_al_orquestador tool as your last step: texto_para_persona "
+    "is what the orchestrator will show the person verbatim, without "
+    "summarizing or rewriting it -- it has to be the full message you "
+    "want them to see. cerrado=True only if you actually called "
+    "guardar_ficha_usuario in THIS turn; otherwise cerrado=False. "
+    "dato_nuevo is one concrete fact worth remembering in future phases "
+    "(or None if there's nothing new)."
+)
 
 _PLANTILLA_ES = """Eres el Sintetizador de Telos. Recibes la ficha cruda \
 que dejó el Explorador. Tu trabajo es reflejarle a la persona 2 o 3 \
@@ -62,12 +86,11 @@ de un tono de hype. Español neutro. {regla_conjugacion}
 Cuando la persona elige o combina un candidato, guardá esa elección con \
 guardar_ficha_usuario. Pasale a `datos` la clave "proposito" con la \
 redacción final elegida (string) — esa clave la van a seguir leyendo las \
-fases siguientes y la interfaz, así que es obligatoria, no opcional. \
-{regla_transicion}
+fases siguientes y la interfaz, así que es obligatoria, no opcional.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 _PLANTILLA_EN = """You are Telos's Synthesizer. You receive the raw \
 notes the Explorer left behind. Your job is to reflect back 2 or 3 \
@@ -110,11 +133,11 @@ truthfulness, not from exaggeration or a hype tone.
 Once the person picks or blends a candidate, save that choice with \
 guardar_ficha_usuario. Pass `datos` the key "proposito" with the final \
 wording chosen (string) — later phases and the UI keep reading that \
-key, so it's required, not optional. {regla_transicion}
+key, so it's required, not optional.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 
 def crear_agente_sintetizador(
@@ -124,23 +147,24 @@ def crear_agente_sintetizador(
     nombre: str | None = None,
     contenedor_opciones: list | None = None,
     contenedor_guardado: list | None = None,
+    contenedor_informe: list | None = None,
 ) -> Agent:
     if contenedor_opciones is None:
         contenedor_opciones = []
     if contenedor_guardado is None:
         contenedor_guardado = []
+    if contenedor_informe is None:
+        contenedor_informe = []
     if idioma == "en":
         system_prompt = _PLANTILLA_EN.format(
-            regla_transicion=REGLA_TRANSICION_EN,
-            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_EN,
         )
     else:
         system_prompt = _PLANTILLA_ES.format(
             regla_conjugacion=REGLA_CONJUGACION_ES,
-            regla_transicion=REGLA_TRANSICION_ES,
-            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_ES,
         )
 
     @tool
@@ -154,12 +178,23 @@ def crear_agente_sintetizador(
         _guardar(usuario_id, datos, fase=2, motivo_version=motivo_version)
         contenedor_guardado.append(True)
 
+    @tool
+    def informar_al_orquestador(texto_para_persona: str, cerrado: bool, dato_nuevo: str | None = None) -> str:
+        """Llamar SIEMPRE, como último paso de cada turno -- ver instrucción en el prompt."""
+        contenedor_informe.append({"texto": texto_para_persona, "cerrado": cerrado, "dato_nuevo": dato_nuevo})
+        return "ok"
+
     return Agent(
         system_prompt=system_prompt,
-        tools=[leer_ficha_usuario, guardar_ficha_usuario, crear_tool_presentar_opciones(contenedor_opciones)],
+        tools=[
+            leer_ficha_usuario,
+            guardar_ficha_usuario,
+            crear_tool_presentar_opciones(contenedor_opciones),
+            informar_al_orquestador,
+        ],
         # Precarga los turnos ya guardados de esta fase (ver explorador.py).
         messages=mensajes_previos,
-        model=crear_modelo(),
+        model=crear_modelo_subagente(),
         # Suprime el PrintingCallbackHandler por default de Strands (ver
         # explorador.py) -- quien llame controla cómo mostrar la respuesta.
         callback_handler=None,

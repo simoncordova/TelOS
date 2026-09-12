@@ -32,17 +32,32 @@ tiene que reproducirlo.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import (
-    REGLA_CIERRE_REAL_ES,
-    REGLA_CIERRE_REAL_EN,
-    REGLA_CONJUGACION_ES,
-    REGLA_TRANSICION_ES,
-    REGLA_TRANSICION_EN,
-    crear_modelo,
-    regla_nombre,
-)
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo_subagente, regla_nombre
 from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
+
+# Ver agents/sintetizador.py para el porqué (informe estructurado al
+# orquestador en vez de REGLA_TRANSICION_*/REGLA_CIERRE_REAL_* repetidas).
+_INSTRUCCION_INFORME_ES = (
+    "Al final de CADA turno, sin excepción, llamá a la tool "
+    "informar_al_orquestador como último paso: texto_para_persona es lo "
+    "que el orquestador le va a mostrar a la persona tal cual, sin "
+    "resumir ni reescribir -- tiene que ser el mensaje completo que "
+    "querés que vea. cerrado=True solo si en ESTE turno llamaste de "
+    "verdad a guardar_ficha_usuario; si no, cerrado=False. dato_nuevo es "
+    "un hecho puntual que valga la pena recordar en fases futuras (o "
+    "None si no hay nada nuevo)."
+)
+_INSTRUCCION_INFORME_EN = (
+    "At the end of EVERY turn, no exception, call the "
+    "informar_al_orquestador tool as your last step: texto_para_persona "
+    "is what the orchestrator will show the person verbatim, without "
+    "summarizing or rewriting it -- it has to be the full message you "
+    "want them to see. cerrado=True only if you actually called "
+    "guardar_ficha_usuario in THIS turn; otherwise cerrado=False. "
+    "dato_nuevo is one concrete fact worth remembering in future phases "
+    "(or None if there's nothing new)."
+)
 
 TIPOS_CHECKIN = ["cumplimiento", "autopercepcion", "ajuste"]
 
@@ -95,10 +110,11 @@ Si la respuesta indica que el sistema no funciona (la acción no se está \
 cumpliendo o pide un ajuste que va más allá de un detalle menor), o que \
 el propósito ya no resuena, dilo con naturalidad y ofrece pasar a \
 rediseñarlo — no insistas en mantener algo que la persona ya dijo que no \
-le sirve. Si ofrecés rediseñarlo y la persona acepta, seguí de largo vos \
-mismo con la conversación de rediseño en tu próximo mensaje — no lo \
-anuncies como si otra persona o sistema fuera a tomar la posta.
-{regla_transicion}
+le sirve. Si ofrecés rediseñarlo y la persona acepta, guardá "reentrada" \
+en tu guardar_ficha_usuario de este turno (ver abajo) y cerrá tu propio \
+mensaje con calidez, sin anunciar el mecanismo — la continuación de la \
+conversación de rediseño la maneja el orquestador, vos no tenés que \
+seguirla ni anunciarla.
 
 Cuando termines el check-in, guarda el resultado con \
 guardar_ficha_usuario. Pásale a `datos`: un resumen fiel en palabras de \
@@ -116,9 +132,9 @@ valor "fase3" (el propósito ya no resuena) o "fase4" (el sistema \
 necesita rediseño), o sin esa clave (u omitida) si no hace falta \
 re-entrar.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 SYSTEM_PROMPT_BASE_EN = """You are Telos's Follow-up agent. The person \
 already has a purpose and a system defined; your job is a brief \
@@ -149,10 +165,11 @@ If the answer indicates the system isn't working (the action isn't \
 being kept, or they're asking for more than a minor adjustment), or that \
 the purpose no longer resonates, say so naturally and offer to redesign \
 it — don't push to keep something the person already said isn't serving \
-them. If you offer to redesign it and they agree, just continue that \
-redesign conversation yourself in your next message — don't announce it \
-as if someone or something else is taking over.
-{regla_transicion}
+them. If you offer to redesign it and they agree, save "reentrada" in \
+your guardar_ficha_usuario call this turn (see below) and close your own \
+message warmly, without announcing the mechanism — the orchestrator \
+handles continuing the redesign conversation, you don't need to carry it \
+forward or announce it yourself.
 
 When you finish the check-in, save the result with guardar_ficha_usuario. \
 Pass `datos`: a faithful summary in the person's own words (no \
@@ -169,9 +186,9 @@ with the value "fase3" (the purpose no longer resonates) or "fase4" (the \
 system needs a redesign), or without that key (or omitted) if no \
 re-entry is needed.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 
 def _tipo_checkin_anterior(historial: list[dict]) -> str | None:
@@ -263,9 +280,12 @@ def crear_agente_seguimiento(
     nombre: str | None = None,
     contenedor_opciones: list | None = None,
     contenedor_guardado: list | None = None,
+    contenedor_informe: list | None = None,
 ) -> Agent:
     if contenedor_guardado is None:
         contenedor_guardado = []
+    if contenedor_informe is None:
+        contenedor_informe = []
     ficha = _leer(usuario_id)
     tipo_checkin = elegir_tipo_checkin(ficha["historial"])
     vista_resumen = construir_vista_resumen(ficha["actual"], idioma, nombre, ficha["historial"])
@@ -275,18 +295,16 @@ def crear_agente_seguimiento(
         system_prompt = plantilla.format(
             vista_resumen=vista_resumen,
             pregunta_sugerida=_PREGUNTAS_POR_TIPO["en"][tipo_checkin],
-            regla_transicion=REGLA_TRANSICION_EN,
-            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_EN,
         )
     else:
         system_prompt = plantilla.format(
             vista_resumen=vista_resumen,
             pregunta_sugerida=_PREGUNTAS_POR_TIPO["es"][tipo_checkin],
             regla_conjugacion=REGLA_CONJUGACION_ES,
-            regla_transicion=REGLA_TRANSICION_ES,
-            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_ES,
         )
 
     @tool
@@ -301,10 +319,16 @@ def crear_agente_seguimiento(
         _guardar(usuario_id, datos, fase=5, motivo_version=motivo_version)
         contenedor_guardado.append(True)
 
+    @tool
+    def informar_al_orquestador(texto_para_persona: str, cerrado: bool, dato_nuevo: str | None = None) -> str:
+        """Llamar SIEMPRE, como último paso de cada turno -- ver instrucción en el prompt."""
+        contenedor_informe.append({"texto": texto_para_persona, "cerrado": cerrado, "dato_nuevo": dato_nuevo})
+        return "ok"
+
     return Agent(
         system_prompt=system_prompt,
-        tools=[leer_ficha_usuario, guardar_ficha_usuario],
-        model=crear_modelo(),
+        tools=[leer_ficha_usuario, guardar_ficha_usuario, informar_al_orquestador],
+        model=crear_modelo_subagente(),
         # Precarga los turnos ya guardados de esta fase (ver explorador.py).
         messages=mensajes_previos,
         # Suprime el PrintingCallbackHandler por default de Strands (ver

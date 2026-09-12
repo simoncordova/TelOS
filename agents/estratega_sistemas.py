@@ -8,18 +8,33 @@ ficha: propósito + sistema.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import (
-    REGLA_CIERRE_REAL_ES,
-    REGLA_CIERRE_REAL_EN,
-    REGLA_CONJUGACION_ES,
-    REGLA_TRANSICION_ES,
-    REGLA_TRANSICION_EN,
-    crear_modelo,
-    regla_nombre,
-)
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo_subagente, regla_nombre
 from tools.calendario import crear_evento_calendario as _crear_evento
 from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
+
+# Ver agents/sintetizador.py para el porqué (informe estructurado al
+# orquestador en vez de REGLA_TRANSICION_*/REGLA_CIERRE_REAL_* repetidas).
+_INSTRUCCION_INFORME_ES = (
+    "Al final de CADA turno, sin excepción, llamá a la tool "
+    "informar_al_orquestador como último paso: texto_para_persona es lo "
+    "que el orquestador le va a mostrar a la persona tal cual, sin "
+    "resumir ni reescribir -- tiene que ser el mensaje completo que "
+    "querés que vea. cerrado=True solo si en ESTE turno llamaste de "
+    "verdad a guardar_ficha_usuario; si no, cerrado=False. dato_nuevo es "
+    "un hecho puntual que valga la pena recordar en fases futuras (o "
+    "None si no hay nada nuevo)."
+)
+_INSTRUCCION_INFORME_EN = (
+    "At the end of EVERY turn, no exception, call the "
+    "informar_al_orquestador tool as your last step: texto_para_persona "
+    "is what the orchestrator will show the person verbatim, without "
+    "summarizing or rewriting it -- it has to be the full message you "
+    "want them to see. cerrado=True only if you actually called "
+    "guardar_ficha_usuario in THIS turn; otherwise cerrado=False. "
+    "dato_nuevo is one concrete fact worth remembering in future phases "
+    "(or None if there's nothing new)."
+)
 
 _PLANTILLA_ES = """Eres el Estratega de Sistemas de Telos. La persona ya \
 tiene un propósito validado. Al arrancar esta fase vas a recibir un \
@@ -71,11 +86,11 @@ que la persona abra Telos va a ser un check-in (no una fase nueva en \
 esta misma conversación), tu último mensaje tiene que sentirse como un \
 cierre real, no un corte abrupto — reconocé que por hoy esto es todo, y \
 avisale con calidez que la próxima vez que abra una conversación nueva \
-vas a hacer un check-in breve sobre este sistema. {regla_transicion}
+vas a hacer un check-in breve sobre este sistema.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 _PLANTILLA_EN = """You are Telos's Systems Strategist. The person \
 already has a validated purpose. When this phase starts you'll get a \
@@ -125,11 +140,11 @@ time the person opens Telos it'll be a check-in (not a new phase in this \
 same conversation), your last message has to feel like a real close, not \
 an abrupt cutoff — acknowledge that this is it for today, and warmly let \
 them know that next time they open a new conversation you'll do a brief \
-check-in on this system. {regla_transicion}
+check-in on this system.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 
 def crear_agente_estratega_sistemas(
@@ -139,21 +154,22 @@ def crear_agente_estratega_sistemas(
     nombre: str | None = None,
     contenedor_opciones: list | None = None,
     contenedor_guardado: list | None = None,
+    contenedor_informe: list | None = None,
 ) -> Agent:
     if contenedor_guardado is None:
         contenedor_guardado = []
+    if contenedor_informe is None:
+        contenedor_informe = []
     if idioma == "en":
         system_prompt = _PLANTILLA_EN.format(
-            regla_transicion=REGLA_TRANSICION_EN,
-            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_EN,
         )
     else:
         system_prompt = _PLANTILLA_ES.format(
             regla_conjugacion=REGLA_CONJUGACION_ES,
-            regla_transicion=REGLA_TRANSICION_ES,
-            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_ES,
         )
 
     @tool
@@ -172,10 +188,16 @@ def crear_agente_estratega_sistemas(
         """Agenda (o simula agendar) la acción recurrente del sistema."""
         return _crear_evento(usuario_id, detalle)
 
+    @tool
+    def informar_al_orquestador(texto_para_persona: str, cerrado: bool, dato_nuevo: str | None = None) -> str:
+        """Llamar SIEMPRE, como último paso de cada turno -- ver instrucción en el prompt."""
+        contenedor_informe.append({"texto": texto_para_persona, "cerrado": cerrado, "dato_nuevo": dato_nuevo})
+        return "ok"
+
     return Agent(
         system_prompt=system_prompt,
-        tools=[leer_ficha_usuario, guardar_ficha_usuario, crear_evento_calendario],
-        model=crear_modelo(),
+        tools=[leer_ficha_usuario, guardar_ficha_usuario, crear_evento_calendario, informar_al_orquestador],
+        model=crear_modelo_subagente(),
         # Precarga los turnos ya guardados de esta fase (ver explorador.py).
         messages=mensajes_previos,
         # Suprime el PrintingCallbackHandler por default de Strands (ver

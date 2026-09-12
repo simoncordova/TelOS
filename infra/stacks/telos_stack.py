@@ -51,12 +51,21 @@ from constructs import Construct
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# Mismo modelo que el default de agents/_modelo.py (TELOS_MODEL_ID) -- si
-# ese default cambia, este también, para que la política de IAM siga
-# delimitada al modelo real que invoca la app y no se vuelva a abrir a
-# "cualquier modelo" por descuido.
-_MODELO_BASE = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-_PERFIL_INFERENCIA = f"global.{_MODELO_BASE}"
+# Mismos modelos que los defaults de agents/_modelo.py
+# (TELOS_MODEL_ID_ORQUESTADOR/TELOS_MODEL_ID_SUBAGENTE) -- si esos
+# defaults cambian, estos también, para que la política de IAM siga
+# delimitada a los modelos reales que invoca la app y no se vuelva a
+# abrir a "cualquier modelo" por descuido. Dos modelos desde el
+# orquestador agéntico (rama gamificacion, ver
+# C:\Users\Wendy\.claude\plans\cosmic-zooming-tarjan.md): Sonnet para el
+# orquestador (decide a qué fase invocar y compone la respuesta), Haiku
+# para los subagentes de fase (hacen el trabajo de contenido pesado, sale
+# más barato/rápido). IDs verificados contra la documentación oficial de
+# Bedrock antes de escribirlos, no asumidos de memoria.
+_MODELO_ORQUESTADOR = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+_PERFIL_INFERENCIA_ORQUESTADOR = f"global.{_MODELO_ORQUESTADOR}"
+_MODELO_SUBAGENTE = "anthropic.claude-haiku-4-5-20251001-v1:0"
+_PERFIL_INFERENCIA_SUBAGENTE = f"global.{_MODELO_SUBAGENTE}"
 
 
 class TelosStack(Stack):
@@ -88,51 +97,56 @@ class TelosStack(Stack):
         rol_agentes.add_managed_policy(
             iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore")
         )
-        # Delimitado al modelo/perfil de inferencia que la app realmente
-        # invoca (_MODELO_BASE arriba), no a "cualquier modelo de
-        # Bedrock" -- las 3 sentencias son el patrón exacto que documenta
-        # AWS para perfiles de inferencia cross-region "global.": perfil
+        # Delimitado a los modelos/perfiles de inferencia que la app
+        # realmente invoca, no a "cualquier modelo de Bedrock" -- las 3
+        # sentencias por modelo son el patrón exacto que documenta AWS
+        # para perfiles de inferencia cross-region "global.": perfil
         # regional, modelo regional (con condición de que venga del
         # perfil) y modelo global (sin región, requerido para el
-        # ruteo cross-region).
+        # ruteo cross-region). Repetido dos veces (Sonnet para el
+        # orquestador, Haiku para los subagentes) -- ver
+        # _MODELO_ORQUESTADOR/_MODELO_SUBAGENTE arriba.
         acciones_invocar = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-        arn_perfil_regional = (
-            f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/{_PERFIL_INFERENCIA}"
-        )
-        rol_agentes.add_to_policy(
-            iam.PolicyStatement(
-                sid="InvocarPerfilInferenciaRegional",
-                actions=acciones_invocar,
-                resources=[arn_perfil_regional],
-                conditions={"StringEquals": {"aws:RequestedRegion": self.region}},
+
+        def _permitir_invocar_modelo(sid_prefijo: str, modelo_base: str, perfil_inferencia: str) -> None:
+            arn_perfil_regional = f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/{perfil_inferencia}"
+            rol_agentes.add_to_policy(
+                iam.PolicyStatement(
+                    sid=f"InvocarPerfilInferenciaRegional{sid_prefijo}",
+                    actions=acciones_invocar,
+                    resources=[arn_perfil_regional],
+                    conditions={"StringEquals": {"aws:RequestedRegion": self.region}},
+                )
             )
-        )
-        rol_agentes.add_to_policy(
-            iam.PolicyStatement(
-                sid="InvocarModeloRegional",
-                actions=acciones_invocar,
-                resources=[f"arn:aws:bedrock:{self.region}::foundation-model/{_MODELO_BASE}"],
-                conditions={
-                    "StringEquals": {
-                        "aws:RequestedRegion": self.region,
-                        "bedrock:InferenceProfileArn": arn_perfil_regional,
-                    }
-                },
+            rol_agentes.add_to_policy(
+                iam.PolicyStatement(
+                    sid=f"InvocarModeloRegional{sid_prefijo}",
+                    actions=acciones_invocar,
+                    resources=[f"arn:aws:bedrock:{self.region}::foundation-model/{modelo_base}"],
+                    conditions={
+                        "StringEquals": {
+                            "aws:RequestedRegion": self.region,
+                            "bedrock:InferenceProfileArn": arn_perfil_regional,
+                        }
+                    },
+                )
             )
-        )
-        rol_agentes.add_to_policy(
-            iam.PolicyStatement(
-                sid="InvocarModeloGlobalCrossRegion",
-                actions=acciones_invocar,
-                resources=[f"arn:aws:bedrock:::foundation-model/{_MODELO_BASE}"],
-                conditions={
-                    "StringEquals": {
-                        "aws:RequestedRegion": "unspecified",
-                        "bedrock:InferenceProfileArn": arn_perfil_regional,
-                    }
-                },
+            rol_agentes.add_to_policy(
+                iam.PolicyStatement(
+                    sid=f"InvocarModeloGlobalCrossRegion{sid_prefijo}",
+                    actions=acciones_invocar,
+                    resources=[f"arn:aws:bedrock:::foundation-model/{modelo_base}"],
+                    conditions={
+                        "StringEquals": {
+                            "aws:RequestedRegion": "unspecified",
+                            "bedrock:InferenceProfileArn": arn_perfil_regional,
+                        }
+                    },
+                )
             )
-        )
+
+        _permitir_invocar_modelo("Orquestador", _MODELO_ORQUESTADOR, _PERFIL_INFERENCIA_ORQUESTADOR)
+        _permitir_invocar_modelo("Subagente", _MODELO_SUBAGENTE, _PERFIL_INFERENCIA_SUBAGENTE)
         rol_agentes.add_to_policy(
             iam.PolicyStatement(
                 # Ya no hace falta habilitar el modelo a mano en la consola

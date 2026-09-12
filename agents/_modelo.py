@@ -1,15 +1,32 @@
-"""Factory de modelo compartido por los 5 agentes de fase. No es un agente
-en sí — es configuración común a los 5, para no repetirla en cada
+"""Factory de modelo compartida por el orquestador y los 5 agentes de fase.
+No es un agente en sí — es configuración común, para no repetirla en cada
 archivo de agents/.
 
-Usa el ID de "global cross-region inference" (prefijo `global.`), no el
-ID pelado del modelo: Claude Sonnet 4.5 no admite invocación on-demand
-"In-Region" en la mayoría de las regiones (confirmado con un
+Dos modelos distintos, a pedido explícito del dueño del producto (rama
+gamificacion, migración al orquestador agéntico -- ver
+C:\\Users\\Wendy\\.claude\\plans\\cosmic-zooming-tarjan.md): el orquestador
+(agents/orquestador_agente.py) decide a qué fase invocar y compone la
+respuesta final -- poco volumen de texto, pero es el único punto de
+contacto real con la entrada/salida de la persona, así que usa Sonnet.
+Cada agente de fase (agents/explorador.py y hermanos) hace el trabajo de
+contenido pesado (explorar, sintetizar, validar) pero con una tarea acotada
+y un prompt más liviano ahora que las reglas de flujo/transición viven solo
+en el orquestador -- Haiku alcanza y sale bastante más barato/rápido,
+compensando en parte que ahora cada turno paga dos invocaciones reales en
+vez de una.
+
+Ambos usan el ID de "global cross-region inference" (prefijo `global.`),
+no el ID pelado del modelo: Claude Sonnet 4.5 no admite invocación
+on-demand "In-Region" en la mayoría de las regiones (confirmado con un
 ValidationException real en us-east-1: "Invocation of model ID ... with
 on-demand throughput isn't supported"). El ID `global.` funciona desde
 cualquier región del mundo (a diferencia de los `us.`/`eu.`/`au.`/`jp.`
 que solo enrutan dentro de esa geografía) y además sale ~10% más barato
-según la documentación de Bedrock.
+según la documentación de Bedrock. IDs verificados contra la
+documentación oficial de Bedrock antes de escribirlos (model card de
+Claude Haiku 4.5), no asumidos de memoria -- Guardrails está soportado
+para Haiku 4.5 vía el endpoint bedrock-runtime/Converse (que es el que usa
+Strands), confirmado en la misma documentación.
 """
 
 import os
@@ -17,7 +34,12 @@ import os
 from strands import tool
 from strands.models import BedrockModel
 
-MODEL_ID = os.environ.get("TELOS_MODEL_ID", "global.anthropic.claude-sonnet-4-5-20250929-v1:0")
+MODEL_ID_ORQUESTADOR = os.environ.get(
+    "TELOS_MODEL_ID_ORQUESTADOR", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+)
+MODEL_ID_SUBAGENTE = os.environ.get(
+    "TELOS_MODEL_ID_SUBAGENTE", "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+)
 REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
 
 # Guardrail de Bedrock (infra/stacks/telos_stack.py::GuardrailTelos) --
@@ -29,15 +51,19 @@ REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
 # crisis (corre en código, antes de invocar a Bedrock, sin importar este
 # guardrail) -- ver docs/agente-proposito-de-vida-prompts.md sección 10.
 # Vacío en desarrollo local (sin GUARDRAIL_ID seteado) para no requerir
-# el recurso desplegado solo para probar el flujo de agentes.
+# el recurso desplegado solo para probar el flujo de agentes. Se aplica en
+# los dos modelos (orquestador Y subagentes) -- el orquestador es el punto
+# de contacto real con la persona, pero el texto de un subagente puede
+# terminar mostrándose tal cual (ver informar_al_orquestador), así que no
+# tiene sentido dejarlo desprotegido.
 GUARDRAIL_ID = os.environ.get("GUARDRAIL_ID", "")
 GUARDRAIL_VERSION = os.environ.get("GUARDRAIL_VERSION", "")
 
 
-def crear_modelo() -> BedrockModel:
+def _crear_modelo(model_id: str) -> BedrockModel:
     if GUARDRAIL_ID:
         return BedrockModel(
-            model_id=MODEL_ID,
+            model_id=model_id,
             region_name=REGION,
             guardrail_id=GUARDRAIL_ID,
             guardrail_version=GUARDRAIL_VERSION,
@@ -46,7 +72,21 @@ def crear_modelo() -> BedrockModel:
             # exacto disparó cada filtro para esta app.
             guardrail_trace="enabled",
         )
-    return BedrockModel(model_id=MODEL_ID, region_name=REGION)
+    return BedrockModel(model_id=model_id, region_name=REGION)
+
+
+def crear_modelo_orquestador() -> BedrockModel:
+    """Sonnet -- decide a qué fase invocar y compone la respuesta final
+    que ve la persona (agents/orquestador_agente.py)."""
+    return _crear_modelo(MODEL_ID_ORQUESTADOR)
+
+
+def crear_modelo_subagente() -> BedrockModel:
+    """Haiku -- ejecuta la tarea puntual de una fase (explorar, sintetizar,
+    validar, diseñar el sistema, hacer seguimiento). Usado por los 5
+    factories de agents/{explorador,sintetizador,coach_validacion,
+    estratega_sistemas,seguimiento}.py."""
+    return _crear_modelo(MODEL_ID_SUBAGENTE)
 
 
 # Compartida por los 5 prompts en español (antes estaba copiada casi

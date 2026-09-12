@@ -1,5 +1,7 @@
 """Borra TODOS los datos de un usuario_id -- ficha (todas las versiones),
-turnos de conversación (las 5 fases) y nombre de perfil. Pensado para
+turnos de conversación (las 5 fases), nombre de perfil e insights de
+contexto acumulados por el orquestador (tools/contexto_usuario.py).
+Pensado para
 resetear cuentas de prueba contaminadas por rondas de testing viejas
 (varios bugs reales de esta semana quedaron mezclados con conversación
 real en la misma cuenta, precargándose en cada sesión nueva y haciendo
@@ -27,6 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.contexto_usuario import borrar_insights  # noqa: E402
 from tools.conversacion import borrar_turnos_usuario  # noqa: E402
 from tools.ficha import borrar_ficha_usuario, leer_ficha_usuario  # noqa: E402
 from tools.perfil import borrar_nombre_usuario, leer_nombre_usuario  # noqa: E402
@@ -56,6 +59,7 @@ def main() -> None:
     borrar_ficha_usuario(usuario_id)
     borrar_turnos_usuario(usuario_id)
     borrar_nombre_usuario(usuario_id)
+    borrar_insights(usuario_id)
     print(f"Listo. '{usuario_id}' quedó como una cuenta nueva.")
 
 

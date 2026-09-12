@@ -7,17 +7,32 @@ futura) y afina la redacción hasta que la persona la sienta propia.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import (
-    REGLA_CIERRE_REAL_ES,
-    REGLA_CIERRE_REAL_EN,
-    REGLA_CONJUGACION_ES,
-    REGLA_TRANSICION_ES,
-    REGLA_TRANSICION_EN,
-    crear_modelo,
-    regla_nombre,
-)
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo_subagente, regla_nombre
 from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
+
+# Ver agents/sintetizador.py para el porqué (informe estructurado al
+# orquestador en vez de REGLA_TRANSICION_*/REGLA_CIERRE_REAL_* repetidas).
+_INSTRUCCION_INFORME_ES = (
+    "Al final de CADA turno, sin excepción, llamá a la tool "
+    "informar_al_orquestador como último paso: texto_para_persona es lo "
+    "que el orquestador le va a mostrar a la persona tal cual, sin "
+    "resumir ni reescribir -- tiene que ser el mensaje completo que "
+    "querés que vea. cerrado=True solo si en ESTE turno llamaste de "
+    "verdad a guardar_ficha_usuario; si no, cerrado=False. dato_nuevo es "
+    "un hecho puntual que valga la pena recordar en fases futuras (o "
+    "None si no hay nada nuevo)."
+)
+_INSTRUCCION_INFORME_EN = (
+    "At the end of EVERY turn, no exception, call the "
+    "informar_al_orquestador tool as your last step: texto_para_persona "
+    "is what the orchestrator will show the person verbatim, without "
+    "summarizing or rewriting it -- it has to be the full message you "
+    "want them to see. cerrado=True only if you actually called "
+    "guardar_ficha_usuario in THIS turn; otherwise cerrado=False. "
+    "dato_nuevo is one concrete fact worth remembering in future phases "
+    "(or None if there's nothing new)."
+)
 
 _PLANTILLA_ES = """Eres el Coach de Validación de Telos. La persona ya \
 eligió un propósito candidato. Tu trabajo es ponerlo a prueba contra la \
@@ -55,11 +70,11 @@ guardar_ficha_usuario junto con la evidencia que la respalda. Pasale a \
 misma clave que usó el Sintetizador, tiene que seguir presente acá \
 aunque solo hayas ajustado la redacción, porque las fases siguientes y \
 la interfaz la leen de la versión más reciente de la ficha, no de \
-versiones viejas. {regla_transicion}
+versiones viejas.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 _PLANTILLA_EN = """You are Telos's Validation Coach. The person \
 already picked a candidate purpose. Your job is to stress-test it \
@@ -97,11 +112,11 @@ guardar_ficha_usuario along with the supporting evidence. Pass `datos` \
 the key "proposito" with the final wording (string) — the same key the \
 Synthesizer used; it has to stay present here even if you only tweaked \
 the wording, because later phases and the UI read it from the most \
-recent ficha version, not from older ones. {regla_transicion}
+recent ficha version, not from older ones.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 
 def crear_agente_coach_validacion(
@@ -111,21 +126,22 @@ def crear_agente_coach_validacion(
     nombre: str | None = None,
     contenedor_opciones: list | None = None,
     contenedor_guardado: list | None = None,
+    contenedor_informe: list | None = None,
 ) -> Agent:
     if contenedor_guardado is None:
         contenedor_guardado = []
+    if contenedor_informe is None:
+        contenedor_informe = []
     if idioma == "en":
         system_prompt = _PLANTILLA_EN.format(
-            regla_transicion=REGLA_TRANSICION_EN,
-            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_EN,
         )
     else:
         system_prompt = _PLANTILLA_ES.format(
             regla_conjugacion=REGLA_CONJUGACION_ES,
-            regla_transicion=REGLA_TRANSICION_ES,
-            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_ES,
         )
 
     @tool
@@ -139,12 +155,18 @@ def crear_agente_coach_validacion(
         _guardar(usuario_id, datos, fase=3, motivo_version=motivo_version)
         contenedor_guardado.append(True)
 
+    @tool
+    def informar_al_orquestador(texto_para_persona: str, cerrado: bool, dato_nuevo: str | None = None) -> str:
+        """Llamar SIEMPRE, como último paso de cada turno -- ver instrucción en el prompt."""
+        contenedor_informe.append({"texto": texto_para_persona, "cerrado": cerrado, "dato_nuevo": dato_nuevo})
+        return "ok"
+
     return Agent(
         system_prompt=system_prompt,
-        tools=[leer_ficha_usuario, guardar_ficha_usuario],
+        tools=[leer_ficha_usuario, guardar_ficha_usuario, informar_al_orquestador],
         # Precarga los turnos ya guardados de esta fase (ver explorador.py).
         messages=mensajes_previos,
-        model=crear_modelo(),
+        model=crear_modelo_subagente(),
         # Suprime el PrintingCallbackHandler por default de Strands (ver
         # explorador.py) -- quien llame controla cómo mostrar la respuesta.
         callback_handler=None,

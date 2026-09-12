@@ -303,6 +303,18 @@ reproducirlos a mano en el navegador.
 
 ## 1. Orquestador
 
+**Nota (rama `gamificacion`):** los puntos 4, 5, 6, 9 y 10 de la lista de
+abajo describen el mecanismo ANTERIOR (dispatch por `dict` de Python +
+detección de "dijo que guardó sin guardar" por regex bilingüe). Ese
+mecanismo fue reemplazado por un orquestador agéntico real -- ver
+sección 1.1 para el diseño vigente y por qué. El resto de esta sección
+(0-3, 7-8, 11-14) sigue vigente sin cambios: guardrail de crisis,
+persistencia de turnos, límite diario, contrato `(fase, texto,
+opciones)`, garantía de respuesta no vacía, `_determinar_fase_inicial` y
+la fusión de la ficha. Se deja como registro histórico del bug real que
+motivó el cambio (documentado también en la sección 0.7), no como
+descripción del comportamiento actual.
+
 **Rol:** no conversa directamente con contenido de propósito — rutea y
 aplica el guardrail. Mantiene `fase_actual` en la ficha del usuario.
 
@@ -455,6 +467,76 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
     alguna clave de `_CAMPOS_REQUERIDOS_AL_CERRAR` (`proposito` desde
     Fase 2, `sistema` desde Fase 4), fuerza un reintento pidiéndole al
     modelo que vuelva a guardar incluyéndola.
+
+### 1.1 Orquestador agéntico (rama `gamificacion`) — reemplaza el ruteo por `dict` + verificación por regex
+
+**Por qué:** probando la app real, el Sintetizador dijo "the purpose is
+now properly saved" sin haber llamado a `guardar_ficha_usuario` (el
+regex bilingüe que detectaba "dijo que guardó sin guardar" no cubría esa
+frase en voz pasiva), y el Explorador no transicionó a Sintetizador por
+el mismo tipo de falla con otra frase. El dueño del producto pidió
+explícitamente reemplazar el dispatch por `dict` de Python + verificación
+por regex por un `Agent` de Strands real, que decida con juicio semántico
+a qué especialista invocar. Ver
+`C:\Users\Wendy\.claude\plans\cosmic-zooming-tarjan.md` para el diseño
+completo y las alternativas descartadas (Strands `Graph`, `Swarm`,
+`delegate=True`).
+
+**Qué no cambió:** el guardrail de crisis sigue en código plano, antes de
+construir o invocar cualquier `Agent` -- nunca se expone como tool, nunca
+es una decisión del modelo. El Paso 0 (captura de nombre) también sigue
+en código. La secuencia fija 1→2→3→4→5 (con reingreso 5→3/4) sigue
+siendo la regla de producto; lo que cambió es que ahora la hace cumplir
+un `Agent` con juicio (informado por el estado real de la ficha en su
+prompt), no un `if/elif` sobre `fase_actual`.
+
+**Diseño:**
+- `agents/orquestador_agente.py::crear_agente_orquestador` arma un
+  `Agent` (modelo Sonnet, `crear_modelo_orquestador`) con los 5 agentes
+  de fase expuestos como tools vía `Agent.as_tool()` -- una por fase,
+  cada una con su propia descripción ("usar solo si..."). El prompt del
+  orquestador recibe el estado real de la ficha (última fase cerrada,
+  fase en la que continúa, reingreso pendiente) y los insights conocidos
+  (ver más abajo), y tiene la instrucción explícita de invocar EXACTAMENTE
+  una tool por turno y relayar su `texto_para_persona` tal cual, sin
+  parafrasear.
+- Cada agente de fase (`agents/explorador.py` y hermanos) ahora usa
+  modelo Haiku (`crear_modelo_subagente`) -- hace el trabajo de contenido
+  pesado, pero es una tarea acotada, y sale más barato/rápido que Sonnet.
+  Compensa en parte que cada turno ahora paga dos invocaciones reales
+  (orquestador + subagente) en vez de una.
+- **Informe estructurado al orquestador, no texto libre:** cada agente de
+  fase tiene una tool nueva, `informar_al_orquestador(texto_para_persona,
+  cerrado: bool, dato_nuevo: str | None)`, que tiene que llamar SIEMPRE
+  al final de cada turno. `texto_para_persona` es lo único que el
+  orquestador le muestra a la persona (nunca el propio texto del
+  orquestador, que no tiene garantía de conservar el texto completo del
+  subagente -- ver `strands.Agent.as_tool` sin `delegate=True`).
+  `cerrado` reemplaza al regex: el subagente declara explícitamente si
+  cree haber cerrado la fase en este turno.
+- **La autoridad sigue siendo AgentCore Memory, no lo que el modelo
+  declara sobre sí mismo:** `SesionTelos._verificar_y_reforzar` confirma
+  `cerrado=True` contra una versión nueva real de la ficha antes de
+  confiarle nada -- si no hay versión nueva, fuerza un reintento sin
+  ambigüedad, exactamente igual que antes se verificaba
+  `_contenedor_guardado`, solo que ahora sin depender de adivinar la
+  frase. El chequeo de campos obligatorios (`_CAMPOS_REQUERIDOS_AL_CERRAR`)
+  no cambió.
+- **Reintentos y mensajes de arranque van directo a la fase, sin pasar
+  por el orquestador:** cuando el código ya sabe con certeza a qué fase
+  hay que invocar (un reintento forzado, el mensaje de arranque al abrir
+  sesión, la cascada tras un cambio de fase), se invoca esa fase directo
+  -- no tiene sentido gastar otra decisión del orquestador para algo que
+  ya está decidido. El orquestador solo decide en el mensaje real de la
+  persona, donde sí hay una elección genuina que hacer.
+- **Insights de contexto (`tools/contexto_usuario.py`):** pedido
+  explícito del dueño del producto, para que ningún subagente vuelva a
+  preguntar algo que la persona ya contó en una fase anterior. Cada
+  `dato_nuevo` que un subagente reporta se persiste (mismo patrón
+  selector local/AgentCore que `tools/ficha.py`) y el orquestador los lee
+  antes de cada turno, inyectándolos en su prompt. Respeta la regla de
+  privacidad de la sección 9: paráfrasis fiel de hechos puntuales, nunca
+  juicios de carácter.
 
 ## 2. Fase 1 — Explorador
 
@@ -963,6 +1045,7 @@ current system: ... / Last updated: ...".
 | `crear_evento_calendario` | `(usuario_id: str, detalle: dict) -> dict` | Fase 4 | P2. Vía AgentCore Gateway envolviendo Google Calendar. Si no hay tiempo, se mockea devolviendo una confirmación fija sin llamar a ninguna API externa — el agente y su prompt no cambian, solo la implementación de la tool. |
 | `guardar_intercambio` | `(usuario_id: str, fase: int, texto_usuario: str, texto_asistente: str) -> None` | Orquestador, en cada turno real (código, no tool del modelo) | Vía AgentCore Memory (`create_event`, un evento conversacional por turno — distinto de `create_blob_event`, que usa `guardar_ficha_usuario`) o backend JSON local en desarrollo. No se expone como tool del modelo: es lógica de control del Orquestador, igual que `detectar_señal_crisis`. |
 | `leer_turnos` | `(usuario_id: str, fase: int) -> list[dict]` | Orquestador, al construir o reconstruir el agente de una fase | Devuelve los turnos guardados de esa fase en orden cronológico (`[{"rol": "user"\|"assistant", "texto": str}, ...]`); el Orquestador los convierte al formato `Message` de Strands y los precarga como historial real del agente. También se usa para contar cuántas preguntas lleva el Explorador (sección 1, punto 8). |
+| `informar_al_orquestador` | `(texto_para_persona: str, cerrado: bool, dato_nuevo: str \| None) -> str` | 1, 2, 3, 4, 5 (rama `gamificacion`, ver sección 1.1) | Obligatoria al final de CADA turno. `texto_para_persona` es lo único que el orquestador agéntico le muestra a la persona (tal cual, sin resumir). `cerrado` reemplaza a la vieja detección por regex de "dijo que guardó sin guardar" -- se verifica contra AgentCore Memory antes de confiarle nada. `dato_nuevo` alimenta `tools/contexto_usuario.py` para que ningún subagente repita una pregunta ya contestada en otra fase. |
 | `excedio_limite_diario` / `registrar_invocacion` | `(usuario_id: str) -> bool` / `(usuario_id: str) -> int` | Orquestador, antes/después de cada invocación real al agente de fase (código, no tool del modelo) | Protección de costo (100 invocaciones/día por usuario), no una regla de producto. Backend JSON local — no vía AgentCore Memory: no hace falta un backend compartido entre instancias, la UI corre en una sola instancia EC2, sin auto-scaling (ver README). La extracción del nombre (Paso 0) también cuenta acá. |
 
 ## 8. Reglas de tono (todas las fases, con énfasis en Fase 5)

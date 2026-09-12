@@ -8,16 +8,32 @@ puntuar, para que el Sintetizador (Fase 2) lo refleje después.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import (
-    REGLA_CIERRE_REAL_ES,
-    REGLA_CIERRE_REAL_EN,
-    REGLA_CONJUGACION_ES,
-    REGLA_TRANSICION_ES,
-    REGLA_TRANSICION_EN,
-    crear_modelo,
-    regla_nombre,
-)
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo_subagente, regla_nombre
 from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
+
+# Ver agents/sintetizador.py para el porqué de este cambio (informe
+# estructurado al orquestador en vez de REGLA_TRANSICION_*/
+# REGLA_CIERRE_REAL_* repetidas en cada prompt de fase).
+_INSTRUCCION_INFORME_ES = (
+    "Al final de CADA turno, sin excepción, llamá a la tool "
+    "informar_al_orquestador como último paso: texto_para_persona es lo "
+    "que el orquestador le va a mostrar a la persona tal cual, sin "
+    "resumir ni reescribir -- tiene que ser el mensaje completo que "
+    "querés que vea. cerrado=True solo si en ESTE turno llamaste de "
+    "verdad a guardar_ficha_usuario; si no, cerrado=False. dato_nuevo es "
+    "un hecho puntual que valga la pena recordar en fases futuras (o "
+    "None si no hay nada nuevo)."
+)
+_INSTRUCCION_INFORME_EN = (
+    "At the end of EVERY turn, no exception, call the "
+    "informar_al_orquestador tool as your last step: texto_para_persona "
+    "is what the orchestrator will show the person verbatim, without "
+    "summarizing or rewriting it -- it has to be the full message you "
+    "want them to see. cerrado=True only if you actually called "
+    "guardar_ficha_usuario in THIS turn; otherwise cerrado=False. "
+    "dato_nuevo is one concrete fact worth remembering in future phases "
+    "(or None if there's nothing new)."
+)
 
 # Tope de ejes: 5 (valores, flow, qué haría gratis, con qué recordarla,
 # qué evita) -- se lo repetimos al modelo como número concreto porque
@@ -65,11 +81,11 @@ sustancia (más de una palabra) en 4 de los 5 ejes, o como mucho después \
 de 8 preguntas tuyas en total (lo que llegue primero), cerrá la fase en \
 ESE MISMO turno: guarda el avance con guardar_ficha_usuario. No seas \
 exhaustivo ni busques pulir cada eje al detalle — material suficiente es \
-mejor que material perfecto. {regla_transicion}
+mejor que material perfecto.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 _PLANTILLA_EN = """You are Telos's Explorer. Your only job in this \
 conversation is to help the person put into words raw material about \
@@ -108,11 +124,11 @@ substance (more than one word) in 4 of the 5 areas, or after 8 of your \
 own questions total at the very most (whichever comes first), close the \
 phase in THAT SAME turn: save the progress with guardar_ficha_usuario. \
 Don't be exhaustive or try to polish every area — good-enough material \
-beats perfect material. {regla_transicion}
+beats perfect material.
 
-{regla_cierre_real}
+{regla_nombre}
 
-{regla_nombre}"""
+{instruccion_informe}"""
 
 
 def crear_agente_explorador(
@@ -122,17 +138,19 @@ def crear_agente_explorador(
     nombre: str | None = None,
     contenedor_opciones: list | None = None,
     contenedor_guardado: list | None = None,
+    contenedor_informe: list | None = None,
 ) -> Agent:
     if contenedor_guardado is None:
         contenedor_guardado = []
+    if contenedor_informe is None:
+        contenedor_informe = []
     if idioma == "en":
         plantilla = _PLANTILLA_EN
         instruccion_saludo = f' (use their first name, "{nombre}")' if nombre else ""
         system_prompt = plantilla.format(
             instruccion_saludo=instruccion_saludo,
-            regla_transicion=REGLA_TRANSICION_EN,
-            regla_cierre_real=REGLA_CIERRE_REAL_EN,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_EN,
         )
     else:
         plantilla = _PLANTILLA_ES
@@ -140,9 +158,8 @@ def crear_agente_explorador(
         system_prompt = plantilla.format(
             instruccion_saludo=instruccion_saludo,
             regla_conjugacion=REGLA_CONJUGACION_ES,
-            regla_transicion=REGLA_TRANSICION_ES,
-            regla_cierre_real=REGLA_CIERRE_REAL_ES,
             regla_nombre=regla_nombre(nombre, idioma),
+            instruccion_informe=_INSTRUCCION_INFORME_ES,
         )
 
     @tool
@@ -151,10 +168,16 @@ def crear_agente_explorador(
         _guardar(usuario_id, datos, fase=1, motivo_version=motivo_version)
         contenedor_guardado.append(True)
 
+    @tool
+    def informar_al_orquestador(texto_para_persona: str, cerrado: bool, dato_nuevo: str | None = None) -> str:
+        """Llamar SIEMPRE, como último paso de cada turno -- ver instrucción en el prompt."""
+        contenedor_informe.append({"texto": texto_para_persona, "cerrado": cerrado, "dato_nuevo": dato_nuevo})
+        return "ok"
+
     return Agent(
         system_prompt=system_prompt,
-        tools=[guardar_ficha_usuario],
-        model=crear_modelo(),
+        tools=[guardar_ficha_usuario, informar_al_orquestador],
+        model=crear_modelo_subagente(),
         # Precarga los turnos ya guardados de esta fase (tools/conversacion.py)
         # -- si el proceso se cortó a mitad de camino, el agente nuevo
         # retoma con memoria real, no solo con lo que dice la ficha.

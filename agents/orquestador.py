@@ -1,70 +1,53 @@
-"""Orquestador. Ver docs/agente-proposito-de-vida-prompts.md sección 1.
+"""Orquestador. Ver docs/agente-proposito-de-vida-prompts.md sección 1 y
+C:\\Users\\Wendy\\.claude\\plans\\cosmic-zooming-tarjan.md (orquestador
+agéntico, rama gamificacion).
 
-No conversa directamente sobre contenido de propósito: rutea entre los
-agentes de fase y aplica el guardrail de crisis en cada turno, antes que
-cualquier otra cosa. Fase 1→2→3→4 es un flujo fijo (no se saltan pasos);
-Fase 5 es dinámica y puede reinyectar al usuario en Fase 3 o 4.
+No conversa directamente sobre contenido de propósito: aplica el
+guardrail de crisis en cada turno, antes que cualquier otra cosa, y
+después arma un `Agent` orquestador (agents/orquestador_agente.py) con
+los 5 agentes de fase expuestos como tools, para que decida con juicio
+semántico a cuál invocar -- Fase 1→2→3→4 sigue siendo un flujo fijo (no
+se saltan pasos, reforzado por la descripción de cada tool), Fase 5 es
+dinámica y puede reinyectar al usuario en Fase 3 o 4.
 
 Cada agente de fase, según el spec, guarda su ficha exactamente una vez,
-al cerrar su fase (no hay saves parciales a mitad de fase) — por eso
-"¿se guardó una versión nueva de la fase actual en este turno?" alcanza
-como señal de "esta fase terminó, avanza a la siguiente".
+al cerrar su fase (no hay saves parciales a mitad de fase). A diferencia
+del diseño anterior (que inferí "¿cerró?" leyendo si el texto sonaba a
+un cierre, con un regex), cada agente de fase ahora declara explícitamente
+`cerrado: bool` en su tool `informar_al_orquestador` -- y ese booleano se
+verifica contra AgentCore Memory (¿la ficha realmente tiene una versión
+nueva?) antes de confiar en él, exactamente igual que antes se verificaba
+`_contenedor_guardado`.
 
-Cuando la fase cambia a 2, 3 o 4 (flujo fijo o re-entrada desde Fase 5),
-el agente nuevo se invoca en el mismo turno con un mensaje de arranque
-neutro — si no, la persona se queda mirando un chat "colgado" después
-del cierre de una fase, sin señal de que tiene que escribir algo para
-que continúe. La única excepción es al llegar a Fase 5: ese cierre es
-el fin natural de la sesión (el spec dice que Fase 5 se dispara "al
-abrir una conversación nueva", no en el mismo turno que cierra Fase 4).
-Este encadenado -- y no un prompt que le pida al modelo "avisale a la
-persona que sigue otro agente" -- es la máquina de estados real del
-producto: vive en código Python plano, se puede leer de punta a punta
-en este archivo, y no depende de que un LLM decida correctamente cuándo
-rutear. Los agentes de fase, en paralelo, tienen instrucciones explícitas
-de no narrar el mecanismo (agents/_modelo.py::REGLA_TRANSICION_ES/EN) —
-la persona nunca debería enterarse de que hay más de un agente.
-
-
-Paso 0, antes de la Fase 1: si todavía no se guardó un nombre de pila
-para este usuario_id (tools/perfil.py), la sesión completa arranca
-pidiéndolo -- sin invocar ningún agente de fase todavía, sin costo de
-Bedrock salvo la extracción del nombre en sí (ver `_extraer_nombre`).
-Esto es intencionalmente código, no un tool de ningún agente: el nombre
-no es una decisión conversacional de un agente de fase, es un dato de
-sesión que después se inyecta en los 5 prompts (`nombre=` en cada
-fábrica de agents/*.py) para que se dirijan a la persona por su nombre.
-Una vez capturado, la sesión sigue exactamente por la fase en la que ya
-estaba (no reinicia a Fase 1) -- esto cubre tanto a alguien nuevo como a
-una ficha vieja de antes de que existiera esta función.
+El guardrail de crisis, el Paso 0 (captura de nombre) y el avance de fase
+siguen siendo código plano, sin involucrar a ningún `Agent` -- son
+mecanismos de seguridad/bookkeeping, no decisiones conversacionales (ver
+docstrings de cada método más abajo).
 
 `enviar_mensaje` es un generador, no devuelve un string: cuando hay
 cascada, entrega el mensaje de la fase que cierra y el de la fase
 siguiente por separado, apenas cada uno está listo, en vez de esperar a
-tener los dos para mostrar todo junto de una — con el Sintetizador
-generando más contenido ahora (propósito + explicación + ejemplo por
-candidato), esperar a los dos combinados se sentía como que la app se
-había colgado. Quien llama (`api/main.py`, `scripts/chat_terminal.py`)
-itera y muestra cada parte a medida que llega. Cada elemento entregado es
-una tupla (fase, texto, opciones): `opciones` es una lista de strings (a
-veces vacía) que un agente de fase puede ofrecer vía la tool
-`presentar_opciones` (agents/_modelo.py) para que la interfaz la muestre
-como botones en vez de obligar a la persona a escribir la elección --
-por ahora solo la usa el Sintetizador, para elegir el propósito
-candidato.
+tener los dos para mostrar todo junto de una. Quien llama (`api/main.py`,
+`scripts/chat_terminal.py`) itera y muestra cada parte a medida que
+llega. Cada elemento entregado es una tupla (fase, texto, opciones):
+`opciones` es una lista de strings (a veces vacía) que un agente de fase
+puede ofrecer vía la tool `presentar_opciones` (agents/_modelo.py) para
+que la interfaz la muestre como botones -- por ahora solo la usa el
+Sintetizador, para elegir el propósito candidato.
 """
 
-import re
 import time
 
 from strands.agent import Agent
 
-from agents._modelo import crear_modelo
+from agents._modelo import crear_modelo_subagente
 from agents.coach_validacion import crear_agente_coach_validacion
 from agents.estratega_sistemas import crear_agente_estratega_sistemas
 from agents.explorador import crear_agente_explorador
+from agents.orquestador_agente import crear_agente_orquestador
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
+from tools.contexto_usuario import agregar_insight, leer_insights
 from tools.conversacion import guardar_intercambio, leer_turnos
 from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
 from tools.ficha import leer_ficha_usuario
@@ -190,43 +173,14 @@ _RESPUESTA_VACIA_FALLBACK = {
 }
 
 # El mismo bug de "dijo que guardó pero no llamó a la tool" apareció
-# después en el Sintetizador (Fase 2), no solo en el Explorador -- así
-# que el freno de _FORZAR_CIERRE no puede depender del contador de
-# turnos de Fase 1 (_UMBRAL_NUDGE_EXPLORADOR* arriba), que no tiene
-# sentido para las otras fases. Esta versión general aplica en
-# CUALQUIER fase, en cualquier turno: no adivina "¿ya deberían haber
-# cerrado?" por cantidad de turnos, sino que verifica dos señales
-# concretas después de cada invocación -- (1) ¿el texto de la respuesta
-# suena a que ya guardó? (regex, ver _FRASE_CIERRE_FALSO) y (2) ¿la tool
-# guardar_ficha_usuario se ejecutó de verdad en esa invocación? (el flag
-# `_contenedor_guardado`, que cada agents/*.py llena desde el cuerpo real
-# de su tool -- no una relectura de la ficha con reintentos, así no hay
-# falso negativo por consistencia eventual de AgentCore Memory). Si (1)
-# es cierto y (2) es falso, se fuerza un reintento; si (2) ya es cierto,
-# no hace falta insistir aunque el texto también lo mencione.
-_FRASE_CIERRE_FALSO = {
-    "es": re.compile(
-        r"ya\s+(lo\s+|los\s+|la\s+|las\s+)?(guard[eé]|guardamos)\b"
-        r"|guard[eé]\s+(todo|el\s+avance|tu\s+elecci[oó]n|la\s+redacci[oó]n|el\s+sistema|tu\s+prop[oó]sito)"
-        r"|(ya\s+)?est[aá]\s+(?:\w+\s+)?guardad[oa]"
-        r"|qued[oó]\s+(?:\w+\s+)?guardad[oa]"
-        r"|ha\s+sido\s+guardad[oa]",
-        re.IGNORECASE,
-    ),
-    "en": re.compile(
-        # Bug real (rama gamificacion): "the purpose is now properly
-        # saved" no matcheaba nada de lo de abajo -- tercera persona/voz
-        # pasiva con un adverbio en el medio ("now properly"), en vez de
-        # la primera persona o "it's saved" que ya cubríamos. Los dos
-        # alternativos nuevos (`is ... saved` / `has been saved`)
-        # permiten como mucho una palabra de relleno entre el verbo y
-        # "saved" para cubrir esa forma sin volverse tan laxos que
-        # empiecen a matchear frases sin relación.
-        r"\b(already\s+saved|i(?:'ve| have)?\s+saved|it'?s\s+(?:already\s+)?saved|saved\s+(?:it|that|everything|your)"
-        r"|is\s+(?:now\s+)?(?:\w+\s+)?saved\b|has\s+been\s+saved)\b",
-        re.IGNORECASE,
-    ),
-}
+# primero en el Explorador y después en el Sintetizador -- por eso ahora
+# cada agente de fase declara explícitamente `cerrado: bool` en su tool
+# `informar_al_orquestador` (agents/sintetizador.py y hermanos) en vez de
+# que el código adivine por regex si el TEXTO suena a un cierre. Ese
+# booleano igual se verifica acá contra AgentCore Memory antes de
+# confiarle nada (ver SesionTelos._invocar/enviar_mensaje) -- la
+# autoridad sigue siendo la memoria persistente, no lo que el modelo
+# declara sobre sí mismo.
 
 # Claves de `datos` que cada fase, al cerrar, tiene que garantizar que
 # existan en la ficha (ver tools/ficha.py::guardar_ficha_usuario_fusionada
@@ -236,7 +190,8 @@ _FRASE_CIERRE_FALSO = {
 # clave nunca se haya puesto NINGUNA vez (ej. el Estratega cierra la
 # ficha sin incluir "sistema" -- no hay ningún valor previo del que
 # heredarlo). Esto se chequea después de cualquier guardado real
-# (`_contenedor_guardado`), releyendo la ficha ya fusionada.
+# (una versión nueva de esta fase en AgentCore Memory, ver
+# SesionTelos._verificar_y_reforzar), releyendo la ficha ya fusionada.
 _CAMPOS_REQUERIDOS_AL_CERRAR = {
     2: ("proposito",),
     3: ("proposito",),
@@ -273,34 +228,6 @@ def _turnos_a_mensajes(turnos: list[dict]) -> list[dict]:
     return [{"role": t["rol"], "content": [{"text": t["texto"]}]} for t in turnos]
 
 
-def _texto_completo_del_turno(mensajes_nuevos: list[dict]) -> str:
-    """Concatena el texto de TODOS los mensajes de assistant generados en
-    una invocación, no solo el último -- causa raíz real (no una
-    casualidad de Bedrock) de buena parte de las "respuestas vacías" que
-    venían apareciendo: cada prompt de fase le pide al modelo "escribí tu
-    mensaje, DESPUÉS llamá a la tool" (guardar_ficha_usuario,
-    presentar_opciones). Cuando el modelo hace exactamente eso, Strands
-    arma DOS mensajes de assistant en la misma invocación: uno con el
-    texto real + la tool call, y otro después del resultado de la tool
-    que suele quedar vacío (el modelo ya dijo todo lo que tenía que
-    decir). `str(self._agente(texto))` usa `AgentResult.__str__`, que
-    según su propio docstring solo devuelve "the last message generated
-    by the agent" -- si ese último mensaje es el vacío, el texto real del
-    mensaje anterior se perdía en el camino, aunque el modelo lo hubiera
-    generado perfectamente bien. Por eso acá se reconstruye a mano desde
-    `Agent.messages` (la conversación completa, donde Strands va
-    agregando cada mensaje del loop) en vez de confiar en el resultado
-    final."""
-    partes = []
-    for mensaje in mensajes_nuevos:
-        if mensaje.get("role") != "assistant":
-            continue
-        for bloque in mensaje.get("content", []):
-            if isinstance(bloque, dict) and bloque.get("text"):
-                partes.append(bloque["text"])
-    return "\n\n".join(partes)
-
-
 def _extraer_nombre(texto: str, idioma: str, usuario_id: str) -> str:
     """Extrae el primer nombre de la respuesta libre de la persona con una
     llamada mínima al modelo (sin tools, sin historial) -- una respuesta
@@ -315,7 +242,7 @@ def _extraer_nombre(texto: str, idioma: str, usuario_id: str) -> str:
     if not excedio_limite_diario(usuario_id):
         agente = Agent(
             system_prompt=_EXTRAER_NOMBRE_PROMPT[idioma],
-            model=crear_modelo(),
+            model=crear_modelo_subagente(),
             callback_handler=None,
         )
         resultado = str(agente(texto)).strip()
@@ -343,138 +270,220 @@ class SesionTelos:
         self.idioma = idioma
         self.nombre = leer_nombre_usuario(usuario_id)
         self._pidiendo_nombre = not bool(self.nombre)
-        # Contenedor mutable compartido con el agente de fase actual (ver
-        # agents._modelo.crear_tool_presentar_opciones): la tool de un
-        # agente lo llena durante self._agente(texto); _invocar lo limpia
-        # antes de cada invocación y quien llama a enviar_mensaje/
-        # abrir_conversacion lee la instantánea apenas termina esa
-        # invocación puntual.
+        # Instantánea de las opciones (botones) que dejó el subagente que
+        # respondió el último turno -- ver agents._modelo.
+        # crear_tool_presentar_opciones. Se actualiza en cada invocación
+        # (_invocar_una_vez/_invocar_fase_directo); quien llama a
+        # enviar_mensaje/abrir_conversacion la lee apenas termina.
         self._contenedor_opciones: list = []
-        # Mismo patrón, para saber con certeza (no por relectura de la
-        # ficha, que puede tardar en reflejar un guardado por consistencia
-        # eventual) si guardar_ficha_usuario se ejecutó de verdad en la
-        # última invocación -- cada agents/*.py lo llena desde el cuerpo
-        # real de esa tool. Ver _FRASE_CIERRE_FALSO.
-        self._contenedor_guardado: list = []
         self.fase_actual = self._determinar_fase_inicial()
-        self._agente: Agent | None = None if self._pidiendo_nombre else self._crear_agente_fase(self.fase_actual)
 
-    def _crear_agente_fase(self, fase: int) -> Agent:
+    def _construir_agentes_fase(self) -> tuple[dict[int, Agent], dict[int, dict[str, list]]]:
+        """Arma los 5 agentes de fase, siempre los 5 -- el orquestador
+        agéntico elige con su propio juicio semántico a cuál invocar (ver
+        agents/orquestador_agente.py), en vez de que el código restrinja
+        el toolset a "solo la fase actual". El freno real sigue siendo
+        _verificar_y_reforzar más abajo, que confirma contra AgentCore
+        Memory lo que se haya declarado antes de confiar en nada.
+
+        Cada fase tiene su propia tripleta de contenedores (opciones/
+        guardado/informe) para poder distinguir cuál de las 5 respondió
+        este turno -- no se puede compartir un solo contenedor entre las
+        5 porque, si el orquestador llegara a invocar más de una (no
+        debería, pero nada lo impide a nivel de tipos), se pisarían entre
+        sí."""
+        agentes: dict[int, Agent] = {}
+        contenedores: dict[int, dict[str, list]] = {}
+        for fase, fabrica in _FABRICAS_POR_FASE.items():
+            contenedor_opciones: list = []
+            contenedor_guardado: list = []
+            contenedor_informe: list = []
+            turnos = leer_turnos(self.usuario_id, fase)
+            agente = fabrica(
+                self.usuario_id,
+                self.idioma,
+                mensajes_previos=_turnos_a_mensajes(turnos),
+                nombre=self.nombre,
+                contenedor_opciones=contenedor_opciones,
+                contenedor_guardado=contenedor_guardado,
+                contenedor_informe=contenedor_informe,
+            )
+            if fase == 1:
+                nudge = self._nudge_explorador()
+                if nudge:
+                    agente.system_prompt = agente.system_prompt + nudge
+            agentes[fase] = agente
+            contenedores[fase] = {
+                "opciones": contenedor_opciones,
+                "guardado": contenedor_guardado,
+                "informe": contenedor_informe,
+            }
+        return agentes, contenedores
+
+    def _nudge_explorador(self) -> str:
+        """Recordatorio inyectado en el SYSTEM PROMPT del Explorador (no
+        en el mensaje de la persona, como antes -- el orquestador es
+        quien arma el input que ve la tool, no el código) si ya lleva
+        demasiados turnos sin cerrar. Ver _UMBRAL_NUDGE_EXPLORADOR* y el
+        docstring de agents/explorador.py."""
+        if self.fase_actual != 1:
+            return ""
+        turnos_previos = len(leer_turnos(self.usuario_id, 1)) // 2
+        if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR_FUERTE:
+            return _NUDGE_EXPLORADOR_FUERTE[self.idioma]
+        if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR:
+            return _NUDGE_EXPLORADOR[self.idioma]
+        return ""
+
+    def _turno_supera_umbral_fuerte(self) -> bool:
+        """True si el Explorador ya lleva turnos como para exigir el
+        cierre sin ambigüedad, sin importar lo que declare -- freno de
+        seguridad equivalente al `forzar_cierre_duro` de antes, ver
+        _verificar_y_reforzar."""
+        if self.fase_actual != 1:
+            return False
+        return (len(leer_turnos(self.usuario_id, 1)) // 2) >= _UMBRAL_NUDGE_EXPLORADOR_FUERTE
+
+    def _resumir_estado_ficha(self) -> str:
+        """Texto corto que el orquestador agéntico ve en su prompt --
+        derivado de la ficha real (AgentCore Memory), no una suposición
+        del modelo sobre en qué fase está la persona."""
+        ficha = leer_ficha_usuario(self.usuario_id)
+        if not ficha["existe"]:
+            return "No ficha yet -- no phase has closed." if self.idioma == "en" else "Todavía no hay ficha -- ninguna fase cerró."
+        actual = ficha["actual"] or {}
+        fase_cerrada = actual.get("fase")
+        reentrada = (actual.get("datos") or {}).get("reentrada")
+        if self.idioma == "en":
+            base = f"Last closed phase: {fase_cerrada}. Continuing in phase: {self.fase_actual}."
+            if reentrada:
+                base += f" Pending re-entry into {reentrada}."
+            return base
+        base = f"Última fase cerrada: {fase_cerrada}. Continúa en la fase: {self.fase_actual}."
+        if reentrada:
+            base += f" Reingreso pendiente a {reentrada}."
+        return base
+
+    def _invocar_una_vez(self, texto: str) -> tuple[int, str, bool]:
+        """Arma el orquestador agéntico (con los 5 subagentes como tools)
+        y lo invoca una vez. Devuelve (fase_que_respondió,
+        texto_para_la_persona, cerrado_declarado) -- el texto sale del
+        informe estructurado que el subagente le dejó al orquestador
+        (`informar_al_orquestador`), nunca del propio texto del
+        orquestador (ver plan de migración, sección 6: no hay garantía
+        de que el `AgentResult` del orquestador conserve el texto
+        completo del subagente delegado). Cualquier `dato_nuevo` del
+        informe se persiste como insight de una vez."""
+        agentes, contenedores = self._construir_agentes_fase()
+        estado = self._resumir_estado_ficha()
+        insights = leer_insights(self.usuario_id)
+        orquestador = crear_agente_orquestador(agentes, estado, insights, self.idioma)
+        orquestador(texto)
+        registrar_invocacion(self.usuario_id)
+
+        for fase, contenedor in contenedores.items():
+            if not contenedor["informe"]:
+                continue
+            registrar_invocacion(self.usuario_id)  # la llamada real del subagente delegado
+            informe = contenedor["informe"][-1]
+            self._contenedor_opciones = list(contenedor["opciones"])
+            dato_nuevo = informe.get("dato_nuevo")
+            if dato_nuevo:
+                agregar_insight(self.usuario_id, dato_nuevo)
+            return fase, (informe.get("texto") or "").strip(), bool(informe.get("cerrado"))
+
+        self._contenedor_opciones = []
+        return self.fase_actual, "", False
+
+    def _invocar(self, texto: str) -> tuple[int, str, bool]:
+        """Invoca al orquestador agéntico, salvo que esta cuenta ya haya
+        llegado al límite diario de invocaciones reales
+        (tools/limite_uso.py) -- en ese caso corta antes de tocar Bedrock.
+        Cuenta cada invocación real (orquestador + el subagente que haya
+        respondido), no cada mensaje de la persona.
+
+        Nunca devuelve un string vacío: AgentCore Memory rechaza guardar
+        un turno con texto de largo 0 (`ParamValidationError`, bug real
+        visto en producción) y una burbuja en blanco tampoco le sirve a
+        la persona. Si la respuesta viene vacía (el orquestador no llegó
+        a invocar ninguna tool, o el subagente no llamó a
+        informar_al_orquestador), reintenta una vez antes de resignarse a
+        un aviso fijo -- como mucho un reintento, nunca un loop sin
+        límite."""
+        if excedio_limite_diario(self.usuario_id):
+            return self.fase_actual, mensaje_limite_alcanzado(self.idioma), False
+        fase, respuesta, cerrado = self._invocar_una_vez(texto)
+        if not respuesta and not excedio_limite_diario(self.usuario_id):
+            fase, respuesta, cerrado = self._invocar_una_vez(_RESPUESTA_VACIA_RETRY[self.idioma])
+        return fase, (respuesta or _RESPUESTA_VACIA_FALLBACK[self.idioma]), cerrado
+
+    def _invocar_fase_directo(self, fase: int, texto: str) -> tuple[str, bool]:
+        """Invoca UNA fase puntual directo, sin pasar por el orquestador
+        -- usado solo por los frenos de seguridad de _verificar_y_reforzar
+        (forzar cierre, completar campos faltantes) y por los mensajes de
+        arranque (abrir_conversacion, cascada de cambio de fase), donde
+        ya se sabe con certeza a qué fase invocar y no tiene sentido
+        gastar otra decisión del orquestador. Devuelve (texto, cerrado)."""
+        if excedio_limite_diario(self.usuario_id):
+            return mensaje_limite_alcanzado(self.idioma), False
+        contenedor_opciones: list = []
+        contenedor_guardado: list = []
+        contenedor_informe: list = []
         turnos = leer_turnos(self.usuario_id, fase)
-        return _FABRICAS_POR_FASE[fase](
+        agente = _FABRICAS_POR_FASE[fase](
             self.usuario_id,
             self.idioma,
             mensajes_previos=_turnos_a_mensajes(turnos),
             nombre=self.nombre,
-            contenedor_opciones=self._contenedor_opciones,
-            contenedor_guardado=self._contenedor_guardado,
+            contenedor_opciones=contenedor_opciones,
+            contenedor_guardado=contenedor_guardado,
+            contenedor_informe=contenedor_informe,
         )
-
-    def _invocar_una_vez(self, texto: str) -> str:
-        self._contenedor_opciones.clear()
-        self._contenedor_guardado.clear()
-        indice_previo = len(self._agente.messages)
-        self._agente(texto)
+        agente(texto)
         registrar_invocacion(self.usuario_id)
-        # Reconstruye el texto desde Agent.messages en vez de confiar en
-        # str(resultado) -- ver docstring de _texto_completo_del_turno.
-        return _texto_completo_del_turno(self._agente.messages[indice_previo:]).strip()
+        self._contenedor_opciones = list(contenedor_opciones)
+        if not contenedor_informe:
+            return "", False
+        informe = contenedor_informe[-1]
+        dato_nuevo = informe.get("dato_nuevo")
+        if dato_nuevo:
+            agregar_insight(self.usuario_id, dato_nuevo)
+        return (informe.get("texto") or "").strip(), bool(informe.get("cerrado"))
 
-    def _invocar(self, texto: str) -> str:
-        """Invoca al agente de la fase actual, salvo que esta cuenta ya
-        haya llegado al límite diario de invocaciones reales
-        (tools/limite_uso.py) -- en ese caso corta antes de tocar Bedrock
-        y devuelve el aviso fijo, sin generar costo. Cuenta cada
-        invocación real, no cada mensaje de la persona: una cascada de
-        cambio de fase dispara más de una por mensaje, y cada una cuesta
-        igual, así que cada una cuenta para el límite.
+    def _verificar_y_reforzar(
+        self, fase: int, respuesta: str, cerrado_declarado: bool, total_versiones_antes: int, forzar: bool = False
+    ) -> str:
+        """Después de invocar `fase` (por el orquestador o directo),
+        confirma contra AgentCore Memory -- no contra lo que el modelo
+        declaró de sí mismo -- que lo que pasó es consistente, y fuerza
+        como mucho un reintento por cada chequeo, directo a esa misma
+        fase (no vuelve a pasar por el orquestador, ya no hay ninguna
+        decisión de ruteo pendiente):
 
-        Nunca devuelve un string vacío: AgentCore Memory rechaza guardar
-        un turno con texto de largo 0 (`ParamValidationError`, bug real
-        visto en producción que tumbaba toda la app) y una burbuja en
-        blanco tampoco le sirve a la persona. Si la respuesta viene
-        vacía, reintenta una vez con un empujón explícito antes de
-        resignarse a un aviso fijo -- mismo criterio que el resto de los
-        reintentos acotados del proyecto (GuardaEstilo, la relectura de
-        la ficha): como mucho un reintento, nunca un loop sin límite."""
-        if excedio_limite_diario(self.usuario_id):
-            return mensaje_limite_alcanzado(self.idioma)
-        respuesta = self._invocar_una_vez(texto)
-        if not respuesta and not excedio_limite_diario(self.usuario_id):
-            respuesta = self._invocar_una_vez(_RESPUESTA_VACIA_RETRY[self.idioma])
+        1. Si se declaró `cerrado=True` (o `forzar=True`, freno de
+           turnos del Explorador) pero AgentCore Memory no tiene una
+           versión nueva, reintenta con _FORZAR_CIERRE.
+        2. Si sí hay una versión nueva de esta fase, pero le falta alguna
+           clave obligatoria (_CAMPOS_REQUERIDOS_AL_CERRAR), reintenta
+           con _FALTAN_CAMPOS."""
+        if (cerrado_declarado or forzar) and self._contar_versiones() <= total_versiones_antes:
+            respuesta, _ = self._invocar_fase_directo(fase, _FORZAR_CIERRE[self.idioma])
+
+        ficha = self._leer_ficha_con_reintento(total_versiones_antes)
+        hubo_guardado = (len(ficha["historial"]) + (1 if ficha["existe"] else 0)) > total_versiones_antes
+        if hubo_guardado and ficha["actual"]["fase"] == fase:
+            datos = ficha["actual"]["datos"] or {}
+            requeridos = _CAMPOS_REQUERIDOS_AL_CERRAR.get(fase, ())
+            # "is None" y no una verificación de verdad -- un campo
+            # booleano como "cumplido" (rama gamificacion) es
+            # legítimamente `False` cuando la persona no sostuvo el
+            # hábito, y eso NO es lo mismo que faltar.
+            faltantes = tuple(c for c in requeridos if datos.get(c) is None)
+            if faltantes:
+                campos = ", ".join(f'"{c}"' for c in faltantes)
+                respuesta, _ = self._invocar_fase_directo(fase, _FALTAN_CAMPOS[self.idioma].format(campos=campos))
+
         return respuesta or _RESPUESTA_VACIA_FALLBACK[self.idioma]
-
-    def _preparar_texto_y_forzado(self, texto: str) -> tuple[str, bool]:
-        """Le agrega al texto que ve el modelo (nunca a lo que se guarda
-        en tools/conversacion.py) un recordatorio interno de cerrar la
-        fase si el Explorador ya lleva demasiados turnos -- ver
-        _UMBRAL_NUDGE_EXPLORADOR arriba. El segundo valor de la tupla
-        indica si se aplicó el aviso fuerte: en ese caso, `enviar_mensaje`
-        exige que la tool se haya ejecutado de verdad (no alcanza con que
-        el texto *suene* a un cierre) y fuerza un reintento si no."""
-        if self.fase_actual != 1:
-            return texto, False
-        turnos_previos = len(leer_turnos(self.usuario_id, 1)) // 2
-        if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR_FUERTE:
-            return texto + _NUDGE_EXPLORADOR_FUERTE[self.idioma], True
-        if turnos_previos >= _UMBRAL_NUDGE_EXPLORADOR:
-            return texto + _NUDGE_EXPLORADOR[self.idioma], False
-        return texto, False
-
-    def _dice_que_guardo_sin_guardar(self, respuesta: str) -> bool:
-        """True si el texto de la respuesta suena a que ya guardó el
-        avance (regex _FRASE_CIERRE_FALSO) pero guardar_ficha_usuario NO
-        se ejecutó de verdad en la última invocación (`_contenedor_guardado`
-        vacío). Bug real visto primero en el Explorador y después en el
-        Sintetizador -- no es privativo de una fase, así que este chequeo
-        se aplica parejo en cualquiera (ver `_invocar_verificado`)."""
-        if self._contenedor_guardado:
-            return False
-        patron = _FRASE_CIERRE_FALSO.get(self.idioma, _FRASE_CIERRE_FALSO["es"])
-        return bool(patron.search(respuesta))
-
-    def _campos_faltantes(self, fase: int) -> tuple[str, ...]:
-        """Si guardar_ficha_usuario se ejecutó de verdad en la última
-        invocación (`_contenedor_guardado`) para `fase`, pero a la ficha
-        ya fusionada (`tools.ficha.guardar_ficha_usuario_fusionada`)
-        todavía le falta alguna clave que esa fase tiene que garantizar
-        (`_CAMPOS_REQUERIDOS_AL_CERRAR`), las devuelve. La fusión ya
-        resuelve "se olvidó de re-incluir una clave que una fase anterior
-        ya había puesto" -- esto detecta el caso que la fusión no puede
-        arreglar sola: que nunca se haya puesto, ni siquiera esta vez
-        (ej. el Estratega cierra la ficha sin incluir "sistema", que es
-        nuevo en esta fase, no hay ningún valor previo del que
-        heredarlo)."""
-        if not self._contenedor_guardado:
-            return ()
-        requeridos = _CAMPOS_REQUERIDOS_AL_CERRAR.get(fase, ())
-        if not requeridos:
-            return ()
-        ficha = leer_ficha_usuario(self.usuario_id)
-        datos = (ficha["actual"] or {}).get("datos", {}) if ficha["existe"] else {}
-        # "is None" y no una verificación de verdad -- un campo booleano
-        # como "cumplido" (rama gamificacion) es legítimamente `False`
-        # cuando la persona no sostuvo el hábito, y eso NO es lo mismo
-        # que faltar. Solo la ausencia real de la clave (o un `None`
-        # explícito) cuenta como faltante.
-        return tuple(campo for campo in requeridos if (datos or {}).get(campo) is None)
-
-    def _invocar_verificado(self, texto: str) -> str:
-        """Invoca y, si la respuesta suena a que ya guardó pero la tool
-        no se ejecutó de verdad, o si guardó mas le faltó alguna clave
-        obligatoria de esta fase, fuerza un reintento sin ambigüedad
-        antes de devolverla -- envoltorio de `_invocar` que se usa en
-        todos los puntos donde se invoca a un agente de fase, para que
-        estas verificaciones no dependan de acordarse de aplicarlas cada
-        vez."""
-        respuesta = self._invocar(texto)
-        if self._dice_que_guardo_sin_guardar(respuesta):
-            respuesta = self._invocar(_FORZAR_CIERRE[self.idioma])
-        faltantes = self._campos_faltantes(self.fase_actual)
-        if faltantes:
-            campos = ", ".join(f'"{campo}"' for campo in faltantes)
-            respuesta = self._invocar(_FALTAN_CAMPOS[self.idioma].format(campos=campos))
-        return respuesta
 
     def abrir_conversacion(self):
         """Generador: el agente de la fase actual habla primero, sin
@@ -485,16 +494,18 @@ class SesionTelos:
         de resumen apenas se abre la conversación, no después.
 
         Si todavía no se capturó el nombre de la persona (Paso 0), lo
-        pide directo en código, sin invocar ningún agente.
-
-        No revisa el guardrail de crisis (no hay texto de la persona
-        que revisar) ni avanza de fase (abrir no cierra nada)."""
+        pide directo en código, sin invocar ningún agente. Invoca la fase
+        actual directo (sin pasar por el orquestador -- ya sabemos con
+        certeza cuál es) y no avanza de fase (abrir no cierra nada, mismo
+        criterio que antes)."""
         if self._pidiendo_nombre:
             yield 0, _PEDIR_NOMBRE[self.idioma], []
             return
 
         kickoff = _KICKOFF[self.idioma]
-        respuesta = self._invocar_verificado(kickoff)
+        total_versiones_antes = self._contar_versiones()
+        respuesta, cerrado = self._invocar_fase_directo(self.fase_actual, kickoff)
+        respuesta = self._verificar_y_reforzar(self.fase_actual, respuesta, cerrado, total_versiones_antes)
         guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
         yield self.fase_actual, respuesta, list(self._contenedor_opciones)
 
@@ -523,20 +534,21 @@ class SesionTelos:
         return fase_guardada + 1
 
     def _capturar_nombre(self, texto: str):
-        """Cierra el Paso 0: guarda el nombre, arma recién ahora el
-        agente de la fase en la que ya estaba esta persona (nueva o
-        retomada) y lo hace hablar primero en el mismo turno, con el
-        mismo mecanismo de arranque que una cascada de cambio de fase --
-        así la persona nunca ve un chat esperando en silencio después de
+        """Cierra el Paso 0: guarda el nombre y hace hablar primero, en
+        el mismo turno, al agente de la fase en la que ya estaba esta
+        persona (nueva o retomada) -- invocado directo (sin pasar por el
+        orquestador), mismo criterio que abrir_conversacion. Así la
+        persona nunca ve un chat esperando en silencio después de
         contestar."""
         nombre = _extraer_nombre(texto, self.idioma, self.usuario_id)
         guardar_nombre_usuario(self.usuario_id, nombre)
         self.nombre = nombre
         self._pidiendo_nombre = False
-        self._agente = self._crear_agente_fase(self.fase_actual)
 
         kickoff = _KICKOFF[self.idioma]
-        respuesta = self._invocar_verificado(kickoff)
+        total_versiones_antes = self._contar_versiones()
+        respuesta, cerrado = self._invocar_fase_directo(self.fase_actual, kickoff)
+        respuesta = self._verificar_y_reforzar(self.fase_actual, respuesta, cerrado, total_versiones_antes)
         guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, respuesta)
         yield self.fase_actual, respuesta, list(self._contenedor_opciones)
 
@@ -545,7 +557,13 @@ class SesionTelos:
         el orden en que se van generando -- no un solo string con todo
         junto. `opciones` es la lista (posiblemente vacía) que haya
         dejado la tool `presentar_opciones` en esta invocación -- ver
-        docstring del módulo."""
+        docstring del módulo.
+
+        El mensaje de la persona pasa por el orquestador agéntico
+        (agents/orquestador_agente.py), que decide a qué fase invocar --
+        a diferencia de los mensajes de arranque (abrir_conversacion,
+        cascada de cambio de fase más abajo), donde ya se sabe con
+        certeza cuál es y se invoca directo."""
         resultado_crisis = detectar_señal_crisis(texto)
         if resultado_crisis["disparado"]:
             registrar_evento_crisis(self.usuario_id, resultado_crisis["categoria"])
@@ -558,45 +576,32 @@ class SesionTelos:
 
         fase_antes = self.fase_actual
         total_versiones_antes = self._contar_versiones()
-        texto_efectivo, forzar_cierre_duro = self._preparar_texto_y_forzado(texto)
-        respuesta = self._invocar(texto_efectivo)
-
-        if forzar_cierre_duro and not self._contenedor_guardado:
-            # Freno de seguridad: el aviso fuerte ya le pedía cerrar en
-            # este mismo turno, pero la tool guardar_ficha_usuario no se
-            # ejecutó -- sin importar si el texto sonaba a que sí cerró.
-            # Un reintento más, sin ambigüedad, antes de dejarlo pasar.
-            respuesta = self._invocar(_FORZAR_CIERRE[self.idioma])
-        elif self._dice_que_guardo_sin_guardar(respuesta):
-            # Mismo bug, en cualquier otra fase (no depende del contador
-            # de turnos de Fase 1): el texto suena a que ya guardó pero
-            # la tool no se ejecutó -- bug real visto en el Sintetizador.
-            respuesta = self._invocar(_FORZAR_CIERRE[self.idioma])
-
-        faltantes = self._campos_faltantes(fase_antes)
-        if faltantes:
-            # Guardó de verdad, pero le faltó una clave que esta fase
-            # tiene que garantizar (ej. "sistema" en el cierre de Fase 4)
-            # y que ninguna versión anterior tiene para heredar por
-            # fusión -- ver tools.ficha.guardar_ficha_usuario_fusionada.
-            campos = ", ".join(f'"{campo}"' for campo in faltantes)
-            respuesta = self._invocar(_FALTAN_CAMPOS[self.idioma].format(campos=campos))
+        forzar_cierre_duro = self._turno_supera_umbral_fuerte()
+        fase_respondio, respuesta, cerrado = self._invocar(texto)
+        respuesta = self._verificar_y_reforzar(
+            fase_respondio, respuesta, cerrado, total_versiones_antes, forzar=forzar_cierre_duro
+        )
 
         guardar_intercambio(self.usuario_id, fase_antes, texto, respuesta)
         yield fase_antes, respuesta, list(self._contenedor_opciones)
 
-        self._avanzar_fase_si_corresponde(total_versiones_antes)
+        self._avanzar_fase_si_corresponde(fase_respondio, total_versiones_antes)
 
         # La fase cambió en este mismo turno: si el destino no es Fase 5
         # (que espera a una conversación nueva, no continúa en caliente),
-        # arrancamos al agente siguiente ya mismo para no dejar a la
+        # arrancamos al agente siguiente ya mismo, directo (ya sabemos
+        # cuál es, no hace falta el orquestador) para no dejar a la
         # persona esperando sin saber que le toca escribir algo. Se
         # entrega como un mensaje aparte, no concatenado al anterior --
         # así quien llama puede mostrar el primero apenas está listo, sin
         # esperar a que este segundo termine de generarse.
         if self.fase_actual != fase_antes and self.fase_actual != 5:
             kickoff = _KICKOFF[self.idioma]
-            continuacion = self._invocar_verificado(kickoff)
+            total_versiones_previas_cascada = self._contar_versiones()
+            continuacion, cerrado_cascada = self._invocar_fase_directo(self.fase_actual, kickoff)
+            continuacion = self._verificar_y_reforzar(
+                self.fase_actual, continuacion, cerrado_cascada, total_versiones_previas_cascada
+            )
             guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, continuacion)
             yield self.fase_actual, continuacion, list(self._contenedor_opciones)
 
@@ -641,7 +646,12 @@ class SesionTelos:
             ficha = leer_ficha_usuario(self.usuario_id)
         return ficha
 
-    def _avanzar_fase_si_corresponde(self, total_versiones_antes: int) -> None:
+    def _avanzar_fase_si_corresponde(self, fase_que_respondio: int, total_versiones_antes: int) -> None:
+        """`fase_que_respondio` es la fase que el orquestador agéntico
+        realmente invocó este turno (no necesariamente `self.fase_actual`
+        de antes del turno -- en el caso normal coinciden, ver
+        agents/orquestador_agente.py, pero el avance se calcula sobre lo
+        que de verdad pasó, no sobre lo que se esperaba que pasara)."""
         ficha = self._leer_ficha_con_reintento(total_versiones_antes)
         if not ficha["existe"]:
             return
@@ -651,25 +661,17 @@ class SesionTelos:
             return  # no se guardó nada nuevo en este turno, seguimos en la misma fase
 
         actual = ficha["actual"]
-        if actual["fase"] != self.fase_actual:
-            return  # la versión nueva no corresponde a la fase en curso
+        if actual["fase"] != fase_que_respondio:
+            return  # la versión nueva no corresponde a la fase que respondió
 
-        if self.fase_actual in (1, 2, 3):
-            self._pasar_a_fase(self.fase_actual + 1)
-        elif self.fase_actual == 4:
-            self._pasar_a_fase(5)
-        elif self.fase_actual == 5:
+        if fase_que_respondio in (1, 2, 3):
+            self.fase_actual = fase_que_respondio + 1
+        elif fase_que_respondio == 4:
+            self.fase_actual = 5
+        elif fase_que_respondio == 5:
             reentrada = (actual["datos"] or {}).get("reentrada")
             if reentrada == "fase3":
-                self._pasar_a_fase(3)
+                self.fase_actual = 3
             elif reentrada == "fase4":
-                self._pasar_a_fase(4)
+                self.fase_actual = 4
             # sin reentrada: se queda en Fase 5 hasta la próxima sesión
-
-    def _pasar_a_fase(self, fase: int) -> None:
-        self.fase_actual = fase
-        # Precarga los turnos que puedan existir de un paso anterior por
-        # esta misma fase (p. ej. Fase 5 reentra a Fase 3): limitación
-        # conocida, no distingue el primer intento del segundo -- ver
-        # tools/conversacion_agentcore.py.
-        self._agente = self._crear_agente_fase(fase)

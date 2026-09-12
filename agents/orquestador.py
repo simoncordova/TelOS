@@ -566,11 +566,10 @@ class SesionTelos:
         dejado la tool `presentar_opciones` en esta invocación -- ver
         docstring del módulo.
 
-        El mensaje de la persona pasa por el orquestador agéntico
-        (agents/orquestador_agente.py), que decide a qué fase invocar --
-        a diferencia de los mensajes de arranque (abrir_conversacion,
-        cascada de cambio de fase más abajo), donde ya se sabe con
-        certeza cuál es y se invoca directo."""
+        El mensaje de la persona se invoca directo contra `self.fase_actual`
+        (ver `_invocar_una_vez`) -- igual que los mensajes de arranque
+        (abrir_conversacion, cascada de cambio de fase más abajo), porque
+        ya no hay ninguna decisión de ruteo que tomar en ningún caso."""
         resultado_crisis = detectar_señal_crisis(texto)
         if resultado_crisis["disparado"]:
             registrar_evento_crisis(self.usuario_id, resultado_crisis["categoria"])

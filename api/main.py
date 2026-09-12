@@ -11,6 +11,7 @@ Corre desde la raíz del repo (mismo patrón que scripts/chat_terminal.py
 
 import os
 import threading
+import time
 
 from fastapi import Depends, FastAPI, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
@@ -50,16 +51,33 @@ app = FastAPI(title="Telos API")
 # real (boto3/Bedrock) -- y StreamingResponse itera un generador sync
 # también en threadpool, así que todo el trabajo pasa en threads, nunca
 # en el event loop.
-_sesiones: dict[tuple[str, str], SesionTelos] = {}
+#
+# Bug real (12/09/2026): "no es fuente de verdad" quedaba solo en el
+# comentario -- nada invalidaba esta entrada nunca, así que cuando
+# scripts/borrar_usuario.py corría por fuera de este proceso (contra el
+# mismo AgentCore Memory, pero sin pasar por la API), el SesionTelos ya
+# cacheado seguía con `fase_actual`/`nombre` viejos en memoria
+# indefinidamente -- una cuenta recién borrada seguía viéndose como si
+# tuviera fase 2 (o la que fuera) hasta reiniciar el proceso a mano. El
+# TTL de abajo la hace autocurarse sola: una sesión vieja se descarta y
+# se reconstruye leyendo la ficha real de nuevo, sin necesitar ningún
+# mecanismo de invalidación explícita entre procesos.
+_TTL_SESION_SEGUNDOS = 10 * 60
+_sesiones: dict[tuple[str, str], tuple[SesionTelos, float]] = {}
 _locks: dict[tuple[str, str], threading.Lock] = {}
 _locks_guard = threading.Lock()
 
 
 def _obtener_sesion(usuario_id: str, idioma: str) -> SesionTelos:
     clave = (usuario_id, idioma)
-    if clave not in _sesiones:
-        _sesiones[clave] = SesionTelos(usuario_id, idioma=idioma)
-    return _sesiones[clave]
+    entrada = _sesiones.get(clave)
+    if entrada is not None:
+        sesion, creada_en = entrada
+        if time.monotonic() - creada_en < _TTL_SESION_SEGUNDOS:
+            return sesion
+    sesion = SesionTelos(usuario_id, idioma=idioma)
+    _sesiones[clave] = (sesion, time.monotonic())
+    return sesion
 
 
 def _obtener_lock(usuario_id: str, idioma: str) -> threading.Lock:

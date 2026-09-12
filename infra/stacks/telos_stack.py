@@ -593,8 +593,16 @@ class TelosStack(Stack):
             f'-e VAPID_PRIVATE_KEY="{vapid_private_key.value_as_string}" '
             f'-e VAPID_SUBJECT="{vapid_subject.value_as_string}" '
             f'-e PUSH_SCHEDULER_SECRET="{push_scheduler_secret.value_as_string}" '
-            f'-e GUARDRAIL_ID="{guardrail.attr_guardrail_id}" '
-            f'-e GUARDRAIL_VERSION="{guardrail_version.attr_version}" '
+            # GUARDRAIL_ID/GUARDRAIL_VERSION desactivados temporalmente (rama
+            # gamificacion, visto en produccion): el topic "TareasFueraDeProposito"
+            # (definicion + ejemplos centrados en "ayuda con codigo") dispara
+            # falsos positivos con personas cuyo propio proposito de vida es
+            # programar/crear software -- bloqueo conversaciones on-topic dos
+            # veces seguidas en una prueba real. El recurso del guardrail sigue
+            # definido abajo (GuardrailTelos) para poder afinar la definicion del
+            # topic y reactivarlo agregando estas dos lineas de nuevo, sin volver
+            # a crear nada. agents/_modelo.py::_crear_modelo ya maneja
+            # GUARDRAIL_ID vacio como "sin guardrail", no hace falta otro cambio.
             f"{imagen_api.image_uri}",
             # --network host también acá: Next.js necesita pegarle a la
             # API por localhost:8000 (ver web/src/lib/api.ts).

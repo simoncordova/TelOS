@@ -179,7 +179,7 @@ function Conversacion({
   const nombre = ficha?.nombre ?? null;
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden md:flex-row">
       <Sidebar
         idioma={idioma}
         onCambiarIdioma={onCambiarIdioma}
@@ -190,7 +190,7 @@ function Conversacion({
         ficha={ficha}
       />
 
-      <main className="flex flex-1 flex-col">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {ficha && !nombre && <BienvenidaCard t={t} />}
 
         {ficha && (

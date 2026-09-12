@@ -33,7 +33,7 @@ export function Sidebar({
   const datos = (ficha?.actual?.datos ?? {}) as { proposito?: string; sistema?: string };
 
   return (
-    <aside className="flex w-full flex-col gap-4 border-b border-surface p-4 md:w-72 md:border-r md:border-b-0 md:h-screen md:overflow-y-auto">
+    <aside className="flex w-full flex-col gap-4 overflow-y-auto border-b border-surface p-4 md:h-full md:w-72 md:border-r md:border-b-0">
       <div>
         <h1 className="text-lg font-semibold text-primary">Telos</h1>
         <p className="text-xs text-foreground/60">{t.caption}</p>

@@ -35,7 +35,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      {/* h-full + overflow-hidden (no min-h-full): la conversación
+          necesita un marco de altura FIJA para que solo el chat scrollee
+          por dentro -- con min-h-full, la página entera crecía con cada
+          mensaje y el header/sidebar/input se perdían de vista (bug real
+          reportado probando la app desplegada). */}
+      <body className="flex h-full flex-col overflow-hidden">{children}</body>
     </html>
   );
 }

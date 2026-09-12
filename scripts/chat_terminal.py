@@ -51,7 +51,7 @@ def main() -> None:
 
     # La Vista de resumen de Fase 5 ya no viene en el texto del agente
     # (ver agents/seguimiento.py) -- se muestra aparte, con código, igual
-    # que en ui/app.py.
+    # que en web/ (vía api/main.py).
     if sesion.fase_actual == 5:
         ficha = leer_ficha_usuario(usuario_id)
         print("--- Tu resumen ---")

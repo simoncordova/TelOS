@@ -1,6 +1,4 @@
-"""Auth por request para la API (rama gamificacion) -- a diferencia de
-Streamlit (ui/app.py), que guarda la identidad ya validada en
-st.session_state del mismo proceso, acá cada request llega a un worker
+"""Auth por request para la API -- cada request llega a un worker
 distinto en principio, así que la sesión vive en una cookie con el
 id_token crudo de Cognito y se revalida (firma + exp + aud + iss) en
 cada request. Ver ui/auth.py -- ese módulo hace el trabajo real
@@ -27,9 +25,8 @@ def requiere_login() -> bool:
 
 def obtener_usuario_actual(request: Request) -> str:
     """Dependencia de FastAPI: devuelve el usuario_id (= email) de la
-    persona autenticada, o lanza 401. Con TELOS_REQUIRE_LOGIN=0 (mismo
-    mecanismo que ui/app.py) se salta Cognito -- solo para desarrollo
-    local, igual que hoy."""
+    persona autenticada, o lanza 401. Con TELOS_REQUIRE_LOGIN=0 se salta
+    Cognito -- solo para desarrollo local."""
     if not _REQUIERE_LOGIN:
         return request.headers.get("X-Telos-Usuario-Dev", _USUARIO_DEV)
 

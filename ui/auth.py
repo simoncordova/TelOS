@@ -4,28 +4,29 @@ para no depender de ninguna cuenta de terceros. El dueño de la cuenta
 crea los usuarios de prueba a mano (`aws cognito-idp admin-create-user`,
 ver README); no hay auto-registro público.
 
-No es un tool de agente ni un agente — es plumbing específico de la UI,
-por eso vive en ui/ y no en agents/ ni tools/.
+No es un tool de agente ni un agente — es plumbing de autenticación
+reutilizado tal cual por `api/auth.py` (ver ese módulo para el ciclo
+request/response de FastAPI que envuelve esto). Vive en `ui/` por
+motivos históricos (originalmente era exclusivo de la UI de Streamlit,
+ya decomisionada) y no se movió para no tocar los imports de `api/`.
 
 Config vía variables de entorno (las inyecta infra/stacks/telos_stack.py
-como runtime env vars de App Runner; en local hay que exportarlas a mano
-o dejar TELOS_REQUIRE_LOGIN=0 para saltarse el login):
+como runtime env vars de la instancia EC2; en local hay que exportarlas
+a mano o dejar TELOS_REQUIRE_LOGIN=0 para saltarse el login):
     COGNITO_DOMAIN          https://<prefix>.auth.<region>.amazoncognito.com
     COGNITO_USER_POOL_ID    us-east-1_XXXXXXXXX
     COGNITO_CLIENT_ID
     COGNITO_CLIENT_SECRET
     COGNITO_REGION          (default: TELOS_AWS_REGION o us-east-1)
-    APP_URL                 URL pública de la UI (= redirect_uri registrado en Cognito)
+    APP_URL                 URL de la ruta de callback (= redirect_uri registrado en
+                            Cognito, .../api/auth/callback, donde se procesa el `code`
+                            del login)
     LOGOUT_REDIRECT_URL     A dónde vuelve el navegador después de cerrar sesión en
-                            Cognito (default: el mismo APP_URL). Streamlit no necesita
-                            setearlo -- login y logout vuelven al mismo lugar, la raíz
-                            de la app. La API (rama gamificacion) sí lo necesita
-                            distinto: su APP_URL es la ruta de callback
-                            (.../api/auth/callback, donde se procesa el `code` del
-                            login), y esa misma ruta reusada como logout_uri rompía el
-                            logout con un 422 (esa ruta exige `code`, que un logout no
-                            manda) -- bug real, encontrado en revisión de código antes
-                            de activar el login real, nunca en producción.
+                            Cognito (default: el mismo APP_URL). Tiene que ser distinto
+                            de APP_URL en la práctica: esa ruta exige un `code` (la
+                            procesa como si fuera un login), y un logout no lo manda --
+                            bug real, encontrado en revisión de código antes de activar
+                            el login real, nunca en producción.
 """
 
 import os
@@ -40,7 +41,7 @@ _USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
 _CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID", "")
 _CLIENT_SECRET = os.environ.get("COGNITO_CLIENT_SECRET", "")
 _REGION = os.environ.get("COGNITO_REGION", os.environ.get("TELOS_AWS_REGION", "us-east-1"))
-_APP_URL = os.environ.get("APP_URL", "http://localhost:8501")
+_APP_URL = os.environ.get("APP_URL", "http://localhost:8000/api/auth/callback")
 _LOGOUT_REDIRECT_URL = os.environ.get("LOGOUT_REDIRECT_URL", _APP_URL)
 
 _ISSUER = f"https://cognito-idp.{_REGION}.amazonaws.com/{_USER_POOL_ID}"
@@ -58,10 +59,10 @@ def url_login(idioma: str = "en") -> str:
     # El idioma va en `state`: Cognito lo devuelve intacto en el
     # callback (?state=...), y sin esto se pierde -- el link de login es
     # una navegación de página completa hacia otro dominio (Cognito) y
-    # de vuelta, así que cualquier cosa que solo viva en st.session_state
-    # (como el radio de idioma) se resetea a su default en la sesión
-    # nueva que arma Streamlit al volver (bug real: se elegía inglés
-    # antes de loguearse y la app saludaba en español después).
+    # de vuelta, así que cualquier selección que solo viva en el estado
+    # del cliente se resetea a su default en la sesión nueva que arma la
+    # UI al volver (bug real: se elegía inglés antes de loguearse y la
+    # app saludaba en español después).
     return (
         f"{_DOMAIN}/oauth2/authorize"
         f"?client_id={_CLIENT_ID}"
@@ -83,11 +84,10 @@ def url_logout() -> str:
 def intercambiar_codigo_por_id_token(code: str) -> str:
     """Canjea el authorization code por tokens y devuelve el id_token
     crudo (sin decodificar) -- separado de `intercambiar_codigo_por_identidad`
-    porque api/auth.py (rama gamificacion) necesita el JWT crudo para
-    guardarlo en la cookie de sesión y revalidarlo en cada request, no
-    solo los claims ya decodificados que basta para Streamlit (que
-    mantiene la identidad en st.session_state del mismo proceso, no en
-    una cookie que hay que revalidar).
+    porque api/auth.py necesita el JWT crudo para guardarlo en la cookie
+    de sesión y revalidarlo en cada request (a diferencia de una sesión
+    de un solo proceso, que podría quedarse solo con los claims ya
+    decodificados).
 
     Lanza ValueError si el intercambio falla (código vencido/reusado,
     etc.) — quien llama debe tratarlo como "login fallido".
@@ -153,9 +153,7 @@ def sesion_vigente(identidad: dict | None) -> bool:
 
 
 def validar_id_token(id_token: str) -> dict:
-    """Alias público de `_validar_id_token` -- api/auth.py (rama
-    gamificacion) revalida el id_token guardado en la cookie de sesión
-    en cada request, a diferencia de Streamlit, que solo valida una vez
-    al intercambiar el code y después confía en st.session_state del
-    mismo proceso."""
+    """Alias público de `_validar_id_token` -- api/auth.py revalida el
+    id_token guardado en la cookie de sesión en cada request, ya que
+    cada request puede llegar a un worker distinto."""
     return _validar_id_token(id_token)

@@ -51,9 +51,8 @@ _FICHA_FALSA = {
 
 @pytest.fixture(autouse=True)
 def _sin_estado_compartido():
-    """El cache de sesiones/locks de api/main.py vive a nivel de módulo
-    (mismo patrón que clave_sesion en ui/app.py) -- lo limpio entre tests
-    para que uno no filtre estado al siguiente."""
+    """El cache de sesiones/locks de api/main.py vive a nivel de módulo --
+    lo limpio entre tests para que uno no filtre estado al siguiente."""
     main._sesiones.clear()
     main._locks.clear()
     yield

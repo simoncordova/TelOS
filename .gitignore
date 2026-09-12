@@ -13,9 +13,6 @@ data/*.jsonl
 infra/cdk.out/
 infra/.venv/
 
-# Streamlit
-.streamlit/secrets.toml
-
 # Entorno
 .env
 
@@ -25,4 +22,3 @@ CLAUDE.md
 PLAN.md
 UPDATES.md
 .claude/
-TAREA-DECOMMISSION-STREAMLIT.md

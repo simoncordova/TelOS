@@ -31,7 +31,7 @@ README). Sin proveedores externos (nada de Google/Facebook/etc.) a
 propósito: evita cualquier dependencia con una cuenta de terceros.
 Requiere un SEGUNDO deploy igual: el callback URL de Cognito tiene que
 ser la URL real de CloudFront, que solo se conoce después del primer
-deploy (CloudFront la genera). Ver el parámetro AppUrl más abajo.
+deploy (CloudFront la genera). Ver el parámetro WebUrl más abajo.
 """
 
 from pathlib import Path
@@ -69,8 +69,8 @@ class TelosStack(Stack):
         Tags.of(self).add("Project", "TelOS")
 
         # Rol que ejecuta el código de agentes -- en el MVP es el mismo
-        # rol de instancia de la EC2 que corre Streamlit (ver más abajo);
-        # si más adelante se despliega el Runtime de AgentCore por
+        # rol de instancia de la EC2 que corre la API/Next.js (ver más
+        # abajo); si más adelante se despliega el Runtime de AgentCore por
         # separado, este mismo rol se puede pasar como execution role de
         # `agentcore launch` en vez de crear uno nuevo.
         rol_agentes = iam.Role(
@@ -361,24 +361,6 @@ class TelosStack(Stack):
         )
 
         # --- Autenticación: Cognito con usuarios propios ---
-        app_url = CfnParameter(
-            self,
-            "AppUrl",
-            type="String",
-            default="https://localhost:8501",
-            description=(
-                "URL pública de la UI. El primer deploy no la conoce "
-                "todavía (CloudFront la genera recién al crearse) — deja "
-                "el default, y haz un segundo deploy pasando "
-                "--parameters AppUrl=<el output UrlServicioUI del primer "
-                "deploy> para que el login funcione de verdad."
-            ),
-        )
-        # Declarado acá (no más abajo, junto al resto de la sección
-        # Web+API) porque UserPoolClientTelos necesita registrar su
-        # callback/logout URL desde el vamos -- Cognito es UN solo App
-        # Client compartido por Streamlit y por la API, no uno por
-        # interfaz.
         web_url = CfnParameter(
             self,
             "WebUrl",
@@ -415,15 +397,12 @@ class TelosStack(Stack):
             o_auth=cognito.OAuthSettings(
                 flows=cognito.OAuthFlows(authorization_code_grant=True),
                 scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
-                # Un solo App Client para las dos interfaces (aditivo:
-                # se agregan las URLs de la API, no se quitan las de
-                # Streamlit). La API usa dos rutas distintas -- el
-                # callback real (donde se procesa el `code`) y la raíz
-                # (a donde vuelve un logout) -- ver ui/auth.py::
-                # LOGOUT_REDIRECT_URL para por qué no puede ser la misma
-                # ruta para las dos cosas.
-                callback_urls=[app_url.value_as_string, f"{web_url.value_as_string}/api/auth/callback"],
-                logout_urls=[app_url.value_as_string, web_url.value_as_string],
+                # La API usa dos rutas distintas -- el callback real
+                # (donde se procesa el `code`) y la raíz (a donde vuelve
+                # un logout) -- ver ui/auth.py::LOGOUT_REDIRECT_URL para
+                # por qué no puede ser la misma ruta para las dos cosas.
+                callback_urls=[f"{web_url.value_as_string}/api/auth/callback"],
+                logout_urls=[web_url.value_as_string],
             ),
         )
 
@@ -433,50 +412,6 @@ class TelosStack(Stack):
             user_pool=user_pool,
             cognito_domain=cognito.CognitoDomainOptions(domain_prefix=f"telos-{self.account}"),
         )
-
-        imagen_ui = ecr_assets.DockerImageAsset(
-            self,
-            "ImagenUI",
-            directory=str(_REPO_ROOT),
-            file="ui/Dockerfile",
-            # .dockerignore en la raíz ya excluye .venv/.git/etc. del
-            # build context; exclude= es un segundo cinturón porque CDK
-            # calcula el hash del asset (para saber si hace falta
-            # rebuild) recorriendo `directory` y un .venv de cientos de
-            # MB ahí adentro lo vuelve lentísimo o lo cuelga.
-            #
-            # Fundamental (no solo performance): ui/Dockerfile solo copia
-            # requirements.txt/agents//tools//ui//.streamlit/ -- todo lo
-            # demás en la raíz (api/, web/, scripts/, tests/, docs/,
-            # conftest.py) tiene que estar excluido de este hash aunque no
-            # moleste al build en sí, porque CDK lo usa para decidir si
-            # cambió la imagen. Un cambio en api/ o web/ (rama
-            # gamificacion) sin este exclude cambiaba el hash igual,
-            # cambiaba imagen_ui.image_uri, y por
-            # user_data_causes_replacement=True terminaba reemplazando
-            # -- destruyendo y recreando -- la instancia de Streamlit en
-            # cada deploy de la parte nueva. Bug real, encontrado en un
-            # `cdk diff` antes de aplicarlo contra la cuenta real.
-            exclude=[
-                ".venv",
-                ".git",
-                "infra",
-                "data",
-                "api",
-                "web",
-                "scripts",
-                "tests",
-                "docs",
-                "conftest.py",
-                "LICENSE",
-                "**/__pycache__",
-                "*.md",
-            ],
-        )
-        # La instancia EC2 hace el pull directo de ECR (docker login +
-        # docker run en el user data, ver abajo) -- antes esto lo hacía
-        # un rol aparte para el build de App Runner, ya no aplica.
-        imagen_ui.repository.grant_pull(rol_agentes)
 
         # VPC chica y propia (no ec2.Vpc.from_lookup a la default): 1 AZ,
         # solo subred pública, sin NAT Gateway -- no hay nada privado que
@@ -493,105 +428,6 @@ class TelosStack(Stack):
             ],
         )
 
-        sg_instancia = ec2.SecurityGroup(
-            self,
-            "SgInstanciaUI",
-            vpc=vpc,
-            description="Permite trafico HTTP entrante a Streamlit (8501).",
-            allow_all_outbound=True,
-        )
-        # MVP: abierto a cualquier IP, no delimitado al rango de
-        # CloudFront -- el login de Cognito sigue aplicando igual si
-        # alguien pega directo a la IP de la instancia sin pasar por
-        # CloudFront (pierde el HTTPS, no el login). Endurecer esto con
-        # el prefix list administrado de CloudFront
-        # (com.amazonaws.global.cloudfront.origin-facing) es la mejora
-        # obvia si sobra tiempo.
-        sg_instancia.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(8501), "Streamlit (directo o via CloudFront)")
-
-        comandos_usuario = ec2.UserData.for_linux()
-        comandos_usuario.add_commands(
-            "dnf install -y docker",
-            "systemctl enable --now docker",
-            f"aws ecr get-login-password --region {self.region} | "
-            f"docker login --username AWS --password-stdin {self.account}.dkr.ecr.{self.region}.amazonaws.com",
-            "docker run -d --restart unless-stopped -p 8501:8501 "
-            f'-e TELOS_AWS_REGION="{self.region}" '
-            '-e TELOS_FICHA_BACKEND="agentcore" '
-            f'-e COGNITO_DOMAIN="{user_pool_domain.base_url()}" '
-            f'-e COGNITO_USER_POOL_ID="{user_pool.user_pool_id}" '
-            f'-e COGNITO_CLIENT_ID="{user_pool_client.user_pool_client_id}" '
-            f'-e COGNITO_CLIENT_SECRET="{user_pool_client.user_pool_client_secret.unsafe_unwrap()}" '
-            f'-e APP_URL="{app_url.value_as_string}" '
-            f'-e GUARDRAIL_ID="{guardrail.attr_guardrail_id}" '
-            f'-e GUARDRAIL_VERSION="{guardrail_version.attr_version}" '
-            f"{imagen_ui.image_uri}",
-        )
-
-        # Un solo Instance, no un Auto Scaling Group: ya cumple el tope
-        # de "nunca más de 1" sin necesitar nada extra (antes lo hacía el
-        # AutoScalingConfiguration de App Runner).
-        instancia_ui = ec2.Instance(
-            self,
-            "InstanciaUI",
-            vpc=vpc,
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-            instance_type=ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MICRO),
-            machine_image=ec2.MachineImage.latest_amazon_linux2023(),
-            security_group=sg_instancia,
-            role=rol_agentes,
-            user_data=comandos_usuario,
-            # El user data (con el APP_URL/Cognito embebido en el docker
-            # run) solo corre una vez, al primer arranque -- sin esto, un
-            # cambio de parámetro (como AppUrl en el Paso 2) actualiza la
-            # plantilla pero la instancia ya corriendo se queda sirviendo
-            # con los valores viejos para siempre, aunque Cognito ya
-            # tenga el callback nuevo (mismatch real que pasó en un
-            # deploy real). Con esto, cualquier cambio de user data
-            # reemplaza la instancia -- CloudFront apunta a
-            # instance_public_dns_name, así que su origen se actualiza
-            # solo en el mismo deploy.
-            user_data_causes_replacement=True,
-            # Sin Elastic IP a propósito (menos piezas): si esta
-            # instancia alguna vez se detiene y se reinicia, la IP/DNS
-            # público cambia y hay que correr `cdk deploy` de nuevo para
-            # que CloudFront apunte al valor nuevo -- aceptable para el
-            # MVP, que la deja corriendo sin pausar.
-            associate_public_ip_address=True,
-        )
-
-        # CloudFront da el HTTPS automático (dominio *.cloudfront.net)
-        # que App Runner daba gratis y EC2 pelado no -- sin esto, Cognito
-        # rechaza el callback URL (exige HTTPS salvo para localhost).
-        # Cache deshabilitado y todos los headers/cookies/query strings
-        # reenviados: Streamlit necesita que el WebSocket (la interacción
-        # del chat) y el query string ?code= del login de Cognito lleguen
-        # intactos al origen, nunca cacheados.
-        distribucion = cloudfront.Distribution(
-            self,
-            "DistribucionUI",
-            default_behavior=cloudfront.BehaviorOptions(
-                origin=origins.HttpOrigin(
-                    instancia_ui.instance_public_dns_name,
-                    protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-                    http_port=8501,
-                ),
-                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-                allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
-                cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
-                origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
-            ),
-        )
-
-        CfnOutput(
-            self,
-            "UrlServicioUI",
-            value=f"https://{distribucion.distribution_domain_name}",
-            description=(
-                "Pasar como --parameters AppUrl=<esta URL> en un segundo "
-                "deploy para que el callback de Cognito funcione."
-            ),
-        )
         CfnOutput(
             self,
             "UserPoolId",
@@ -610,24 +446,13 @@ class TelosStack(Stack):
                 "se despliega AgentCore Runtime por separado."
             ),
         )
-        CfnOutput(
-            self,
-            "IdInstanciaUI",
-            value=instancia_ui.instance_id,
-            description=(
-                "Usar con `aws ssm start-session --target <esto>` para "
-                "entrar a la instancia si el user data falla (ver README)."
-            ),
-        )
 
-        # --- Web + API (rama gamificacion): frontend Next.js nuevo y su
-        # backend delgado -- ver C:\Users\Wendy\.claude\plans\
-        # cosmic-zooming-tarjan.md sección C. Instancia y distribución
-        # propias, separadas de InstanciaUI/DistribucionUI a propósito:
-        # así un despliegue de esta parte (incluyendo un reemplazo por
-        # user_data_causes_replacement) nunca puede interrumpir la
-        # instancia que sirve Streamlit -- "mantener Streamlit
-        # desplegado" tiene que ser literal, no solo conceptual.
+        # --- Web + API: frontend Next.js y su backend delgado (única
+        # interfaz de la app -- Streamlit/InstanciaUI/DistribucionUI se
+        # decomisionaron una vez que esta migró a producción y se
+        # confirmó reemplazo funcional completo, ver el commit que
+        # borró esos recursos para el detalle). Ver
+        # C:\Users\Wendy\.claude\plans\cosmic-zooming-tarjan.md sección C.
         #
         # Los dos contenedores (API :8000, Next.js :3000) comparten esta
         # misma instancia con --network host: es la forma más simple de
@@ -638,8 +463,7 @@ class TelosStack(Stack):
         # CloudFront enruta `/api/*` a la API y todo lo demás a Next.js,
         # así el navegador nunca necesita CORS ni conocer dos dominios.
         #
-        # Login real de Cognito activado acá (Fase 2 del plan, completa)
-        # -- `web_url` ya se declaró más arriba, junto a UserPoolClientTelos,
+        # `web_url` ya se declaró más arriba, junto a UserPoolClientTelos,
         # porque el App Client necesita conocer esta URL desde su propia
         # construcción.
 
@@ -692,7 +516,7 @@ class TelosStack(Stack):
             "ImagenApi",
             directory=str(_REPO_ROOT),
             file="api/Dockerfile",
-            exclude=[".venv", ".git", "infra", "data", "ui/app.py", "**/__pycache__", "*.md"],
+            exclude=[".venv", ".git", "infra", "data", "**/__pycache__", "*.md"],
         )
         imagen_api.repository.grant_pull(rol_agentes)
 
@@ -789,7 +613,7 @@ class TelosStack(Stack):
                     # ALL_VIEWER (no solo headers): la cookie de sesión
                     # (api/auth.py) y el query string ?code=/&state= del
                     # callback de Cognito tienen que llegar intactos al
-                    # origen, mismo motivo que DistribucionUI.
+                    # origen, nunca cacheados.
                     origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
                 )
             },

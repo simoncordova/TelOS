@@ -16,8 +16,8 @@ esto funcione, cada check-in ahora tiene que guardar `datos["cumplido"]`
 racha real, solo el resumen en texto libre.
 
 La Vista de resumen (`construir_vista_resumen`) ya NO se le pide al
-modelo que la reproduzca en su mensaje -- la interfaz (`ui/app.py`) y
-las herramientas de terminal (`scripts/chat_terminal.py`,
+modelo que la reproduzca en su mensaje -- la interfaz (`web/`, vía
+`api/main.py`) y las herramientas de terminal (`scripts/chat_terminal.py`,
 `scripts/simular_conversacion.py`) la muestran aparte, como una tarjeta
 fija, llamando a esta misma función directamente. Antes el prompt le
 pedía al modelo "mostrá este resumen tal cual" -- funcionaba, pero

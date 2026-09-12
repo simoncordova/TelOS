@@ -25,6 +25,7 @@ rutear. Los agentes de fase, en paralelo, tienen instrucciones explícitas
 de no narrar el mecanismo (agents/_modelo.py::REGLA_TRANSICION_ES/EN) —
 la persona nunca debería enterarse de que hay más de un agente.
 
+
 Paso 0, antes de la Fase 1: si todavía no se guardó un nombre de pila
 para este usuario_id (tools/perfil.py), la sesión completa arranca
 pidiéndolo -- sin invocar ningún agente de fase todavía, sin costo de
@@ -43,7 +44,7 @@ siguiente por separado, apenas cada uno está listo, en vez de esperar a
 tener los dos para mostrar todo junto de una — con el Sintetizador
 generando más contenido ahora (propósito + explicación + ejemplo por
 candidato), esperar a los dos combinados se sentía como que la app se
-había colgado. Quien llama (`ui/app.py`, `scripts/chat_terminal.py`)
+había colgado. Quien llama (`api/main.py`, `scripts/chat_terminal.py`)
 itera y muestra cada parte a medida que llega. Cada elemento entregado es
 una tupla (fase, texto, opciones): `opciones` es una lista de strings (a
 veces vacía) que un agente de fase puede ofrecer vía la tool

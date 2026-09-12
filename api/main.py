@@ -1,12 +1,12 @@
-"""API HTTP para el frontend Node.js (rama gamificacion) -- capa delgada
-sobre `agents.orquestador.SesionTelos`: NO reimplementa lógica de
-agentes, solo la expone por HTTP/SSE. Ver
+"""API HTTP para el frontend Next.js -- capa delgada sobre
+`agents.orquestador.SesionTelos`: NO reimplementa lógica de agentes,
+solo la expone por HTTP/SSE. Ver
 C:\\Users\\Wendy\\.claude\\plans\\cosmic-zooming-tarjan.md sección A para
 el diseño completo.
 
-Corre desde la raíz del repo (mismo patrón que `streamlit run ui/app.py`
-y scripts/chat_terminal.py -- imports absolutos `agents.*`/`tools.*` sin
-paquete instalado): `uvicorn api.main:app`.
+Corre desde la raíz del repo (mismo patrón que scripts/chat_terminal.py
+-- imports absolutos `agents.*`/`tools.*` sin paquete instalado):
+`uvicorn api.main:app`.
 """
 
 import os
@@ -39,9 +39,9 @@ from ui import auth as cognito
 
 app = FastAPI(title="Telos API")
 
-# Una sesión en memoria de proceso por (usuario_id, idioma), igual patrón
-# que `clave_sesion` en ui/app.py -- SesionTelos ya está diseñada para
-# poder recrearse sin perder contexto (relee ficha/turnos guardados), así
+# Una sesión en memoria de proceso por (usuario_id, idioma) --
+# SesionTelos ya está diseñada para poder recrearse sin perder contexto
+# (relee ficha/turnos guardados), así
 # que este cache es solo una optimización de latencia, no una fuente de
 # verdad. Un Lock por clave serializa turnos concurrentes del mismo
 # usuario: el Agent de Strands no es seguro para invocación concurrente.

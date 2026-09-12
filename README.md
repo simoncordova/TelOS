@@ -59,25 +59,27 @@ tocar los agentes — ver [Persistencia](#persistencia) abajo.
 ```
 /agents/     agentes de Strands, uno por archivo (+ _modelo.py compartido)
 /tools/      tools de los agentes: ficha, crisis, calendario, push
-/ui/         interfaz Streamlit (100% Python) -- rama main, fallback estable
-/api/        backend FastAPI (rama gamificacion) -- expone agents/tools por SSE
-/web/        frontend Next.js/TypeScript (rama gamificacion)
+/api/        backend FastAPI -- expone agents/tools por SSE
+/ui/auth.py  login de Cognito, compartido por api/ (ver Autenticación abajo)
+/web/        frontend Next.js/TypeScript
 /infra/      stack de AWS CDK (Python)
 /docs/       spec de arquitectura de agentes
 ```
 
-`ui/` (Streamlit) y `api/`+`web/` (Next.js) conviven en la rama
-`gamificacion`: el segundo par existe porque Streamlit no puede
-registrar un Service Worker, necesario para notificaciones push reales
-de navegador — ver [Despliegue del frontend Next.js y push real](#despliegue-del-frontend-nextjs-y-push-real-rama-gamificacion)
-más abajo. Ambos consumen exactamente el mismo `agents/`+`tools/`, sin
-duplicar lógica de agentes.
+El frontend original era Streamlit (100% Python, en `ui/`); se migró a
+Next.js + FastAPI porque Streamlit no puede registrar un Service Worker,
+necesario para notificaciones push reales de navegador — ver
+[Despliegue](#despliegue) más abajo. `api/` consume exactamente el mismo
+`agents/`+`tools/` que usaba Streamlit, sin duplicar lógica de agentes;
+`ui/auth.py` (login de Cognito) sobrevivió la migración tal cual, es el
+único archivo que queda de esa interfaz.
 
 ## Correr localmente
 
-Requiere Python 3.12+ y credenciales de AWS con acceso a Bedrock
-(`aws configure` o variables de entorno estándar). Si preferís no generar
-keys locales, saltate esta sección y probá directo desde CloudShell — ver
+Requiere Python 3.12+, Node 20+, y credenciales de AWS con acceso a
+Bedrock (`aws configure` o variables de entorno estándar). Si preferís
+no generar keys locales, saltate esta sección y probá directo desde
+CloudShell — ver
 [Probar contra Bedrock real desde CloudShell](#probar-contra-bedrock-real-desde-cloudshell)
 más abajo, que usa las credenciales temporales de la sesión del console.
 
@@ -85,14 +87,23 @@ más abajo, que usa las credenciales temporales de la sesión del console.
 python -m venv .venv
 .venv/Scripts/activate   # Windows; en Linux/Mac: source .venv/bin/activate
 pip install -r requirements.txt
-TELOS_REQUIRE_LOGIN=0 streamlit run ui/app.py
+TELOS_REQUIRE_LOGIN=0 uvicorn api.main:app --reload --port 8000
 ```
 
-Por defecto usa el backend JSON local para la ficha
-(`data/fichas.json`, gitignored) — no hace falta AgentCore Memory para
-probar el flujo de las 4 fases. `TELOS_REQUIRE_LOGIN=0` salta el login
-(que necesita Cognito desplegado, ver [Autenticación](#autenticación))
-y vuelve a mostrar el campo de identificador libre.
+En otra terminal:
+
+```bash
+cd web
+npm install
+API_INTERNAL_URL=http://127.0.0.1:8000 npm run dev
+```
+
+Abrí `http://localhost:3000`. Por defecto usa el backend JSON local
+para la ficha (`data/fichas.json`, gitignored) — no hace falta
+AgentCore Memory para probar el flujo de las 4 fases.
+`TELOS_REQUIRE_LOGIN=0` salta el login (que necesita Cognito
+desplegado, ver [Autenticación](#autenticación)) y usa un identificador
+de prueba fijo (`prueba-local`).
 
 ### Variables de entorno
 
@@ -103,7 +114,7 @@ y vuelve a mostrar el campo de identificador libre.
 | `TELOS_FICHA_BACKEND` | `local` | `local` (JSON) o `agentcore` (AgentCore Memory real) |
 | `TELOS_MEMORY_NAME` | `telos_fichas_usuario` | Nombre del recurso de AgentCore Memory (solo si `TELOS_FICHA_BACKEND=agentcore`) |
 | `TELOS_REQUIRE_LOGIN` | `1` | `0` para saltar el login en local |
-| `COGNITO_DOMAIN`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_CLIENT_SECRET`, `APP_URL` | — | Los inyecta `cdk deploy` en el `docker run` del user data de la instancia EC2; solo hace falta exportarlos a mano si corrés el login localmente |
+| `COGNITO_DOMAIN`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_CLIENT_SECRET`, `APP_URL`, `LOGOUT_REDIRECT_URL` | — | Los inyecta `cdk deploy` en el `docker run` del user data de la instancia EC2; solo hace falta exportarlos a mano si corrés el login localmente |
 
 ## Probar contra Bedrock real desde CloudShell
 
@@ -245,90 +256,30 @@ primera vez que se guarda o lee una ficha (por eso el primer mensaje que
 alguien mande en producción puede tardar hasta ~1 minuto más de lo
 normal — está creando la Memory, no es un cuelgue).
 
-**Hosting de la UI: EC2 detrás de CloudFront, no App Runner.** La
-primera versión de este stack usaba App Runner, pero AWS lo bloqueó en
-una cuenta real con más de un mes de antigüedad ("The AWS Access Key Id
-needs a subscription for the service") por seguir consumiendo créditos
-de Free Tier sin un método de pago verificado — App Runner no tiene
-nivel gratuito. EC2 (`t3.micro`) sí es Free Tier real y no pegó contra
-ese bloqueo. CloudFront va adelante para dar el HTTPS automático
-(dominio `*.cloudfront.net`) que perdíamos al bajar a EC2 pelado —
-Cognito exige HTTPS en las callback URLs salvo para `localhost`, así que
-esto no es opcional. Si tu cuenta ya tiene App Runner habilitado, no
-hace falta este rodeo, pero el stack no lo vuelve a intentar por
-default.
+**Hosting: EC2 detrás de CloudFront, no App Runner.** La primera versión
+de este stack usaba App Runner, pero AWS lo bloqueó en una cuenta real
+con más de un mes de antigüedad ("The AWS Access Key Id needs a
+subscription for the service") por seguir consumiendo créditos de Free
+Tier sin un método de pago verificado — App Runner no tiene nivel
+gratuito. EC2 (`t3.micro`) sí es Free Tier real y no pegó contra ese
+bloqueo. CloudFront va adelante para dar el HTTPS automático (dominio
+`*.cloudfront.net`) que perdíamos al bajar a EC2 pelado — Cognito exige
+HTTPS en las callback URLs salvo para `localhost`, así que esto no es
+opcional. Si tu cuenta ya tiene App Runner habilitado, no hace falta
+este rodeo, pero el stack no lo vuelve a intentar por default.
 
-### Paso 1 — CDK, primera pasada
-
-```bash
-git clone https://github.com/simoncordova/TelOS.git   # si no lo hiciste ya
-cd TelOS/infra
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-npx aws-cdk bootstrap   # solo la primera vez en la cuenta/región
-npx aws-cdk deploy --parameters EmailAlertaPresupuesto=<tu-email>
-```
-
-`EmailAlertaPresupuesto` es obligatorio (sin default a propósito, ver
-[Protecciones de costo](#protecciones-de-costo)) — ahí llega la alarma
-de AWS Budgets. Esta primera pasada crea todo (IAM, Cognito, ECR, VPC,
-EC2, CloudFront, Budget) pero el callback de Cognito todavía apunta a un
-placeholder, porque la URL real de CloudFront recién se conoce después
-de crearla. Guarda los outputs `UrlServicioUI` y `UserPoolId` para los
-pasos siguientes.
-
-CloudFront tarda varios minutos en propagarse después del deploy (a
-veces 10-15) — si al entrar a `UrlServicioUI` da error al toque, espera
-un rato antes de asumir que algo salió mal. Si el chat nunca arranca
-después de eso, `IdInstanciaUI` (otro output) sirve para entrar a la
-instancia sin SSH: `aws ssm start-session --target <IdInstanciaUI>` y
-revisar `docker ps` / `docker logs <container>` ahí adentro — el user
-data corre `dnf`, `docker login` y `docker run` en la primera
-inicialización, y si algo de eso falla en silencio, es el lugar donde
-mirar.
-
-### Paso 2 — CDK, segunda pasada (con la URL real)
-
-```bash
-npx aws-cdk deploy --parameters AppUrl=<el UrlServicioUI del paso anterior>
-```
-
-### Paso 3 — Crear los usuarios de prueba
-
-Sin registro público, así que los usuarios se crean a mano con
-`aws cognito-idp admin-create-user` contra el `UserPoolId` del Paso 1
-(credenciales de sesión de CloudShell, sin generar ninguna key nueva).
-Repetí para cada usuario de prueba que necesites; cada persona, al
-loguearse por primera vez con la contraseña temporal, Cognito le va a
-pedir que la cambie por una definitiva.
-
-### Paso 4 — Abrir la app
-
-Entrá a `UrlServicioUI`, iniciá sesión con uno de los usuarios de
-prueba, y recorré las 4 fases. El rol IAM (`ArnRolAgentes`) ya tiene
-todos los permisos que necesita (Bedrock + AgentCore Memory) — no hace
-falta nada más para que la app funcione de punta a punta.
-
-## Despliegue del frontend Next.js y push real (rama gamificacion)
-
-Aditivo sobre lo de arriba: crea `InstanciaWeb` + `DistribucionWeb`
-propias, nunca toca `InstanciaUI`/`DistribucionUI` (Streamlit sigue
-funcionando igual, sin importar si hacés esto o no). Login con Cognito
-real, mismo `UserPoolTelos` que ya usa Streamlit — el App Client agrega
-las URLs de la API (`callback_urls`/`logout_urls`) de forma aditiva, sin
-sacar las de Streamlit. Usá los mismos usuarios de prueba del
-[Paso 3](#paso-3--crear-los-usuarios-de-prueba) — no hace falta crear
-otros distintos.
-
-### Paso 5 — Generar las claves VAPID y un secreto para el scheduler
+### Paso 1 — Generar las claves VAPID y un secreto para el scheduler
 
 Necesario para que el push real funcione; sin esto, `/api/push/config`
 devuelve `configurado: false` y la sección de notificaciones no aparece
 (no rompe nada, solo queda inactiva).
 
 ```bash
+git clone https://github.com/simoncordova/TelOS.git   # si no lo hiciste ya
 cd TelOS
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 pip install pywebpush   # trae py-vapid/cryptography, no está en requirements.txt de la raíz
 python scripts/generar_claves_vapid.py
 ```
@@ -338,37 +289,69 @@ Guardá las tres líneas que imprime (`VapidPublicKey`, `VapidPrivateKey`,
 secreto para `PushSchedulerSecret` (por ejemplo `openssl rand -hex 32`
 o `python -c "import secrets; print(secrets.token_hex(32))"`).
 
-### Paso 6 — CDK, primera pasada del frontend
+### Paso 2 — CDK, primera pasada
 
 ```bash
 cd infra
-npx aws-cdk deploy --parameters VapidPublicKey=<la del paso anterior> \
+pip install -r requirements.txt
+npx aws-cdk bootstrap   # solo la primera vez en la cuenta/región
+npx aws-cdk deploy --parameters EmailAlertaPresupuesto=<tu-email> \
+  --parameters VapidPublicKey=<la del paso anterior> \
   --parameters VapidPrivateKey=<la del paso anterior> \
   --parameters VapidSubject=<mailto:tu-email@ejemplo.com> \
   --parameters PushSchedulerSecret=<el secreto que generaste>
 ```
 
-Guardá el output `UrlServicioWeb`. Igual que con `AppUrl` en el Paso 1
-de Streamlit, esta primera pasada no conoce todavía la URL real.
+`EmailAlertaPresupuesto` es obligatorio (sin default a propósito, ver
+[Protecciones de costo](#protecciones-de-costo)) — ahí llega la alarma
+de AWS Budgets. Esta primera pasada crea todo (IAM, Cognito, ECR, VPC,
+EC2, CloudFront, Budget, Guardrail) pero el callback de Cognito todavía
+apunta a un placeholder, porque la URL real de CloudFront recién se
+conoce después de crearla. Guardá los outputs `UrlServicioWeb` y
+`UserPoolId` para los pasos siguientes.
 
-### Paso 7 — CDK, segunda pasada (con la URL real)
+CloudFront tarda varios minutos en propagarse después del deploy (a
+veces 10-15) — si al entrar a `UrlServicioWeb` da error al toque, esperá
+un rato antes de asumir que algo salió mal. Si la app nunca arranca
+después de eso, `IdInstanciaWeb` (otro output) sirve para entrar a la
+instancia sin SSH: `aws ssm start-session --target <IdInstanciaWeb>` y
+revisar `docker ps` / `docker logs <container>` ahí adentro — el user
+data corre `dnf`, `docker login` y `docker run` en la primera
+inicialización, y si algo de eso falla en silencio, es el lugar donde
+mirar.
+
+### Paso 3 — CDK, segunda pasada (con la URL real)
 
 ```bash
 npx aws-cdk deploy --parameters WebUrl=<el UrlServicioWeb del paso anterior>
 ```
 
-Igual que el Paso 2 de Streamlit: solo hace falta pasar el parámetro que
-cambió (`WebUrl`), CDK conserva los valores de VAPID/secreto que ya
-quedaron seteados en el Paso 6. Mismo tiempo de propagación de
-CloudFront que en el Paso 1 de Streamlit (a veces 10-15 minutos).
+Solo hace falta pasar el parámetro que cambió (`WebUrl`) — CDK conserva
+los valores de VAPID/secreto que ya quedaron seteados en el Paso 2.
 
-### Paso 8 — Verificar
+### Paso 4 — Crear los usuarios de prueba
+
+Sin registro público, así que los usuarios se crean a mano con
+`aws cognito-idp admin-create-user` contra el `UserPoolId` del Paso 2
+(credenciales de sesión de CloudShell, sin generar ninguna key nueva).
+Repetí para cada usuario de prueba que necesites; cada persona, al
+loguearse por primera vez con la contraseña temporal, Cognito le va a
+pedir que la cambie por una definitiva.
+
+### Paso 5 — Verificar
 
 - `https://<UrlServicioWeb>/api/salud` → `{"estado": "ok"}`.
-- Entrar a `UrlServicioWeb` — te pide login real de Cognito (mismos
-  usuarios del [Paso 3](#paso-3--crear-los-usuarios-de-prueba)). Probá
-  también cerrar sesión: tiene que volver limpio a `UrlServicioWeb`, no
-  mostrar un error.
+- Entrá a `UrlServicioWeb` — te pide login real de Cognito (usuarios del
+  [Paso 4](#paso-4--crear-los-usuarios-de-prueba)). Probá también cerrar
+  sesión: tiene que volver limpio a `UrlServicioWeb`, no mostrar un
+  error.
+- Recorré las 4 fases — el rol IAM (`ArnRolAgentes`) ya tiene todos los
+  permisos que necesita (Bedrock + AgentCore Memory + el Guardrail), no
+  hace falta nada más para que la app funcione de punta a punta.
+- Un pedido claramente fuera de tema ("ayudame con este código Python")
+  debería devolver el mensaje fijo del Guardrail ("prefiero seguir
+  enfocado en tu propósito"), no una respuesta del modelo — ver
+  [docs/agente-proposito-de-vida-prompts.md sección 10.1](docs/agente-proposito-de-vida-prompts.md).
 - Con las claves VAPID configuradas, la barra lateral muestra
   "Notifications" → "Enable notifications" → aceptar el permiso del
   navegador → "Send a test one" manda una notificación real.
@@ -376,15 +359,13 @@ CloudFront que en el Paso 1 de Streamlit (a veces 10-15 minutos).
   (`rate(1 day)`) — cualquier persona que se suscriba a partir de este
   deploy va a recibir un recordatorio real una vez por día, no hace
   falta ningún paso extra para activarlo.
-- `IdInstanciaWeb` (output) sirve igual que `IdInstanciaUI` para entrar
-  por SSM y mirar `docker ps`/`docker logs` si algo no levanta.
 
 ### (Opcional, no bloquea nada) — AgentCore Runtime real
 
 Bonus de puntaje ("Technical Implementation" del reglamento del
 hackathon), no un requisito: hospedar el código de agentes en AgentCore
-Runtime en vez de correrlo en el mismo contenedor de la UI. Reutiliza el rol de
-`ArnRolAgentes` como execution role:
+Runtime en vez de correrlo en el mismo contenedor de la API. Reutiliza
+el rol de `ArnRolAgentes` como execution role:
 
 ```bash
 agentcore configure
@@ -399,57 +380,48 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
   y corrigió un bug real de serialización del blob, ver
   [Persistencia](#persistencia)); el historial de turnos
   (`tools/conversacion_agentcore.py`) todavía no se probó de punta a punta.
-- Login con Cognito probado contra un despliegue real.
+- Login real con Cognito, el Guardrail de Bedrock
+  (`infra/stacks/telos_stack.py::GuardrailTelos` — denied topics +
+  filtros de contenido, ver
+  [docs/agente-proposito-de-vida-prompts.md sección 10.1](docs/agente-proposito-de-vida-prompts.md))
+  y la migración del frontend a Next.js/FastAPI todavía no se probaron
+  contra un deploy real (verificados con `cdk synth` + inspección manual
+  del JSON generado + pytest + e2e de Playwright local, no con un
+  `cdk deploy` real) — es lo próximo a correr.
 - `COGNITO_CLIENT_SECRET` viaja como variable de entorno en texto plano
   dentro del contenedor Docker (embebido en el user data de la instancia
   EC2, no Secrets Manager) — aceptable para el MVP, no queda expuesto
   fuera de la cuenta de AWS, pero es lo primero a endurecer si esto pasa
   de demo a algo real.
-- Security group de la instancia EC2 abierto a cualquier IP en el puerto
-  8501, no delimitado al rango de CloudFront (ver
+- Security group de la instancia EC2 abierto a cualquier IP en los
+  puertos 8000/3000, no delimitado al rango de CloudFront (ver
   [Protecciones de costo](#protecciones-de-costo)) — el login de Cognito
   sigue aplicando igual, pero es una mejora obvia si sobra tiempo.
-- `crear_evento_calendario` está mockeado — devuelve una confirmación
-  simulada, no crea eventos reales en Google Calendar.
-- El seguimiento (Fase 5) se dispara "al abrir conversación"; el
-  recordatorio proactivo *fuera* de la app (rama `gamificacion`, ver
-  [Despliegue del frontend Next.js y push real](#despliegue-del-frontend-nextjs-y-push-real-rama-gamificacion))
-  es un push del sistema operativo, no el chat en sí reabriéndose solo.
-- El paso opcional de AgentCore Runtime (`agentcore configure`/`launch`)
-  no se ha ejercitado todavía — no bloquea el despliegue principal, es
-  bonus de puntaje.
-
-**Rama `gamificacion` específicamente** (frontend Next.js/API/push):
-
-- El Guardrail de Bedrock (`infra/stacks/telos_stack.py::GuardrailTelos`
-  — denied topics + filtros de contenido, ver
-  [docs/agente-proposito-de-vida-prompts.md sección 10.1](docs/agente-proposito-de-vida-prompts.md))
-  se crea solo en el próximo `cdk deploy`, no necesita ningún parámetro
-  ni paso extra — pero todavía no se probó contra la cuenta real
-  (verificado con `cdk synth` + inspección manual del JSON generado, no
-  con un deploy real). Probar después de desplegar: un pedido claramente
-  fuera de tema ("ayudame con este código Python") debería devolver el
-  mensaje fijo de "prefiero seguir enfocado en tu propósito", no una
-  respuesta del modelo.
 - Rate limiting de las rutas de conversación (`tools/limite_uso.py`,
   100 invocaciones/día) está atado al `usuario_id` autenticado — con
-  Cognito real ya activo esto vuelve a ser efectivo (antes, en modo
-  bypass, cualquiera podía rotar un header y esquivarlo). No hay
-  todavía ninguna protección adicional por IP (sin AWS WAF delante de
-  `DistribucionWeb`) — el único backstop es la alarma de AWS Budgets,
-  que avisa después del gasto, no lo previene.
-- Los `Dockerfile` de `api/`/`web/` se construyeron por primera vez
-  recién en el primer deploy real (Paso 6) — antes de eso solo se habían
-  revisado a mano, sin Docker disponible en el entorno donde se
-  escribió el código.
+  Cognito real, esto es efectivo. No hay ninguna protección adicional
+  por IP (sin AWS WAF delante de `DistribucionWeb`) — el único backstop
+  es la alarma de AWS Budgets, que avisa después del gasto, no lo
+  previene.
+- Los `Dockerfile` de `api/`/`web/` todavía no se construyeron contra la
+  cuenta real (revisados a mano únicamente hasta ahora).
 - e2e con Playwright (`web/e2e/`) cubre lo que no necesita Bedrock real
   (pedir el nombre, manejo de errores, idioma, PWA) — con credenciales
   de Bedrock reales, faltan specs que completen una fase entera de
   punta a punta.
 - El idioma de cada persona no se persiste en ningún lado (es estado
-  efímero del navegador) — los recordatorios push automáticos (Fase 4)
-  salen siempre en inglés, sin importar el idioma que la persona haya
-  usado en el chat.
+  efímero del navegador) — los recordatorios push automáticos salen
+  siempre en inglés, sin importar el idioma que la persona haya usado
+  en el chat.
+- `crear_evento_calendario` está mockeado — devuelve una confirmación
+  simulada, no crea eventos reales en Google Calendar.
+- El seguimiento (Fase 5) se dispara "al abrir conversación"; el
+  recordatorio proactivo *fuera* de la app es un push real del sistema
+  operativo (ver [Despliegue](#despliegue)), no el chat en sí
+  reabriéndose solo.
+- El paso opcional de AgentCore Runtime (`agentcore configure`/`launch`)
+  no se ha ejercitado todavía — no bloquea el despliegue principal, es
+  bonus de puntaje.
 
 ## Licencia
 

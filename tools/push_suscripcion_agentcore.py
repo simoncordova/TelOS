@@ -34,11 +34,19 @@ _NOMBRE_MEMORIA = os.environ.get("TELOS_MEMORY_NAME", "telos_fichas_usuario")
 _REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
 
 # Hilo fijo, no derivado de ningún usuario_id -- ver docstring del
-# módulo. "_registro" no es un email real, así que no puede chocar con
-# un actor_id de verdad (ver tools/_agentcore_ids.py::id_seguro, que
-# nunca produce nombres con guion bajo al inicio de esta forma exacta
-# para una entrada no vacía).
-_ACTOR_REGISTRO = "_registro_push"
+# módulo. "registro_push" no es un email real, así que no puede chocar
+# con un actor_id de verdad (ver tools/_agentcore_ids.py::id_seguro, que
+# nunca produce este string exacto para una entrada no vacía).
+#
+# OJO: NO empezar este id con "_" -- AgentCore Memory exige que actorId
+# empiece con un caracter alfanumérico (regex real:
+# ^[a-zA-Z0-9][a-zA-Z0-9-_/]*...$, ver tools/_agentcore_ids.py). La
+# primera versión de esta constante era "_registro_push" y nunca
+# funcionó contra una cuenta real -- ValidationException real en
+# producción ("Value at 'actorId' failed to satisfy constraint..."),
+# encontrado recién ahora porque este módulo nunca se había probado
+# contra AWS de verdad hasta este deploy.
+_ACTOR_REGISTRO = "registro_push"
 _SESSION_REGISTRO = "push_suscripciones"
 
 _cliente: MemoryClient | None = None

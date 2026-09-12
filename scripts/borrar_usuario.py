@@ -1,6 +1,7 @@
 """Borra TODOS los datos de un usuario_id -- ficha (todas las versiones),
-turnos de conversación (las 5 fases), nombre de perfil e insights de
-contexto acumulados por el orquestador (tools/contexto_usuario.py).
+turnos de conversación (las 5 fases), nombre de perfil, insights de
+contexto acumulados por el orquestador (tools/contexto_usuario.py) y
+progreso de ejes del Explorador en curso (tools/progreso_exploracion.py).
 Pensado para
 resetear cuentas de prueba contaminadas por rondas de testing viejas
 (varios bugs reales de esta semana quedaron mezclados con conversación
@@ -33,6 +34,7 @@ from tools.contexto_usuario import borrar_insights  # noqa: E402
 from tools.conversacion import borrar_turnos_usuario  # noqa: E402
 from tools.ficha import borrar_ficha_usuario, leer_ficha_usuario  # noqa: E402
 from tools.perfil import borrar_nombre_usuario, leer_nombre_usuario  # noqa: E402
+from tools.progreso_exploracion import borrar_progreso_exploracion  # noqa: E402
 
 
 def main() -> None:
@@ -60,6 +62,7 @@ def main() -> None:
     borrar_turnos_usuario(usuario_id)
     borrar_nombre_usuario(usuario_id)
     borrar_insights(usuario_id)
+    borrar_progreso_exploracion(usuario_id)
     print(f"Listo. '{usuario_id}' quedó como una cuenta nueva.")
 
 

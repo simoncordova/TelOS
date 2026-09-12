@@ -63,6 +63,7 @@ from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_event
 from tools.ficha import leer_ficha_usuario
 from tools.limite_uso import excedio_limite_diario, mensaje_limite_alcanzado, registrar_invocacion
 from tools.perfil import guardar_nombre_usuario, leer_nombre_usuario
+from tools.progreso_exploracion import borrar_progreso_exploracion, guardar_progreso_exploracion, leer_progreso_exploracion
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,9 @@ class InformeAlOrquestador(BaseModel):
     texto_para_persona: str
     cerrado: bool
     dato_nuevo: str | None = None
+    # Solo lo llena el Explorador (ver agents/explorador.py) -- el resto
+    # de las fases no reportan esto, queda None y no se usa.
+    ejes_cubiertos: dict[str, str] | None = None
 
 # El mismo bug de "dijo que guardó pero no llamó a la tool" apareció
 # primero en el Explorador y después en el Sintetizador -- por eso ahora
@@ -415,6 +419,10 @@ class SesionTelos:
         contenedor_guardado: list = []
         contenedor_informe: list = []
         turnos = leer_turnos(self.usuario_id, fase)
+        # Solo el Explorador (fase 1) acepta este kwarg -- ver
+        # agents/explorador.py y tools/progreso_exploracion.py. Las otras
+        # 4 fases no lo declaran en su firma, por eso va condicional.
+        kwargs_extra = {"ejes_cubiertos_previos": leer_progreso_exploracion(self.usuario_id)} if fase == 1 else {}
         agente = _FABRICAS_POR_FASE[fase](
             self.usuario_id,
             self.idioma,
@@ -424,6 +432,7 @@ class SesionTelos:
             contenedor_guardado=contenedor_guardado,
             contenedor_informe=contenedor_informe,
             turn_id=turn_id,
+            **kwargs_extra,
         )
         agente(texto)
         registrar_invocacion(self.usuario_id)
@@ -460,6 +469,10 @@ class SesionTelos:
         dato_nuevo = informe.get("dato_nuevo")
         if dato_nuevo:
             agregar_insight(self.usuario_id, dato_nuevo)
+        if fase == 1:
+            ejes_cubiertos = informe.get("ejes_cubiertos")
+            if ejes_cubiertos:
+                guardar_progreso_exploracion(self.usuario_id, ejes_cubiertos)
         return (informe.get("texto") or "").strip(), bool(informe.get("cerrado"))
 
     def _verificar_y_reforzar(
@@ -659,11 +672,12 @@ class SesionTelos:
         return ficha
 
     def _avanzar_fase_si_corresponde(self, fase_que_respondio: int, total_versiones_antes: int) -> None:
-        """`fase_que_respondio` es la fase que el orquestador agéntico
-        realmente invocó este turno (no necesariamente `self.fase_actual`
-        de antes del turno -- en el caso normal coinciden, ver
-        agents/orquestador_agente.py, pero el avance se calcula sobre lo
-        que de verdad pasó, no sobre lo que se esperaba que pasara)."""
+        """`fase_que_respondio` es la fase que efectivamente generó la
+        respuesta de este turno (siempre `self.fase_actual` de antes del
+        turno, ver `_invocar_una_vez` -- ya no hay ningún router agéntico
+        que pudiera invocar una fase distinta a la esperada, pero el
+        avance se sigue calculando sobre lo que de verdad se guardó, no
+        sobre lo que se esperaba)."""
         ficha = self._leer_ficha_con_reintento(total_versiones_antes)
         if not ficha["existe"]:
             return
@@ -676,6 +690,11 @@ class SesionTelos:
         if actual["fase"] != fase_que_respondio:
             return  # la versión nueva no corresponde a la fase que respondió
 
+        if fase_que_respondio == 1:
+            # La Fase 1 realmente cerró -- el progreso de ejes ya cumplió
+            # su función (ver tools/progreso_exploracion.py), no hace
+            # falta conservarlo.
+            borrar_progreso_exploracion(self.usuario_id)
         if fase_que_respondio in (1, 2, 3):
             self.fase_actual = fase_que_respondio + 1
         elif fase_que_respondio == 4:

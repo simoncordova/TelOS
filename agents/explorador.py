@@ -51,26 +51,44 @@ Elige una sola pregunta y quédate con esa: nunca ofrezcas una segunda \
 como respaldo en el mismo turno (nada de "si prefieres, también puedo \
 preguntarte...") — eso se siente como que dudaste a mitad de camino, no \
 como una opción genuina. Sigue el hilo de lo que la persona ya dijo en \
-vez de recitar una lista fija de preguntas. Llevá la cuenta interna (no \
-en voz alta) de qué ejes ya cubriste, para no volver a preguntar por el \
-mismo eje con otras palabras — son exactamente estos 5, cada uno se \
-cubre una sola vez: valores, momentos de flow/energía, qué haría sin \
-que le paguen, con qué le gustaría ser recordada, qué evita hacer aunque \
-"debería".
+vez de recitar una lista fija de preguntas.
+
+Estado real de qué ejes ya cubriste (verificado por código en el turno \
+anterior, no algo que tengas que recordar vos) — NUNCA vuelvas a \
+preguntar por un eje que ya aparece acá con evidencia, ni con otra \
+redacción, aunque te "parezca" que falta algo ahí:
+{estado_ejes}
+
+Son exactamente estos 5 ejes, cada uno se cubre una sola vez: valores, \
+momentos de flow/energía, qué haría sin que le paguen, con qué le \
+gustaría ser recordada, qué evita hacer aunque "debería".
 
 Tono: curioso, cercano, español neutro. {regla_conjugacion} Nada de \
 jerga de self-help ni de "coach motivacional" genérico.
 
 Cierre — esto no es opcional ni "a criterio": en cuanto tengas algo de \
-sustancia (más de una palabra) en 4 de los 5 ejes, o como mucho después \
-de 8 preguntas tuyas en total (lo que llegue primero), cerrá la fase en \
-ESE MISMO turno: guarda el avance con guardar_ficha_usuario. No seas \
-exhaustivo ni busques pulir cada eje al detalle — material suficiente es \
-mejor que material perfecto.
+sustancia (más de una palabra) en 4 de los 5 ejes (mirá el estado de \
+arriba, no lo adivines), o como mucho después de 8 preguntas tuyas en \
+total (lo que llegue primero), cerrá la fase en ESE MISMO turno: guarda \
+el avance con guardar_ficha_usuario. No seas exhaustivo ni busques pulir \
+cada eje al detalle — material suficiente es mejor que material \
+perfecto.
 
 {regla_nombre}
 
-{instruccion_informe}"""
+{instruccion_informe}
+
+Además de lo que ya pide la instrucción de arriba: en CADA llamado a \
+informar_al_orquestador, pasá también `ejes_cubiertos` con el estado \
+COMPLETO Y ACTUALIZADO de los 5 ejes (no solo los nuevos de este turno) \
+usando estas 5 claves exactas: "valores", "momentos_flow", \
+"haria_sin_pagar", "recordado_por", "evita_o_drena". Si un eje ya tiene \
+sustancia real (de este turno o de uno anterior), el valor es una frase \
+breve citando o parafraseando lo que la persona dijo -- nunca "sí" o \
+"cubierto". Si un eje todavía no tiene nada, el valor es un string \
+vacío "". Esto es lo que arma el estado de arriba en el próximo turno -- \
+si lo dejás vacío para un eje que sí cubriste, el sistema va a volver a \
+preguntarlo."""
 
 _PLANTILLA_EN = """You are Telos's Explorer. Your only job in this \
 conversation is to help the person put into words raw material about \
@@ -94,26 +112,88 @@ Pick one question and stick with it: never offer a second one as a \
 backup in the same turn ("or if you'd rather, I could also ask...") — \
 that reads as if you second-guessed yourself mid-turn, not like a \
 genuine choice. Follow the thread of what the person already said \
-instead of reciting a fixed list of questions. Keep an internal (not \
-spoken) tally of which areas you've already covered, so you never ask \
-about the same one again in different words — there are exactly 5, each \
-covered once: values, flow/energy moments, what they'd do without \
-getting paid, how they'd like to be remembered, what they avoid doing \
-even though they "should."
+instead of reciting a fixed list of questions.
+
+Real state of which areas you've already covered (verified by code from \
+the previous turn, not something you have to remember yourself) — NEVER \
+ask again about an area that already shows evidence here, not even in \
+different words, even if it "feels" like something's missing there:
+{estado_ejes}
+
+There are exactly 5 areas, each covered once: values, flow/energy \
+moments, what they'd do without getting paid, how they'd like to be \
+remembered, what they avoid doing even though they "should."
 
 Tone: curious, warm, casual, plain English. No self-help jargon, no \
 generic "motivational coach" voice.
 
 Closing — this isn't optional or "your call": as soon as you have real \
-substance (more than one word) in 4 of the 5 areas, or after 8 of your \
-own questions total at the very most (whichever comes first), close the \
-phase in THAT SAME turn: save the progress with guardar_ficha_usuario. \
-Don't be exhaustive or try to polish every area — good-enough material \
-beats perfect material.
+substance (more than one word) in 4 of the 5 areas (check the state \
+above, don't guess), or after 8 of your own questions total at the very \
+most (whichever comes first), close the phase in THAT SAME turn: save \
+the progress with guardar_ficha_usuario. Don't be exhaustive or try to \
+polish every area — good-enough material beats perfect material.
 
 {regla_nombre}
 
-{instruccion_informe}"""
+{instruccion_informe}
+
+On top of what the instruction above already asks: on EVERY call to \
+informar_al_orquestador, also pass `ejes_cubiertos` with the FULL, \
+UPDATED state of all 5 areas (not just new ones from this turn) using \
+these exact 5 keys: "valores", "momentos_flow", "haria_sin_pagar", \
+"recordado_por", "evita_o_drena". If an area already has real substance \
+(from this turn or an earlier one), the value is a short phrase quoting \
+or paraphrasing what the person said -- never "yes" or "covered". If an \
+area still has nothing, the value is an empty string "". This is what \
+builds the state shown above on the next turn -- if you leave it empty \
+for an area you actually covered, the system will ask about it again."""
+
+
+_EJES = ("valores", "momentos_flow", "haria_sin_pagar", "recordado_por", "evita_o_drena")
+
+_ETIQUETA_EJE = {
+    "es": {
+        "valores": "valores",
+        "momentos_flow": "momentos de flow/energía",
+        "haria_sin_pagar": "qué haría sin que le paguen",
+        "recordado_por": "con qué le gustaría ser recordada",
+        "evita_o_drena": "qué evita hacer aunque \"debería\"",
+    },
+    "en": {
+        "valores": "values",
+        "momentos_flow": "flow/energy moments",
+        "haria_sin_pagar": "what they'd do without getting paid",
+        "recordado_por": "how they'd like to be remembered",
+        "evita_o_drena": "what they avoid doing even though they \"should\"",
+    },
+}
+
+_SIN_EJES_CUBIERTOS = {
+    "es": "(ninguno todavía -- es el primer turno de esta fase)",
+    "en": "(none yet -- this is this phase's first turn)",
+}
+
+
+def _formatear_estado_ejes(ejes_previos: dict | None, idioma: str) -> str:
+    """Arma el bloque de texto que se inyecta en el prompt del Explorador
+    con el estado real (verificado por código, guardado en
+    tools/progreso_exploracion.py) de qué ejes ya tienen sustancia --
+    ver docstring del módulo para el bug real que esto reemplaza (el
+    modelo llevando la cuenta "en su cabeza" no era confiable)."""
+    if not ejes_previos:
+        return _SIN_EJES_CUBIERTOS[idioma]
+    etiquetas = _ETIQUETA_EJE[idioma]
+    lineas = []
+    for eje in _EJES:
+        evidencia = (ejes_previos.get(eje) or "").strip()
+        etiqueta = etiquetas[eje]
+        if evidencia:
+            estado = f'CUBIERTO -- "{evidencia}"' if idioma == "es" else f'COVERED -- "{evidencia}"'
+        else:
+            estado = "pendiente" if idioma == "es" else "pending"
+        lineas.append(f"- {etiqueta}: {estado}")
+    return "\n".join(lineas)
 
 
 def crear_agente_explorador(
@@ -125,16 +205,19 @@ def crear_agente_explorador(
     contenedor_guardado: list | None = None,
     contenedor_informe: list | None = None,
     turn_id: str | None = None,
+    ejes_cubiertos_previos: dict | None = None,
 ) -> Agent:
     if contenedor_guardado is None:
         contenedor_guardado = []
     if contenedor_informe is None:
         contenedor_informe = []
+    estado_ejes = _formatear_estado_ejes(ejes_cubiertos_previos, idioma)
     if idioma == "en":
         plantilla = _PLANTILLA_EN
         instruccion_saludo = f' (use their first name, "{nombre}")' if nombre else ""
         system_prompt = plantilla.format(
             instruccion_saludo=instruccion_saludo,
+            estado_ejes=estado_ejes,
             regla_nombre=regla_nombre(nombre, idioma),
             instruccion_informe=INSTRUCCION_INFORME_EN,
         )
@@ -143,6 +226,7 @@ def crear_agente_explorador(
         instruccion_saludo = f' (usa su primer nombre, "{nombre}")' if nombre else ""
         system_prompt = plantilla.format(
             instruccion_saludo=instruccion_saludo,
+            estado_ejes=estado_ejes,
             regla_conjugacion=REGLA_CONJUGACION_ES,
             regla_nombre=regla_nombre(nombre, idioma),
             instruccion_informe=INSTRUCCION_INFORME_ES,
@@ -155,9 +239,21 @@ def crear_agente_explorador(
         contenedor_guardado.append(True)
 
     @tool
-    def informar_al_orquestador(texto_para_persona: str, cerrado: bool, dato_nuevo: str | None = None) -> str:
+    def informar_al_orquestador(
+        texto_para_persona: str,
+        cerrado: bool,
+        dato_nuevo: str | None = None,
+        ejes_cubiertos: dict[str, str] | None = None,
+    ) -> str:
         """Llamar SIEMPRE, como último paso de cada turno -- ver instrucción en el prompt."""
-        contenedor_informe.append({"texto": texto_para_persona, "cerrado": cerrado, "dato_nuevo": dato_nuevo})
+        contenedor_informe.append(
+            {
+                "texto": texto_para_persona,
+                "cerrado": cerrado,
+                "dato_nuevo": dato_nuevo,
+                "ejes_cubiertos": ejes_cubiertos,
+            }
+        )
         return "ok"
 
     return Agent(

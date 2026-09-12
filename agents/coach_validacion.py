@@ -7,32 +7,15 @@ futura) y afina la redacción hasta que la persona la sienta propia.
 from strands import Agent, tool
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo_subagente, regla_nombre
+from agents._modelo import (
+    INSTRUCCION_INFORME_ES,
+    INSTRUCCION_INFORME_EN,
+    REGLA_CONJUGACION_ES,
+    crear_modelo_subagente,
+    regla_nombre,
+)
 from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
 from tools.ficha import leer_ficha_usuario as _leer
-
-# Ver agents/sintetizador.py para el porqué (informe estructurado al
-# orquestador en vez de REGLA_TRANSICION_*/REGLA_CIERRE_REAL_* repetidas).
-_INSTRUCCION_INFORME_ES = (
-    "Al final de CADA turno, sin excepción, llamá a la tool "
-    "informar_al_orquestador como último paso: texto_para_persona es lo "
-    "que el orquestador le va a mostrar a la persona tal cual, sin "
-    "resumir ni reescribir -- tiene que ser el mensaje completo que "
-    "querés que vea. cerrado=True solo si en ESTE turno llamaste de "
-    "verdad a guardar_ficha_usuario; si no, cerrado=False. dato_nuevo es "
-    "un hecho puntual que valga la pena recordar en fases futuras (o "
-    "None si no hay nada nuevo)."
-)
-_INSTRUCCION_INFORME_EN = (
-    "At the end of EVERY turn, no exception, call the "
-    "informar_al_orquestador tool as your last step: texto_para_persona "
-    "is what the orchestrator will show the person verbatim, without "
-    "summarizing or rewriting it -- it has to be the full message you "
-    "want them to see. cerrado=True only if you actually called "
-    "guardar_ficha_usuario in THIS turn; otherwise cerrado=False. "
-    "dato_nuevo is one concrete fact worth remembering in future phases "
-    "(or None if there's nothing new)."
-)
 
 _PLANTILLA_ES = """Eres el Coach de Validación de Telos. La persona ya \
 eligió un propósito candidato. Tu trabajo es ponerlo a prueba contra la \
@@ -135,13 +118,13 @@ def crear_agente_coach_validacion(
     if idioma == "en":
         system_prompt = _PLANTILLA_EN.format(
             regla_nombre=regla_nombre(nombre, idioma),
-            instruccion_informe=_INSTRUCCION_INFORME_EN,
+            instruccion_informe=INSTRUCCION_INFORME_EN,
         )
     else:
         system_prompt = _PLANTILLA_ES.format(
             regla_conjugacion=REGLA_CONJUGACION_ES,
             regla_nombre=regla_nombre(nombre, idioma),
-            instruccion_informe=_INSTRUCCION_INFORME_ES,
+            instruccion_informe=INSTRUCCION_INFORME_ES,
         )
 
     @tool

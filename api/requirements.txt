@@ -1,8 +1,9 @@
 # Dependencias de la API (rama gamificacion). Lista explícita en vez de
-# `-r ../requirements.txt` a propósito: ese archivo incluye streamlit,
-# que este contenedor no necesita -- api/ solo importa agents/*, tools/*
-# y ui/auth.py (que tampoco depende de streamlit). Mantener esta lista en
-# sync con la parte no-Streamlit de requirements.txt si esa cambia.
+# `-r ../requirements.txt` -- Streamlit ya se decomisionó de los dos
+# archivos (ver CLAUDE.md), pero se mantiene explícita en vez de heredar
+# por -r para no atarse a lo que requirements.txt necesite en el futuro
+# para otro propósito (ej. scripts/ locales) que este contenedor no use.
+# Mantener esta lista en sync con requirements.txt si esa cambia.
 #
 # Justificación de cada paquete nuevo frente a requirements.txt
 # (CLAUDE.md exige justificar dependencias nuevas):
@@ -14,6 +15,11 @@
 #                es el motivo original de dejar Streamlit (no puede
 #                registrar un Service Worker). Trae py-vapid como
 #                dependencia propia -- no se agrega aparte.
+#   google-api-python-client / google-auth -- ver justificación en
+#                requirements.txt (integración real de Google Calendar,
+#                tools/calendario_agentcore.py). api/main.py expone la
+#                ruta de callback de ese flujo, así que el contenedor de
+#                la API los necesita igual que los de agents/tools.
 strands-agents>=0.1.0
 boto3>=1.34.0
 bedrock-agentcore>=1.0.0
@@ -22,3 +28,5 @@ PyJWT[crypto]>=2.9.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pywebpush>=2.0.0
+google-api-python-client>=2.100.0
+google-auth>=2.30.0

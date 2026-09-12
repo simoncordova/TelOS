@@ -13,7 +13,7 @@ import os
 import threading
 
 from fastapi import Depends, FastAPI, Response
-from fastapi.responses import PlainTextResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
 from agents.orquestador import SesionTelos
 from agents.seguimiento import calcular_racha, construir_vista_resumen
@@ -251,6 +251,33 @@ def enviar_recordatorios() -> dict:
         total_enviados += enviados
         total_invalidas += invalidas
     return {"enviados": total_enviados, "invalidasEliminadas": total_invalidas}
+
+
+# --- Calendario (P2 del plan): callback de OAuth2 de AgentCore Identity
+# para Google Calendar. Ver tools/calendario_agentcore.py para el resto
+# del flujo y el setup externo que necesita. ---
+
+
+@app.get("/api/calendario/oauth2/callback")
+def calendario_oauth2_callback(session_id: str, usuario_id: str = Depends(obtener_usuario_actual)) -> HTMLResponse:
+    """A esta ruta vuelve el navegador de la persona después de aprobar
+    el consentimiento en Google -- Cognito ya la autenticó antes (cookie
+    `samesite=lax`, sobrevive la navegación completa de ida y vuelta a
+    Google), así que `obtener_usuario_actual` alcanza para saber a quién
+    atar esta autorización, sin necesitar un mapeo de sesiones aparte.
+    `session_id` lo agrega AgentCore como query param al redirigir acá
+    -- ver tools.calendario_agentcore.completar_autorizacion para qué
+    hace con los dos."""
+    from tools.calendario_agentcore import completar_autorizacion
+
+    try:
+        completar_autorizacion(session_id, usuario_id)
+    except Exception as e:  # noqa: BLE001 -- cualquier falla acá se le muestra a la persona, no un 500 pelado
+        return HTMLResponse(f"<p>No se pudo completar la autorización: {e}</p>", status_code=400)
+    return HTMLResponse(
+        "<p>Listo, tu Google Calendar quedó conectado. Podés cerrar esta pestaña "
+        "y volver a la conversación.</p>"
+    )
 
 
 def _enviar_a_suscripciones(usuario_id: str, suscripciones: list[dict], mensaje: dict) -> tuple[int, int]:

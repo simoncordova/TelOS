@@ -3,3 +3,11 @@ boto3>=1.34.0
 bedrock-agentcore>=1.0.0
 requests>=2.31.0
 PyJWT[crypto]>=2.9.0
+# google-api-python-client / google-auth -- tools/calendario_agentcore.py
+# (integración real con Google Calendar vía AgentCore Identity). No hay
+# forma de llamar a la API de Calendar sin el cliente oficial de Google;
+# AgentCore Identity resuelve el token OAuth, no la llamada HTTP en sí.
+# google-auth-oauthlib NO se agrega -- eso es para correr el flujo de
+# consentimiento uno mismo, que acá lo maneja AgentCore Identity.
+google-api-python-client>=2.100.0
+google-auth>=2.30.0

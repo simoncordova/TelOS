@@ -1,29 +1,28 @@
-"""crear_evento_calendario — P2 según PLAN.md.
+"""Selector de backend de calendario. Los agentes siempre importan
+`crear_evento_calendario` desde este módulo, nunca directamente desde
+calendario_local o calendario_agentcore -- mismo patrón que
+tools/ficha.py.
 
-Mock por defecto: devuelve una confirmación fija sin llamar a ninguna API
-externa. Cuando se implemente la integración real vía AgentCore Gateway
-(Google Calendar), solo cambia el cuerpo de esta función — el prompt del
-Agente 4 y su firma no cambian.
+Variable de entorno PROPIA (TELOS_CALENDARIO_BACKEND), a propósito
+distinta de TELOS_FICHA_BACKEND que usa el resto de los tools: esta
+integración depende de setup externo (Google Cloud Console + un
+credential provider de AgentCore Identity, ver
+tools/calendario_agentcore.py) que puede no estar listo todavía aunque
+el resto del proyecto ya esté corriendo contra AgentCore Memory real --
+desacoplar los dos flags evita que activar la persistencia real fuerce
+también esta integración, todavía no validada contra un consentimiento
+real de Google.
+
+TELOS_CALENDARIO_BACKEND=local (default) usa la confirmación simulada.
+TELOS_CALENDARIO_BACKEND=agentcore usa Google Calendar real vía
+AgentCore Identity.
 """
 
+import os
 
-def crear_evento_calendario(usuario_id: str, detalle: dict) -> dict:
-    """Registra (mock) el evento recurrente del sistema de 4 preguntas.
+if os.environ.get("TELOS_CALENDARIO_BACKEND", "local") == "agentcore":
+    from tools.calendario_agentcore import crear_evento_calendario
+else:
+    from tools.calendario_local import crear_evento_calendario
 
-    Args:
-        usuario_id: identificador del usuario.
-        detalle: dict con al menos "accion", "cuando" (día/hora recurrente).
-
-    Returns:
-        {"confirmado": bool, "mensaje": str}
-    """
-    accion = detalle.get("accion", "tu sistema")
-    cuando = detalle.get("cuando", "el horario que definiste")
-    return {
-        "confirmado": True,
-        "mensaje": (
-            f"Listo, quedó anotado: \"{accion}\" — {cuando}. "
-            "(Integración de calendario real pendiente; por ahora es una "
-            "confirmación simulada.)"
-        ),
-    }
+__all__ = ["crear_evento_calendario"]

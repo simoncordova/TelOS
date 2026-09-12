@@ -102,103 +102,75 @@ REGLA_CONJUGACION_ES = (
     'así que evita esas conjugaciones aunque nunca escribas el pronombre.'
 )
 
-# Compartida por los 5 prompts (ES y EN): la app ya encadena el cierre de
-# una fase con la apertura de la siguiente en el mismo turno (ver
-# agents/orquestador.py) -- si el agente encima ANUNCIA el mecanismo
-# ("te voy a pasar con el siguiente agente", "ahora te recibe el
-# Validador", "cambio de rol"), la persona ve la costura interna del
-# sistema en vez de vivirlo como una sola conversación. La transición
-# tiene que sentirse invisible: cerrar con calidez y, si corresponde,
-# seguir de largo -- nunca nombrar "agente", "fase" ni "otro sistema".
+# Compartida por los 5 prompts de fase (ES y EN): instrucción del informe
+# estructurado al orquestador agéntico (rama gamificacion, ver
+# agents/orquestador_agente.py). Reemplaza dos reglas de texto libre que
+# vivían acá antes -- REGLA_TRANSICION_* (nunca anunciar que la
+# conversación "pasa" a otro agente/fase) y REGLA_CIERRE_REAL_* (si decís
+# que guardaste, tiene que ser verdad, no una descripción de algo que
+# todavía no pasó) -- ambas motivadas por bugs reales en producción
+# (el modelo anunciando el traspaso con otras palabras sin nombrar a
+# nadie; un agente diciendo que ya había guardado y cerrado sin haber
+# llamado a la tool). "Decir que cerró sin haber cerrado" deja de ser un
+# problema de texto libre que un regex tiene que cazar -- es un booleano
+# (`cerrado`) que agents/orquestador.py verifica contra AgentCore Memory
+# antes de confiarle nada.
 #
-# Primera versión de esta regla solo prohibía nombrar la fase o el
-# agente ("Sintetizador", "Validador") -- en producción el modelo
-# encontró el hueco: decía "ahora te va a recibir quien va a
-# reflejar..." sin nombrar a nadie, técnicamente sin violar la regla
-# literal, pero anunciando el traspaso igual. Por eso ahora la regla
-# prohíbe la IDEA de que cambia el interlocutor, no solo el nombre
-# propio de quién sigue.
-REGLA_TRANSICION_ES = (
-    "IMPORTANTE sobre las transiciones: nunca digas ni insinúes que la "
-    'conversación va a pasar a otra persona, sistema o "agente" -- ni '
-    'nombrándolo ("el Sintetizador", "el Validador") ni de forma genérica '
-    '("alguien más te va a recibir", "ahora te van a atender", "vas a '
-    'hablar con otra persona", "te van a pasar con"). Cualquier frase que '
-    "implique un cambio de interlocutor rompe la ilusión, aunque no "
-    "nombres a nadie específico. Para la persona esto tiene que sentirse "
-    "como una sola conversación fluida con una sola presencia todo el "
-    "tiempo. Cierra tu parte con una frase breve y cálida que reconozca "
-    "lo que se logró, sin explicar ni insinuar el mecanismo interno."
+# OJO, corregido después de un bug real visto en producción: a diferencia
+# de lo que este comentario decía antes, agents/orquestador.py NUNCA
+# reescribe ni resume `texto_para_persona` -- lo muestra a la persona tal
+# cual salió de ESTE subagente (ver SesionTelos._invocar_una_vez, que
+# explícitamente ignora el texto propio del Agent orquestador). Eso
+# significa que la regla de "no anunciar el traspaso" y, más grave, la de
+# "hablale a la persona en segunda persona, no narres sobre ella en
+# tercera" dependen 100% de que ESTA instrucción sea explícita -- no hay
+# ningún paso posterior que reescriba o corrija el tono. Bug real: con
+# Haiku, el nombre mismo de la tool ("informar AL ORQUESTADOR") llevó al
+# modelo a redactar texto_para_persona como un reporte de caso en tercera
+# persona ("Sam eligió su propósito... está anclado en...") en vez de
+# hablarle directo a Sam -- de ahí la línea explícita de segunda persona
+# de abajo, que no estaba antes.
+#
+# Antes vivía copiada casi textual en cada uno de los 5 archivos de fase
+# (mismo anti-patrón que REGLA_CONJUGACION_ES ya evitaba) -- centralizada
+# acá para que un ajuste futuro (ej. agregar un campo al informe) se
+# edite en un solo lugar.
+INSTRUCCION_INFORME_ES = (
+    "Al final de CADA turno, sin excepción, llamá a la tool "
+    "informar_al_orquestador como último paso: texto_para_persona es lo "
+    "que el orquestador le va a mostrar a la persona tal cual, sin "
+    "resumir ni reescribir -- tiene que ser el mensaje completo que "
+    "querés que vea. IMPORTANTE: texto_para_persona tiene que estar "
+    "escrito hablándole directamente a ella, en segunda persona (\"tú\"), "
+    "exactamente como si fuera el mensaje de chat que ya venías "
+    "redactando -- nunca narrado en tercera persona sobre ella ni como "
+    "un resumen de caso para el orquestador (el orquestador no lo lee ni "
+    "lo reformula, se lo muestra a la persona tal cual salió de vos). "
+    "Nombrar a la persona por su nombre en tercera persona (\"Ana eligió "
+    "su propósito...\") en vez de hablarle a ella (\"elegiste tu "
+    "propósito...\") es un error grave acá. cerrado=True solo si en ESTE "
+    "turno llamaste de verdad a guardar_ficha_usuario; si no, "
+    "cerrado=False. dato_nuevo es "
+    "un hecho puntual que valga la pena recordar en fases futuras (o "
+    "None si no hay nada nuevo)."
 )
-REGLA_TRANSICION_EN = (
-    "IMPORTANT about transitions: never say or imply that the "
-    'conversation is moving to another person, system, or "agent" -- '
-    'neither by name ("the Synthesizer", "the Coach") nor generically '
-    '("someone else will take it from here," "you\'ll be helped by '
-    'someone else," "you\'ll be talking to another person now"). Any '
-    "phrase implying a change of interlocutor breaks the illusion, even "
-    "without naming anyone specific. To the person this has to feel like "
-    "one continuous conversation with a single presence the whole time. "
-    "Close your part with a brief, warm line acknowledging what was "
-    "accomplished, without explaining or implying the internal mechanism."
-)
-
-# Compartida por los 5 prompts: bug real visto en producción, distinto
-# del de arriba -- el Explorador, al intentar cerrar, ESCRIBIÓ que ya
-# había guardado todo y que la conversación seguía de largo, pero nunca
-# LLAMÓ a guardar_ficha_usuario. El Orquestador nunca vio una versión
-# nueva, así que nunca cascadeó a la fase siguiente, y el mismo agente
-# siguió respondiendo turno tras turno -- terminó inventando, él solo,
-# contenido que le correspondía a Sintetizador/Coach/Estratega (eligió
-# un "patrón" de propósito, lo dio por validado, y hasta empezó a pedir
-# un sistema de hábito), todo todavía adentro de Fase 1. Describir una
-# acción en el texto no es lo mismo que ejecutar la tool -- esta regla
-# lo hace explícito, y agents/orquestador.py además fuerza un reintento
-# por código si el turno debía cerrar y la ficha no cambió (ver
-# _UMBRAL_NUDGE_EXPLORADOR_FUERTE).
-REGLA_CIERRE_REAL_ES = (
-    "IMPORTANTE sobre cerrar: si tu mensaje dice (o da a entender) que ya "
-    "guardaste el avance, tiene que ser verdad -- llamá a la tool "
-    "guardar_ficha_usuario en ESE MISMO turno, no lo describas como algo "
-    "que ya pasó o que va a pasar. Nunca sigas de largo haciendo el "
-    "trabajo de otra fase (elegir o pulir el propósito, ponerlo a prueba "
-    "con evidencia, diseñar el sistema de hábito) aunque la persona "
-    'pregunte "¿y ahora?" o parezca ansiosa por terminar -- si todavía no '
-    "cerraste, respondé con calidez que seguís con ella y quedate en tu "
-    "propio trabajo; si ya tenés con qué cerrar, cerrá de verdad llamando "
-    "a la tool en vez de seguir conversando. Tampoco le digas que ya "
-    'puede irse, que "no hace falta nada más por ahora" o que retome '
-    "cuando tenga tiempo -- a menos que tu fase ya haya cerrado de "
-    "verdad Y no haya nada pendiente en este momento (ej. Fase 5 entre "
-    "check-ins). Si te pregunta si puede irse o qué sigue y tu trabajo "
-    "no terminó, la respuesta honesta es que todavía necesitás algo de "
-    "ella ahora mismo -- nunca dar a entender que la conversación está "
-    "pausada o terminada cuando en realidad seguís esperando su "
-    "respuesta (bug real: un Coach de Validación le dijo a alguien que "
-    'ya podía irse a mitad de la evidencia pasada, y un turno después '
-    "tuvo que retractarse y admitir que seguía necesitando información)."
-)
-REGLA_CIERRE_REAL_EN = (
-    "IMPORTANT about closing: if your message says (or implies) that you "
-    "already saved the progress, it has to be true -- call the "
-    "guardar_ficha_usuario tool in THAT SAME turn, don't describe it as "
-    "something that already happened or is about to happen. Never keep "
-    "going and do another phase's job (picking or polishing the purpose, "
-    "stress-testing it with evidence, designing the habit system) even if "
-    'the person asks "so now what?" or seems eager to be done -- if you '
-    "haven't closed yet, warmly reassure them you're still with them and "
-    "stay in your own lane; if you do have enough to close, actually "
-    "close by calling the tool instead of continuing to chat. Also don't "
-    'tell them they can leave now, that "nothing more is needed right '
-    'now," or that they should come back later -- unless your phase has '
-    "genuinely closed AND there's nothing pending right now (e.g. Phase "
-    "5 between check-ins). If they ask whether they can leave or what's "
-    "next and your work isn't done, the honest answer is that you still "
-    "need something from them right now -- never imply the conversation "
-    "is paused or finished when you're actually still waiting on their "
-    "answer (real bug: a Validation Coach told someone they could leave "
-    "mid-way through gathering past evidence, then had to backtrack a "
-    "turn later and admit it still needed more information)."
+INSTRUCCION_INFORME_EN = (
+    "At the end of EVERY turn, no exception, call the "
+    "informar_al_orquestador tool as your last step: texto_para_persona "
+    "is what the orchestrator will show the person verbatim, without "
+    "summarizing or rewriting it -- it has to be the full message you "
+    "want them to see. IMPORTANT: texto_para_persona has to be written "
+    "speaking directly TO them, in second person (\"you\"), exactly like "
+    "the chat message you were already writing -- never narrated in "
+    "third person about them, and never as a case-report summary for "
+    "the orchestrator (the orchestrator doesn't read or rephrase it, it "
+    "shows it to the person exactly as you wrote it). Referring to the "
+    "person by name in third person (\"Sam chose their purpose...\") "
+    "instead of addressing them directly (\"you chose your "
+    "purpose...\") is a serious error here. cerrado=True only if you "
+    "actually called guardar_ficha_usuario in THIS turn; otherwise "
+    "cerrado=False. dato_nuevo is one concrete fact worth remembering in "
+    "future phases (or None if there's nothing new)."
 )
 
 # Compartida por los 5 prompts: el nombre de pila se captura una sola vez

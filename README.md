@@ -376,18 +376,32 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
 
 ## Qué falta / limitaciones conocidas
 
-- Backend de AgentCore Memory de la ficha probado contra AWS real (encontró
-  y corrigió un bug real de serialización del blob, ver
-  [Persistencia](#persistencia)); el historial de turnos
-  (`tools/conversacion_agentcore.py`) todavía no se probó de punta a punta.
+- **El orquestador agéntico (reemplazó el dispatch por regex por un
+  `Agent` real que decide con juicio semántico a qué fase invocar,
+  incluida una corrección posterior de confiabilidad con Haiku) todavía
+  no pasó por una ronda de prueba real de punta a punta contra Bedrock
+  desplegado** — el último ciclo de prueba real con una persona real (11
+  hallazgos, todos resueltos) fue contra la versión anterior del
+  orquestador. `scripts/simular_conversacion.py` corre una conversación
+  completa contra Bedrock real e imprime si el orquestador invoca la
+  fase esperada y si un cierre declarado coincide con lo que realmente
+  quedó guardado — es el paso siguiente antes de confiar en un deploy
+  nuevo.
 - Login real con Cognito, el Guardrail de Bedrock
   (`infra/stacks/telos_stack.py::GuardrailTelos` — denied topics +
   filtros de contenido, ver
   [docs/agente-proposito-de-vida-prompts.md sección 10.1](docs/agente-proposito-de-vida-prompts.md))
-  y la migración del frontend a Next.js/FastAPI todavía no se probaron
-  contra un deploy real (verificados con `cdk synth` + inspección manual
-  del JSON generado + pytest + e2e de Playwright local, no con un
-  `cdk deploy` real) — es lo próximo a correr.
+  y el frontend Next.js/FastAPI ya se probaron contra un `cdk deploy`
+  real (no solo `cdk synth`), con una persona real ejercitando el flujo
+  completo end-to-end contra la app desplegada — encontró 11 problemas
+  reales (de UX y de un bug de consistencia eventual de AgentCore
+  Memory), todos corregidos en código. Streamlit (`ui/app.py`,
+  `InstanciaUI`/`DistribucionUI`) ya se decomisionó como parte de esta
+  migración, confirmado el reemplazo funcional completo.
+- Backend de AgentCore Memory de la ficha probado contra AWS real (encontró
+  y corrigió un bug real de serialización del blob, ver
+  [Persistencia](#persistencia)); el historial de turnos
+  (`tools/conversacion_agentcore.py`) todavía no se probó de punta a punta.
 - `COGNITO_CLIENT_SECRET` viaja como variable de entorno en texto plano
   dentro del contenedor Docker (embebido en el user data de la instancia
   EC2, no Secrets Manager) — aceptable para el MVP, no queda expuesto
@@ -403,8 +417,6 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
   por IP (sin AWS WAF delante de `DistribucionWeb`) — el único backstop
   es la alarma de AWS Budgets, que avisa después del gasto, no lo
   previene.
-- Los `Dockerfile` de `api/`/`web/` todavía no se construyeron contra la
-  cuenta real (revisados a mano únicamente hasta ahora).
 - e2e con Playwright (`web/e2e/`) cubre lo que no necesita Bedrock real
   (pedir el nombre, manejo de errores, idioma, PWA) — con credenciales
   de Bedrock reales, faltan specs que completen una fase entera de

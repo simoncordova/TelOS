@@ -141,9 +141,10 @@ _NUDGE_EXPLORADOR_FUERTE = {
 # él solo el trabajo de las fases siguientes (eligió un patrón de
 # propósito, lo dio por validado, empezó a diseñar un sistema de hábito)
 # sin salir nunca de Fase 1. Describir una acción en el texto no es lo
-# mismo que ejecutarla -- ver agents/_modelo.py::REGLA_CIERRE_REAL_ES/EN
-# para la instrucción equivalente en el prompt; esto es la red de
-# seguridad por código si igual no alcanza.
+# mismo que ejecutarla -- ver agents/_modelo.py::INSTRUCCION_INFORME_ES/EN
+# (el `cerrado: bool` que declara informar_al_orquestador) para la
+# instrucción equivalente en el prompt; esto es la red de seguridad por
+# código si igual no alcanza.
 _FORZAR_CIERRE = {
     "es": (
         "No llamaste a la tool guardar_ficha_usuario en tu respuesta "

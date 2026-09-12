@@ -16,6 +16,16 @@ o dejar TELOS_REQUIRE_LOGIN=0 para saltarse el login):
     COGNITO_CLIENT_SECRET
     COGNITO_REGION          (default: TELOS_AWS_REGION o us-east-1)
     APP_URL                 URL pública de la UI (= redirect_uri registrado en Cognito)
+    LOGOUT_REDIRECT_URL     A dónde vuelve el navegador después de cerrar sesión en
+                            Cognito (default: el mismo APP_URL). Streamlit no necesita
+                            setearlo -- login y logout vuelven al mismo lugar, la raíz
+                            de la app. La API (rama gamificacion) sí lo necesita
+                            distinto: su APP_URL es la ruta de callback
+                            (.../api/auth/callback, donde se procesa el `code` del
+                            login), y esa misma ruta reusada como logout_uri rompía el
+                            logout con un 422 (esa ruta exige `code`, que un logout no
+                            manda) -- bug real, encontrado en revisión de código antes
+                            de activar el login real, nunca en producción.
 """
 
 import os
@@ -31,6 +41,7 @@ _CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID", "")
 _CLIENT_SECRET = os.environ.get("COGNITO_CLIENT_SECRET", "")
 _REGION = os.environ.get("COGNITO_REGION", os.environ.get("TELOS_AWS_REGION", "us-east-1"))
 _APP_URL = os.environ.get("APP_URL", "http://localhost:8501")
+_LOGOUT_REDIRECT_URL = os.environ.get("LOGOUT_REDIRECT_URL", _APP_URL)
 
 _ISSUER = f"https://cognito-idp.{_REGION}.amazonaws.com/{_USER_POOL_ID}"
 _JWKS_URL = f"{_ISSUER}/.well-known/jwks.json"
@@ -65,7 +76,7 @@ def url_logout() -> str:
     return (
         f"{_DOMAIN}/logout"
         f"?client_id={_CLIENT_ID}"
-        f"&logout_uri={_APP_URL}"
+        f"&logout_uri={_LOGOUT_REDIRECT_URL}"
     )
 
 

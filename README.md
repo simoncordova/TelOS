@@ -314,11 +314,12 @@ falta nada más para que la app funcione de punta a punta.
 
 Aditivo sobre lo de arriba: crea `InstanciaWeb` + `DistribucionWeb`
 propias, nunca toca `InstanciaUI`/`DistribucionUI` (Streamlit sigue
-funcionando igual, sin importar si hacés esto o no). Todavía sin
-Cognito real acá — el login queda en modo `TELOS_REQUIRE_LOGIN=0`
-(mismo mecanismo que Streamlit) hasta que se decida activarlo; este
-deploy prueba la app/API/push de punta a punta, no el login por
-persona.
+funcionando igual, sin importar si hacés esto o no). Login con Cognito
+real, mismo `UserPoolTelos` que ya usa Streamlit — el App Client agrega
+las URLs de la API (`callback_urls`/`logout_urls`) de forma aditiva, sin
+sacar las de Streamlit. Usá los mismos usuarios de prueba del
+[Paso 3](#paso-3--crear-los-usuarios-de-prueba) — no hace falta crear
+otros distintos.
 
 ### Paso 5 — Generar las claves VAPID y un secreto para el scheduler
 
@@ -364,8 +365,10 @@ CloudFront que en el Paso 1 de Streamlit (a veces 10-15 minutos).
 ### Paso 8 — Verificar
 
 - `https://<UrlServicioWeb>/api/salud` → `{"estado": "ok"}`.
-- Entrar a `UrlServicioWeb` — como el login está en modo bypass, entra
-  directo como usuario `prueba-local`, sin pedir credenciales.
+- Entrar a `UrlServicioWeb` — te pide login real de Cognito (mismos
+  usuarios del [Paso 3](#paso-3--crear-los-usuarios-de-prueba)). Probá
+  también cerrar sesión: tiene que volver limpio a `UrlServicioWeb`, no
+  mostrar un error.
 - Con las claves VAPID configuradas, la barra lateral muestra
   "Notifications" → "Enable notifications" → aceptar el permiso del
   navegador → "Send a test one" manda una notificación real.
@@ -418,15 +421,17 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
 
 **Rama `gamificacion` específicamente** (frontend Next.js/API/push):
 
-- Login con Cognito real todavía no está wireado en el frontend Next.js
-  — sigue en modo bypass (`TELOS_REQUIRE_LOGIN=0`) ahí, aunque Streamlit
-  ya lo tiene andando. Es el paso pendiente antes de un corte real.
-- Nada de esta rama se desplegó todavía contra una cuenta de AWS real —
-  validado con `cdk synth` + inspección manual del JSON, no con un
-  `cdk deploy` real.
-- Los `Dockerfile` de `api/`/`web/` nunca se construyeron de verdad (sin
-  Docker disponible en el entorno donde se escribió esto) — revisados a
-  mano, el primer build real pasa en el Paso 6 de arriba.
+- Rate limiting de las rutas de conversación (`tools/limite_uso.py`,
+  100 invocaciones/día) está atado al `usuario_id` autenticado — con
+  Cognito real ya activo esto vuelve a ser efectivo (antes, en modo
+  bypass, cualquiera podía rotar un header y esquivarlo). No hay
+  todavía ninguna protección adicional por IP (sin AWS WAF delante de
+  `DistribucionWeb`) — el único backstop es la alarma de AWS Budgets,
+  que avisa después del gasto, no lo previene.
+- Los `Dockerfile` de `api/`/`web/` se construyeron por primera vez
+  recién en el primer deploy real (Paso 6) — antes de eso solo se habían
+  revisado a mano, sin Docker disponible en el entorno donde se
+  escribió el código.
 - e2e con Playwright (`web/e2e/`) cubre lo que no necesita Bedrock real
   (pedir el nombre, manejo de errores, idioma, PWA) — con credenciales
   de Bedrock reales, faltan specs que completen una fase entera de

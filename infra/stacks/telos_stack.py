@@ -237,6 +237,24 @@ class TelosStack(Stack):
                 "deploy> para que el login funcione de verdad."
             ),
         )
+        # Declarado acá (no más abajo, junto al resto de la sección
+        # Web+API) porque UserPoolClientTelos necesita registrar su
+        # callback/logout URL desde el vamos -- Cognito es UN solo App
+        # Client compartido por Streamlit y por la API, no uno por
+        # interfaz.
+        web_url = CfnParameter(
+            self,
+            "WebUrl",
+            type="String",
+            default="https://localhost",
+            description=(
+                "URL pública del frontend Next.js + API. El primer "
+                "deploy no la conoce todavía -- deja el default, y haz "
+                "un segundo deploy pasando --parameters WebUrl=<el "
+                "output UrlServicioWeb del primer deploy> para que el "
+                "redirect_uri de Cognito quede bien configurado."
+            ),
+        )
 
         user_pool = cognito.UserPool(
             self,
@@ -260,8 +278,15 @@ class TelosStack(Stack):
             o_auth=cognito.OAuthSettings(
                 flows=cognito.OAuthFlows(authorization_code_grant=True),
                 scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
-                callback_urls=[app_url.value_as_string],
-                logout_urls=[app_url.value_as_string],
+                # Un solo App Client para las dos interfaces (aditivo:
+                # se agregan las URLs de la API, no se quitan las de
+                # Streamlit). La API usa dos rutas distintas -- el
+                # callback real (donde se procesa el `code`) y la raíz
+                # (a donde vuelve un logout) -- ver ui/auth.py::
+                # LOGOUT_REDIRECT_URL para por qué no puede ser la misma
+                # ruta para las dos cosas.
+                callback_urls=[app_url.value_as_string, f"{web_url.value_as_string}/api/auth/callback"],
+                logout_urls=[app_url.value_as_string, web_url.value_as_string],
             ),
         )
 
@@ -474,24 +499,10 @@ class TelosStack(Stack):
         # CloudFront enruta `/api/*` a la API y todo lo demás a Next.js,
         # así el navegador nunca necesita CORS ni conocer dos dominios.
         #
-        # Login todavía sin Cognito real acá (TELOS_REQUIRE_LOGIN=0,
-        # mismo mecanismo que ui/app.py) -- el App Client de Cognito
-        # recién se toca cuando el rediseño de Fase 2 del plan esté listo
-        # para probarse de punta a punta, no antes.
-        web_url = CfnParameter(
-            self,
-            "WebUrl",
-            type="String",
-            default="https://localhost",
-            description=(
-                "URL pública del frontend Next.js + API. El primer "
-                "deploy no la conoce todavía -- deja el default, y haz "
-                "un segundo deploy pasando --parameters WebUrl=<el "
-                "output UrlServicioWeb del primer deploy> para que el "
-                "redirect_uri de Cognito quede bien configurado cuando "
-                "se active el login real."
-            ),
-        )
+        # Login real de Cognito activado acá (Fase 2 del plan, completa)
+        # -- `web_url` ya se declaró más arriba, junto a UserPoolClientTelos,
+        # porque el App Client necesita conocer esta URL desde su propia
+        # construcción.
 
         # Fase 3 (Web Push): claves generadas UNA vez a mano con
         # scripts/generar_claves_vapid.py, nunca en el repo -- mismo
@@ -577,12 +588,13 @@ class TelosStack(Stack):
             "docker run -d --restart unless-stopped --network host "
             f'-e TELOS_AWS_REGION="{self.region}" '
             '-e TELOS_FICHA_BACKEND="agentcore" '
-            '-e TELOS_REQUIRE_LOGIN="0" '
+            '-e TELOS_REQUIRE_LOGIN="1" '
             f'-e COGNITO_DOMAIN="{user_pool_domain.base_url()}" '
             f'-e COGNITO_USER_POOL_ID="{user_pool.user_pool_id}" '
             f'-e COGNITO_CLIENT_ID="{user_pool_client.user_pool_client_id}" '
             f'-e COGNITO_CLIENT_SECRET="{user_pool_client.user_pool_client_secret.unsafe_unwrap()}" '
             f'-e APP_URL="{web_url.value_as_string}/api/auth/callback" '
+            f'-e LOGOUT_REDIRECT_URL="{web_url.value_as_string}" '
             f'-e VAPID_PUBLIC_KEY="{vapid_public_key.value_as_string}" '
             f'-e VAPID_PRIVATE_KEY="{vapid_private_key.value_as_string}" '
             f'-e VAPID_SUBJECT="{vapid_subject.value_as_string}" '

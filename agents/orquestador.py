@@ -39,6 +39,7 @@ Sintetizador, para elegir el propósito candidato.
 import logging
 import time
 
+from pydantic import BaseModel
 from strands.agent import Agent
 
 from agents._modelo import crear_modelo_subagente
@@ -176,6 +177,27 @@ _FORZAR_INFORME = {
         "no need to generate new content."
     ),
 }
+
+
+class InformeAlOrquestador(BaseModel):
+    """Mismo contrato que la tool `informar_al_orquestador` de cada
+    agente de fase, pero como modelo Pydantic para el reintento forzado
+    (ver `_invocar_una_vez`/`_invocar_fase_directo`). A diferencia de
+    `agente(texto)` normal -- donde Strands no expone forma de forzar
+    tool_choice, así que el modelo puede simplemente no llamar ninguna
+    tool -- pasar esta clase como `structured_output_model` en el
+    reintento SÍ fuerza tool_choice a nivel de Bedrock (confirmado
+    contra el código fuente instalado de Strands 1.55.0: es el mismo
+    mecanismo, ahora no-deprecado, detrás del `Agent.structured_output`
+    viejo). Así el reintento deja de depender de que el modelo decida
+    cooperar -- garantiza la forma de la respuesta, aunque el contenido
+    siga siendo cosa del modelo. `cerrado` sigue sin ser autoridad de
+    cierre por sí solo: _verificar_y_reforzar sigue siendo quien lo
+    confirma contra AgentCore Memory."""
+
+    texto_para_persona: str
+    cerrado: bool
+    dato_nuevo: str | None = None
 
 # El mismo bug de "dijo que guardó pero no llamó a la tool" apareció
 # primero en el Explorador y después en el Sintetizador -- por eso ahora
@@ -387,12 +409,29 @@ class SesionTelos:
             if not fue_invocado:
                 continue
             if not contenedor["informe"] and not excedio_limite_diario(self.usuario_id):
-                # La tool obligatoria no se llamó -- un reintento apuntado
+                # La tool obligatoria no se llamó -- reintento apuntado
                 # sobre ESTE MISMO agente (ya invocado este turno, no se
-                # pierde lo que generó) antes de resignarse. Ver
-                # _FORZAR_INFORME.
-                agente(_FORZAR_INFORME[self.idioma])
-                registrar_invocacion(self.usuario_id)
+                # pierde lo que generó), forzando la forma de la respuesta
+                # con structured_output_model en vez de solo pedirle de
+                # nuevo y esperar que llame la tool -- ver
+                # InformeAlOrquestador.
+                try:
+                    resultado_forzado = agente(
+                        _FORZAR_INFORME[self.idioma], structured_output_model=InformeAlOrquestador
+                    )
+                    registrar_invocacion(self.usuario_id)
+                except Exception:  # noqa: BLE001 -- fallo real forzando la forma, no un caso esperado
+                    logger.exception("Fase %s: structured_output_model del reintento forzado falló", fase)
+                    resultado_forzado = None
+                if resultado_forzado is not None and resultado_forzado.structured_output is not None:
+                    informe_forzado = resultado_forzado.structured_output
+                    contenedor["informe"].append(
+                        {
+                            "texto": informe_forzado.texto_para_persona,
+                            "cerrado": informe_forzado.cerrado,
+                            "dato_nuevo": informe_forzado.dato_nuevo,
+                        }
+                    )
             if not contenedor["informe"]:
                 # Ni siquiera el reintento forzado logró que llamara la
                 # tool -- bug real de Haiku (ver docstring del módulo).
@@ -486,10 +525,23 @@ class SesionTelos:
         agente(texto)
         registrar_invocacion(self.usuario_id)
         if not contenedor_informe and not excedio_limite_diario(self.usuario_id):
-            # Misma red de seguridad que _invocar_una_vez -- ver
-            # _FORZAR_INFORME.
-            agente(_FORZAR_INFORME[self.idioma])
-            registrar_invocacion(self.usuario_id)
+            # Mismo reintento forzado que _invocar_una_vez -- ver
+            # InformeAlOrquestador.
+            try:
+                resultado_forzado = agente(_FORZAR_INFORME[self.idioma], structured_output_model=InformeAlOrquestador)
+                registrar_invocacion(self.usuario_id)
+            except Exception:  # noqa: BLE001 -- fallo real forzando la forma, no un caso esperado
+                logger.exception("Fase %s (invocación directa): structured_output_model del reintento falló", fase)
+                resultado_forzado = None
+            if resultado_forzado is not None and resultado_forzado.structured_output is not None:
+                informe_forzado = resultado_forzado.structured_output
+                contenedor_informe.append(
+                    {
+                        "texto": informe_forzado.texto_para_persona,
+                        "cerrado": informe_forzado.cerrado,
+                        "dato_nuevo": informe_forzado.dato_nuevo,
+                    }
+                )
         self._contenedor_opciones = list(contenedor_opciones)
         if not contenedor_informe:
             # Mismo fallback que _invocar_una_vez -- ver ese comentario.

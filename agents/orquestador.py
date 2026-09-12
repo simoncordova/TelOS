@@ -172,6 +172,35 @@ _RESPUESTA_VACIA_FALLBACK = {
     "en": "Sorry, I had trouble generating a reply. Could you send your last message again?",
 }
 
+# Bug real (orquestador agéntico, rama gamificacion): a diferencia del
+# diseño anterior -- donde el mismo Agent vivía en memoria toda la sesión
+# y `informar_al_orquestador` no existía -- ahora CADA turno depende de
+# que el subagente llame esa tool obligatoria, y con el modelo Haiku
+# (crear_modelo_subagente) eso no siempre pasa: en pruebas reales, el
+# Explorador a veces respondió texto normal sin llamarla, dejando
+# `contenedor_informe` vacío -- eso se leía como "respuesta vacía", caía
+# al aviso fijo de arriba, y ESE aviso fijo quedaba guardado como si
+# fuera un turno real (`guardar_intercambio`), corrompiendo el historial:
+# el próximo turno el Explorador veía su propio "tuve un problema" previo
+# en el historial y volvía a saludar de cero. Este mensaje fuerza un
+# reintento apuntado (llamá la tool, no regeneres contenido si ya lo
+# tenías) ANTES de llegar a ese aviso fijo -- ver
+# SesionTelos._invocar_una_vez/_invocar_fase_directo.
+_FORZAR_INFORME = {
+    "es": (
+        "No llamaste a la tool informar_al_orquestador en tu respuesta "
+        "anterior, que es obligatoria en cada turno. Llamala AHORA -- "
+        "usá el mismo texto que ya tenías listo para texto_para_persona, "
+        "no hace falta que generes contenido nuevo."
+    ),
+    "en": (
+        "You didn't call the informar_al_orquestador tool in your "
+        "previous reply, which is mandatory every turn. Call it NOW -- "
+        "use the same text you already had ready for texto_para_persona, "
+        "no need to generate new content."
+    ),
+}
+
 # El mismo bug de "dijo que guardó pero no llamó a la tool" apareció
 # primero en el Explorador y después en el Sintetizador -- por eso ahora
 # cada agente de fase declara explícitamente `cerrado: bool` en su tool
@@ -383,13 +412,25 @@ class SesionTelos:
         estado = self._resumir_estado_ficha()
         insights = leer_insights(self.usuario_id)
         orquestador = crear_agente_orquestador(agentes, estado, insights, self.idioma)
-        orquestador(texto)
-        registrar_invocacion(self.usuario_id)
 
-        for fase, contenedor in contenedores.items():
+        mensajes_antes = {fase: len(agente.messages) for fase, agente in agentes.items()}
+        orquestador(texto)
+        registrar_invocacion(self.usuario_id)  # la llamada del orquestador
+
+        for fase, agente in agentes.items():
+            contenedor = contenedores[fase]
+            fue_invocado = len(agente.messages) > mensajes_antes[fase]
+            if not fue_invocado:
+                continue
+            if not contenedor["informe"] and not excedio_limite_diario(self.usuario_id):
+                # La tool obligatoria no se llamó -- un reintento apuntado
+                # sobre ESTE MISMO agente (ya invocado este turno, no se
+                # pierde lo que generó) antes de resignarse. Ver
+                # _FORZAR_INFORME.
+                agente(_FORZAR_INFORME[self.idioma])
+                registrar_invocacion(self.usuario_id)
             if not contenedor["informe"]:
                 continue
-            registrar_invocacion(self.usuario_id)  # la llamada real del subagente delegado
             informe = contenedor["informe"][-1]
             self._contenedor_opciones = list(contenedor["opciones"])
             dato_nuevo = informe.get("dato_nuevo")
@@ -446,6 +487,11 @@ class SesionTelos:
         )
         agente(texto)
         registrar_invocacion(self.usuario_id)
+        if not contenedor_informe and not excedio_limite_diario(self.usuario_id):
+            # Misma red de seguridad que _invocar_una_vez -- ver
+            # _FORZAR_INFORME.
+            agente(_FORZAR_INFORME[self.idioma])
+            registrar_invocacion(self.usuario_id)
         self._contenedor_opciones = list(contenedor_opciones)
         if not contenedor_informe:
             return "", False

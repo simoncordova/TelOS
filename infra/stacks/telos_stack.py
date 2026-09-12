@@ -578,6 +578,17 @@ class TelosStack(Stack):
             f'-e COGNITO_CLIENT_SECRET="{user_pool_client.user_pool_client_secret.unsafe_unwrap()}" '
             f'-e APP_URL="{web_url.value_as_string}/api/auth/callback" '
             f'-e LOGOUT_REDIRECT_URL="{web_url.value_as_string}" '
+            # Backend real de Google Calendar (ver tools/calendario_agentcore.py)
+            # -- flag propio, desacoplado de TELOS_FICHA_BACKEND a propósito
+            # (ver comentario en tools/calendario.py): si el credential
+            # provider/workload identity de AWS o el consent screen de Google
+            # todavía no están del todo andando, esto no rompe el resto de la
+            # app -- crear_evento_calendario ya maneja ese caso devolviendo un
+            # mensaje, no una excepción sin capturar.
+            '-e TELOS_CALENDARIO_BACKEND="agentcore" '
+            f'-e TELOS_CALENDARIO_CALLBACK_URL="{web_url.value_as_string}/api/calendario/oauth2/callback" '
+            '-e TELOS_GOOGLE_CREDENTIAL_PROVIDER="telos-google-calendar" '
+            '-e TELOS_AGENTCORE_WORKLOAD_IDENTITY="telos-agent" '
             f'-e VAPID_PUBLIC_KEY="{vapid_public_key.value_as_string}" '
             f'-e VAPID_PRIVATE_KEY="{vapid_private_key.value_as_string}" '
             f'-e VAPID_SUBJECT="{vapid_subject.value_as_string}" '

@@ -107,6 +107,18 @@ export function confirmarValores(valores: string[], idioma: Idioma): Promise<{ v
   });
 }
 
+// Fase 1: cierre explícito (botón "Ver mi propósito"), nunca automático
+// al llegar al mínimo -- ver agents/orquestador.py::SesionTelos.
+// cerrar_fase_1_manual. Llamar continuarSesion() justo después para
+// arrancar al Sintetizador (Fase 2).
+export function cerrarFase1(idioma: Idioma): Promise<SeleccionConfirmada> {
+  return jsonFetch("/api/seleccion/cerrar-fase1", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idioma }),
+  });
+}
+
 // --- Push (Fase 3 del plan de migración) ---
 
 export function obtenerConfigPush(): Promise<{ configurado: boolean; clavePublica: string }> {

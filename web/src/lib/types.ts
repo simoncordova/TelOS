@@ -85,6 +85,7 @@ export type SeleccionConfirmada = {
   etapa: string | null;
   mensaje_apertura_refinado: string | null;
   mostrar_valores: boolean;
+  puede_cerrar: boolean;
   cerrado: boolean;
   mensaje_cierre: string | null;
   fase_actual: number;

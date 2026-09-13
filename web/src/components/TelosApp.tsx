@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { abrirSesion, enviarMensaje } from "@/lib/apiCliente";
+import { abrirSesion, continuarSesion, enviarMensaje } from "@/lib/apiCliente";
 import { TEXTOS } from "@/lib/i18n";
 import { leerEventosSSE } from "@/lib/sse";
 import type { FichaSnapshot, Idioma, Mensaje } from "@/lib/types";
@@ -14,6 +14,7 @@ import { JourneyMap } from "./JourneyMap/JourneyMap";
 import type { Festejo } from "./Notifications/Celebracion";
 import { Celebracion } from "./Notifications/Celebracion";
 import { BienvenidaCard } from "./Onboarding/BienvenidaCard";
+import { ArbolSelector } from "./Seleccion/ArbolSelector";
 import { Sidebar } from "./Sidebar/Sidebar";
 
 // Dueño solo del idioma elegido -- todo lo demás (mensajes, ficha,
@@ -175,6 +176,32 @@ function Conversacion({
     [idioma, t],
   );
 
+  // Fase 1 (y, cuando se construya, Fase 4) cierran por selección visual
+  // (ArbolSelector), fuera del pipeline de texto de procesarTurno -- así
+  // que su cascada hacia la fase siguiente nunca se dispara sola. Mismo
+  // criterio que agents/orquestador.py::SesionTelos.continuar_tras_seleccion
+  // (que es justo lo que este endpoint invoca): se llama una sola vez,
+  // después de que el cierre explícito (botón "Ver mi propósito") ya
+  // guardó la ficha del lado del backend.
+  const iniciarFaseSiguiente = useCallback(async () => {
+    setCargando(true);
+    const respuesta = await continuarSesion(idioma);
+    for await (const { evento, datos } of leerEventosSSE(respuesta)) {
+      if (evento === "mensaje") {
+        const d = datos as { fase: number; texto: string; opciones: string[] };
+        setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+        setFaseActual(d.fase);
+        setOpcionesPendientes(d.opciones);
+      } else if (evento === "ficha") {
+        setFicha(datos as FichaSnapshot);
+      } else if (evento === "error") {
+        console.error("Error del backend:", (datos as { detalle: string }).detalle);
+        setMensajes((prev) => [...prev, { rol: "assistant", texto: t.error_generico }]);
+      }
+    }
+    setCargando(false);
+  }, [idioma, t]);
+
   const datos = (ficha?.actual?.datos ?? {}) as { proposito?: string; sistema?: string };
   const nombre = ficha?.nombre ?? null;
 
@@ -190,31 +217,42 @@ function Conversacion({
         ficha={ficha}
       />
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {ficha && !nombre && <BienvenidaCard t={t} />}
+      {/* Fase 1 (y, cuando exista, Fase 4): la interfaz principal deja de
+          ser el chat -- selector visual Ikigai (ArbolSelector), con el
+          chat relegado a apoyo opcional dentro del propio componente (ver
+          su docstring). El resto de las fases sigue 100% igual que
+          siempre. */}
+      {ficha && nombre && faseActual === 1 ? (
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <ArbolSelector idioma={idioma} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
+        </main>
+      ) : (
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {ficha && !nombre && <BienvenidaCard t={t} />}
 
-        {ficha && (
-          <JourneyMap idioma={idioma} t={t} faseActual={faseActual} proposito={datos.proposito} sistema={datos.sistema} />
-        )}
+          {ficha && (
+            <JourneyMap idioma={idioma} t={t} faseActual={faseActual} proposito={datos.proposito} sistema={datos.sistema} />
+          )}
 
-        {ficha && faseActual === 5 && <ResumenCard t={t} vistaResumen={ficha.vista_resumen} />}
+          {ficha && faseActual === 5 && <ResumenCard t={t} vistaResumen={ficha.vista_resumen} />}
 
-        {nombre && <p className="px-4 pt-2 text-xs text-foreground/60">{t.saludo_nombre.replace("{nombre}", nombre)}</p>}
+          {nombre && <p className="px-4 pt-2 text-xs text-foreground/60">{t.saludo_nombre.replace("{nombre}", nombre)}</p>}
 
-        <ChatWindow mensajes={mensajes} cargando={cargando} />
+          <ChatWindow mensajes={mensajes} cargando={cargando} />
 
-        {opcionesPendientes.length > 0 && (
-          <OpcionesForm
-            titulo={t.opciones_titulo}
-            submitLabel={t.opciones_submit}
-            opciones={opcionesPendientes}
-            deshabilitado={cargando}
-            onElegir={procesarTurno}
-          />
-        )}
+          {opcionesPendientes.length > 0 && (
+            <OpcionesForm
+              titulo={t.opciones_titulo}
+              submitLabel={t.opciones_submit}
+              opciones={opcionesPendientes}
+              deshabilitado={cargando}
+              onElegir={procesarTurno}
+            />
+          )}
 
-        <ChatInput placeholder={t.chat_placeholder} deshabilitado={cargando} onEnviar={procesarTurno} />
-      </main>
+          <ChatInput placeholder={t.chat_placeholder} deshabilitado={cargando} onEnviar={procesarTurno} />
+        </main>
+      )}
 
       <Celebracion festejo={festejo} onFin={() => setFestejo(null)} />
     </div>

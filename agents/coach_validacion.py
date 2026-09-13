@@ -154,11 +154,12 @@ def crear_agente_coach_validacion(
     return Agent(
         system_prompt=system_prompt,
         tools=[leer_ficha_usuario, guardar_ficha_usuario, informar_al_orquestador],
-        # Precarga los turnos ya guardados de esta fase (ver explorador.py).
+        # Precarga los turnos ya guardados de esta fase (ver
+        # agents/orquestador.py::_turnos_a_mensajes).
         messages=mensajes_previos,
         model=crear_modelo_subagente(),
-        # Suprime el PrintingCallbackHandler por default de Strands (ver
-        # explorador.py) -- quien llame controla cómo mostrar la respuesta.
+        # Suprime el PrintingCallbackHandler por default de Strands --
+        # quien llame controla cómo mostrar la respuesta.
         callback_handler=None,
         # Reintenta una vez si la respuesta usa voseo (agents/_calidad.py).
         hooks=[GuardaEstilo()],

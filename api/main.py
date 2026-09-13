@@ -13,7 +13,7 @@ import os
 import threading
 import time
 
-from fastapi import Depends, FastAPI, Response
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
 from agents.orquestador import SesionTelos
@@ -22,12 +22,15 @@ from api import push
 from api.auth import NOMBRE_COOKIE, obtener_usuario_actual, requiere_login, verificar_secreto_scheduler
 from api.esquemas import (
     AbrirSesionRequest,
+    ConfirmarSeleccionRequest,
     EliminarSuscripcionPushRequest,
     EnviarMensajeRequest,
     EnviarPruebaPushRequest,
+    SeleccionConfirmadaResponse,
     SuscripcionPushRequest,
 )
 from api.sse import stream_eventos
+from tools.categorias_ikigai import CATEGORIAS_IKIGAI, DIMENSIONES_IKIGAI
 from tools.ficha import leer_ficha_usuario
 from tools.perfil import leer_nombre_usuario
 from tools.push_suscripcion import (
@@ -196,6 +199,45 @@ def abrir_sesion(body: AbrirSesionRequest, usuario_id: str = Depends(obtener_usu
 def enviar_mensaje(body: EnviarMensajeRequest, usuario_id: str = Depends(obtener_usuario_actual)) -> StreamingResponse:
     eventos = _eventos_turno(usuario_id, body.idioma, lambda sesion: sesion.enviar_mensaje(body.texto))
     return StreamingResponse(stream_eventos(eventos), media_type="text/event-stream")
+
+
+@app.get("/api/categorias/{fase}")
+def obtener_categorias(fase: int, idioma: str = "en") -> dict:
+    """Sirve el árbol de categorías completo de una sola vez -- el
+    frontend lo cachea y navega client-side, sin otra llamada de red por
+    click (ver el plan del selector visual Ikigai). Solo Fase 1 tiene
+    taxonomía por ahora (el árbol Ikigai, tools/categorias_ikigai.py);
+    Fase 4 la va a tener cuando se construya esa parte."""
+    if fase != 1:
+        raise HTTPException(status_code=404, detail=f"No hay taxonomía para la fase {fase} todavía.")
+    idioma_arbol = "es" if idioma == "es" else "en"
+    return {"dimensiones": list(DIMENSIONES_IKIGAI), "categorias": CATEGORIAS_IKIGAI[idioma_arbol]}
+
+
+@app.post("/api/seleccion/confirmar")
+def confirmar_seleccion(
+    body: ConfirmarSeleccionRequest, usuario_id: str = Depends(obtener_usuario_actual)
+) -> SeleccionConfirmadaResponse:
+    """Fase 1: confirma una hoja del árbol Ikigai -- nunca pasa por el
+    camino de texto libre (ver agents/orquestador.py::SesionTelos.
+    confirmar_seleccion, que deriva `ruta`/`dimensiones` de la taxonomía,
+    nunca del cliente). Mismo lock por (usuario_id, idioma) que
+    _eventos_turno, para serializar selecciones concurrentes del mismo
+    usuario contra la misma SesionTelos en memoria."""
+    lock = _obtener_lock(usuario_id, body.idioma)
+    with lock:
+        sesion = _obtener_sesion(usuario_id, body.idioma)
+        try:
+            resultado = sesion.confirmar_seleccion(body.nodo_id, body.detalle_libre)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        fase_actual = sesion.fase_actual
+    return SeleccionConfirmadaResponse(
+        cobertura=resultado["cobertura"],
+        cerrado=resultado["cerrado"],
+        mensaje_cierre=resultado["mensaje_cierre"],
+        fase_actual=fase_actual,
+    )
 
 
 @app.get("/api/ficha")

@@ -8,7 +8,7 @@ C:\\Users\\Wendy\\.claude\\plans\\cosmic-zooming-tarjan.md): el orquestador
 (agents/orquestador_agente.py) decide a qué fase invocar y compone la
 respuesta final -- poco volumen de texto, pero es el único punto de
 contacto real con la entrada/salida de la persona, así que usa Sonnet.
-Cada agente de fase (agents/explorador.py y hermanos) hace el trabajo de
+Cada agente de fase (agents/sintetizador.py y hermanos) hace el trabajo de
 contenido pesado (explorar, sintetizar, validar) pero con una tarea acotada
 y un prompt más liviano ahora que las reglas de flujo/transición viven solo
 en el orquestador -- Haiku alcanza y sale bastante más barato/rápido,

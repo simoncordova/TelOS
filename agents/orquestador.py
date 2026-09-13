@@ -23,13 +23,25 @@ al cerrar su fase (no hay saves parciales a mitad de fase). Fases 2-5
 declaran explícitamente `cerrado: bool` en su tool
 `informar_al_orquestador` -- y ese booleano se verifica contra AgentCore
 Memory (¿la ficha realmente tiene una versión nueva?) antes de confiar
-en él. Fase 1 (Explorador) es distinta desde el 12/09/2026 (Explorer v2,
-revisión de arquitectura externa): no tiene `informar_al_orquestador` ni
-decide su propio cierre -- ver `_invocar_explorador` más abajo, donde
-`cerrado` es 100% una decisión de código (`_proposito_listo`), nunca
-declarada por el modelo. Motivo: dejarle esa decisión al modelo fue la
-causa de dos bugs reales seguidos (repetía ejes ya cubiertos, después
-dejaba ejes con evidencia clara sin marcar por exigir de más).
+en él.
+
+Fase 1 (Explorador) es completamente distinta desde el 13/09/2026 -- ya
+no es una conversación de texto libre en absoluto (ver el plan
+"quirky-launching-swing" en el directorio de planes de Claude Code). La
+persona
+elige de un árbol de categorías fijo (tools/categorias_ikigai.py, un
+grafo único donde cada nodo aporta a una o más de las 5 dimensiones del
+Ikigai -- ver DIMENSIONES_IKIGAI) en vez de responder preguntas: la
+elección ES el dato, válida por construcción, sin que ningún LLM tenga
+que juzgar si "ya alcanza". `confirmar_seleccion` más abajo reemplaza a
+`_invocar_explorador` (Explorer v2, el intento anterior con preguntas
+fijas + evaluador acotado -- sacado en este mismo cambio, ver git
+history si hace falta comparar): código calcula cobertura por dimensión
+y decide el cierre, nunca el modelo. `_invocar_fase_directo`/
+`enviar_mensaje` (el camino de texto libre) ya NO atienden a Fase 1 más
+que con un aviso fijo -- ver `_PLACEHOLDER_FASE_1` -- hasta que la
+interfaz visual (`ArbolSelector.tsx`, todavía sin construir) llame a
+`confirmar_seleccion` a través de los endpoints nuevos de `api/main.py`.
 
 El guardrail de crisis, el Paso 0 (captura de nombre) y el avance de fase
 siguen siendo código plano, sin involucrar a ningún `Agent` -- son
@@ -58,29 +70,29 @@ from strands.agent import Agent
 from agents._modelo import crear_modelo_subagente
 from agents.coach_validacion import crear_agente_coach_validacion
 from agents.estratega_sistemas import crear_agente_estratega_sistemas
-from agents.evaluador_respuesta import evaluar_respuesta
-from agents.explorador import crear_agente_explorador
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
+from tools.categorias_ikigai import DIMENSIONES_IKIGAI, buscar_nodo_con_ruta
 from tools.contexto_usuario import agregar_insight
 from tools.conversacion import guardar_intercambio, leer_turnos
 from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
-from tools.exploracion_preguntas import EJES, PREGUNTAS_EXPLORACION
 from tools.ficha import guardar_ficha_usuario_fusionada, leer_ficha_usuario
 from tools.limite_uso import excedio_limite_diario, mensaje_limite_alcanzado, registrar_invocacion
 from tools.perfil import guardar_nombre_usuario, leer_nombre_usuario
-from tools.progreso_exploracion import borrar_progreso_exploracion, guardar_progreso_exploracion, leer_progreso_exploracion
+from tools.selecciones_estructuradas import (
+    borrar_selecciones_estructuradas,
+    guardar_selecciones_estructuradas,
+    leer_selecciones_estructuradas,
+)
 
 logger = logging.getLogger(__name__)
 
-# Fase 1 (Explorador) queda AFUERA de este dict a propósito -- desde el
-# Explorer v2 (ver _invocar_explorador) tiene una firma y un flujo
-# completamente distintos (sin tools, sin informar_al_orquestador, el
-# código elige la pregunta y decide el cierre). _invocar_fase_directo
-# despacha a fase 1 ANTES de llegar al camino genérico de abajo, que ya
-# no sabría cómo invocarla -- si algún día fase 1 llegara acá por error,
-# preferible un KeyError inmediato a un crash confuso más adelante por
-# kwargs que crear_agente_explorador ya no acepta.
+# Fase 1 (Explorador) queda AFUERA de este dict a propósito -- ya no es
+# una conversación en absoluto (ver docstring del módulo y
+# confirmar_seleccion más abajo). _invocar_fase_directo despacha a fase 1
+# ANTES de llegar al camino genérico de abajo, con un aviso fijo -- si
+# algún día fase 1 llegara acá por error, preferible un KeyError
+# inmediato a un crash confuso más adelante.
 _FABRICAS_POR_FASE = {
     2: crear_agente_sintetizador,
     3: crear_agente_coach_validacion,
@@ -96,21 +108,71 @@ _KICKOFF = {
     "en": "Let's continue.",
 }
 
-# Explorer v2 (revisión de arquitectura externa, 12/09/2026) -- invariantes
-# del motor de entrevista, garantizadas por código, no por instrucción:
-# ningún eje puede bloquear el flujo más de 2 intentos (las 2 preguntas
-# que tools/exploracion_preguntas.py define por eje), y el cierre no
-# depende de que el modelo decida "ya tengo suficiente" -- ver
-# _proposito_listo. Con 5 ejes x 2 intentos, el tope duro de preguntas
-# reales quedó en 10 sin necesitar ningún freno de "cantidad de turnos"
-# aparte (el que se sacó antes por inyectar texto al prompt -- acá el
-# límite es estructural, no un recordatorio).
-MAX_INTENTOS_POR_EJE = 2
-_MIN_EJES_RESPONDIDOS_PARA_CERRAR = 3
+# Selector Ikigai (Fase 1, ver docstring del módulo) -- invariante
+# garantizada por código, no por instrucción: la fase cierra cuando cada
+# una de las 5 dimensiones (tools/categorias_ikigai.py::DIMENSIONES_IKIGAI)
+# ya fue tocada por al menos este número de selecciones distintas.
+# Ajustable -- un valor más alto pide más material antes de sintetizar,
+# uno más bajo cierra antes.
+_MIN_SELECCIONES_POR_DIMENSION = 2
 
-_MENSAJE_CIERRE_EXPLORADOR = {
+_MENSAJE_CIERRE_SELECCION = {
     "es": "Con esto ya tengo material real para reflejarte algo. Vamos al siguiente paso.",
     "en": "I've got real material to reflect back to you now. Let's move to the next step.",
+}
+
+# Fase 1 ya no acepta texto libre como mecanismo principal (ver docstring
+# del módulo) -- este es el único texto que puede devolver el camino de
+# `enviar_mensaje`/`abrir_conversacion` mientras esa fase esté activa,
+# hasta que la interfaz visual (ArbolSelector.tsx) esté conectada.
+_PLACEHOLDER_FASE_1 = {
+    "es": (
+        "Esta fase ahora se completa eligiendo categorías en la pantalla "
+        "principal, no escribiendo acá -- todavía no tengo una respuesta "
+        "de texto para darte en este paso."
+    ),
+    "en": (
+        "This phase is now completed by picking categories on the main "
+        "screen, not by typing here -- I don't have a text reply for this "
+        "step yet."
+    ),
+}
+
+# Única invocación al modelo en el cierre de Fase 1 -- ver
+# SesionTelos._sintetizar_selecciones. Sin tools: la respuesta del
+# modelo ES el material crudo que va a leer Fase 2, no decide nada sobre
+# validez ni cierre (eso ya lo resolvió el código antes de llegar acá).
+_PROMPT_SINTESIS_SELECCION = {
+    "es": (
+        "Estas son las categorías que una persona eligió al explorar su "
+        "Ikigai en un árbol visual, de la más reveladora (toca más "
+        "dimensiones del Ikigai a la vez) a la menos. Cada una indica a "
+        "qué dimensiones aporta: amas (lo que ama), sos_bueno (en lo que "
+        "es bueno), mundo_necesita (lo que el mundo necesita), "
+        "pueden_pagar (por lo que le pueden pagar), valores (un valor no "
+        "negociable).\n\n{selecciones}\n\n"
+        "Redactá un párrafo breve, en español neutro, en tercera persona "
+        "(\"Esta persona...\"), que describa el material crudo que surge "
+        "de estas elecciones -- sin inventar nada que no esté en la "
+        "lista, sin todavía proponer un propósito (eso lo hace otro paso "
+        "después). Priorizá mencionar las elecciones que tocan más "
+        "dimensiones a la vez -- son la señal más fuerte."
+    ),
+    "en": (
+        "These are the categories a person chose while exploring their "
+        "Ikigai on a visual tree, from the most revealing (touches the "
+        "most Ikigai dimensions at once) to the least. Each one shows "
+        "which dimensions it contributes to: amas (what they love), "
+        "sos_bueno (what they're good at), mundo_necesita (what the "
+        "world needs), pueden_pagar (what they could be paid for), "
+        "valores (a non-negotiable value).\n\n{selecciones}\n\n"
+        "Write a short paragraph, in plain English, in third person "
+        "(\"This person...\"), describing the raw material that comes "
+        "out of these choices -- don't invent anything not in the list, "
+        "don't propose a purpose yet (a later step does that). "
+        "Prioritize mentioning the choices that touch the most "
+        "dimensions at once -- they're the strongest signal."
+    ),
 }
 
 # Paso 0: pedido de nombre, antes de que exista ninguna fase. Determinístico
@@ -136,30 +198,16 @@ _EXTRAER_NOMBRE_PROMPT = {
     ),
 }
 
-# Tope de preguntas del Explorador (Fase 1): DESACTIVADO por ahora (rama
-# gamificacion). La idea era una red de seguridad por código además del
-# criterio del prompt (ver agents/explorador.py) para el bug real de una
-# conversación que pasó de 25 preguntas sin cerrar -- pero el mecanismo
-# (`_nudge_explorador` de abajo) agregaba texto extra al system prompt del
-# Explorador turno a turno, y sospechamos que ESO contribuía a que Haiku
-# terminara respondiendo texto plano sin llamar a `informar_al_orquestador`
-# (ver bug documentado más abajo, `_RESPUESTA_VACIA_FALLBACK`). Sacado
-# mientras se confirma esa hipótesis con el logging nuevo de
-# `_invocar_una_vez` -- si el freno de 25 preguntas vuelve a aparecer,
-# reinstalarlo de una forma que no toque el system prompt (ej. un mensaje
-# de usuario aparte, no una concatenación al prompt existente).
-# Freno de seguridad para un bug real visto en producción, distinto del
-# de arriba: con el aviso fuerte ya en el texto, el Explorador escribió
-# que había guardado todo y que la conversación seguía de largo, pero
-# nunca LLAMÓ a guardar_ficha_usuario -- el Orquestador nunca vio una
-# versión nueva, nunca cascadeó, y el mismo agente terminó improvisando
-# él solo el trabajo de las fases siguientes (eligió un patrón de
-# propósito, lo dio por validado, empezó a diseñar un sistema de hábito)
-# sin salir nunca de Fase 1. Describir una acción en el texto no es lo
-# mismo que ejecutarla -- ver agents/_modelo.py::INSTRUCCION_INFORME_ES/EN
-# (el `cerrado: bool` que declara informar_al_orquestador) para la
+# Freno de seguridad para un bug real visto en producción (un agente de
+# fase 2-5 escribió en su texto que ya había guardado todo, pero nunca
+# LLAMÓ a guardar_ficha_usuario -- el Orquestador nunca vio una versión
+# nueva, nunca cascadeó). Describir una acción en el texto no es lo mismo
+# que ejecutarla -- ver agents/_modelo.py::INSTRUCCION_INFORME_ES/EN (el
+# `cerrado: bool` que declara informar_al_orquestador) para la
 # instrucción equivalente en el prompt; esto es la red de seguridad por
-# código si igual no alcanza.
+# código si igual no alcanza. No aplica a Fase 1, que ya no depende de
+# ninguna tool que el modelo tenga que recordar llamar (ver
+# confirmar_seleccion).
 _FORZAR_CIERRE = {
     "es": (
         "No llamaste a la tool guardar_ficha_usuario en tu respuesta "
@@ -324,10 +372,10 @@ def _texto_ultimo_mensaje_asistente(agente: Agent) -> str:
 
 
 def _texto_de_resultado(resultado) -> str:
-    """Extrae el texto plano de un `AgentResult` puntual -- usado por
-    _invocar_explorador (Explorer v2), que ya no depende de ninguna tool
-    de informe: el Explorador no tiene tools, su propia respuesta
-    conversacional ES el texto para la persona, directo."""
+    """Extrae el texto plano de un `AgentResult` puntual -- usado por la
+    síntesis de cierre de Fase 1 (SesionTelos._sintetizar_selecciones),
+    una llamada sin tools donde la respuesta del modelo ES el texto
+    buscado, directo."""
     mensaje = resultado.message or {}
     return "".join(bloque.get("text", "") for bloque in mensaje.get("content", [])).strip()
 
@@ -450,12 +498,11 @@ class SesionTelos:
         ya se sabe con certeza a qué fase invocar y no tiene sentido
         gastar otra decisión del orquestador. Devuelve (texto, cerrado).
 
-        Fase 1 despacha a `_invocar_explorador` -- Explorer v2 (ver
-        docstring de ese método) tiene un flujo completamente distinto,
-        sin `informar_al_orquestador` ni el resto del contrato genérico
-        de abajo."""
+        Fase 1 ya no es una conversación de texto (ver docstring del
+        módulo y confirmar_seleccion) -- devuelve un aviso fijo, sin
+        gastar ninguna invocación real."""
         if fase == 1:
-            return self._invocar_explorador(texto, turn_id)
+            return _PLACEHOLDER_FASE_1[self.idioma], False
         if excedio_limite_diario(self.usuario_id):
             return mensaje_limite_alcanzado(self.idioma), False
         contenedor_opciones: list = []
@@ -509,155 +556,107 @@ class SesionTelos:
             agregar_insight(self.usuario_id, dato_nuevo)
         return (informe.get("texto") or "").strip(), bool(informe.get("cerrado"))
 
-    def _invocar_explorador(self, texto: str, turn_id: str | None) -> tuple[str, bool]:
-        """Explorer v2 (revisión de arquitectura externa, 12/09/2026): acá
-        vive todo el control de flujo que antes se le pedía al modelo por
-        instrucción. Orden de cada turno:
+    def confirmar_seleccion(self, nodo_id: str, detalle_libre: str | None = None) -> dict:
+        """Fase 1: confirma una hoja elegida en el árbol Ikigai (ver
+        tools/categorias_ikigai.py). Reemplaza por completo al Explorador
+        conversacional -- ya no hay texto libre que evaluar: la elección
+        de la persona ES el dato, válida por construcción, así que no
+        hace falta ningún evaluador acotado (a diferencia de Explorer v2,
+        el intento anterior con preguntas fijas + agents/evaluador_respuesta.py,
+        sacado en este mismo cambio).
 
-        1. Si ya había una pregunta activa, evaluar la respuesta con
-           agents/evaluador_respuesta.py -- una llamada acotada que solo
-           ve la pregunta activa y la respuesta, no el historial
-           completo -- y actualizar el progreso por código (nunca el
-           modelo decide si un eje quedó cubierto).
-        2. Si con eso ya hay evidencia suficiente (_proposito_listo),
-           cerrar la fase ACÁ MISMO por código: construir `datos` desde
-           la evidencia ya acumulada y guardar la ficha directo, sin
-           pasar por ninguna tool que el modelo tenga que acordarse de
-           llamar.
-        3. Si no, elegir la siguiente pregunta (_seleccionar_siguiente_pregunta,
-           de la biblioteca fija en tools/exploracion_preguntas.py -- el
-           modelo nunca inventa una pregunta nueva) e invocar al
-           Explorador (agents/explorador.py, sin tools) solo para que la
-           haga con calidez.
+        La `ruta` y las `dimensiones` se derivan acá de la taxonomía
+        (tools/categorias_ikigai.py::buscar_nodo_con_ruta), nunca se
+        confía en lo que mande el cliente -- mismo criterio de "código
+        decide" que el resto del proyecto.
 
-        `cerrado` en el valor de retorno es siempre una decisión de
-        código acá -- no hay ningún booleano que el modelo declare para
-        verificar después."""
+        Devuelve {"cobertura": {dimension: int, ...}, "cerrado": bool,
+        "mensaje_cierre": str | None}. Levanta ValueError si la fase
+        actual no es 1, o si `nodo_id` no existe en la taxonomía."""
+        if self.fase_actual != 1:
+            raise ValueError(f"confirmar_seleccion solo aplica en Fase 1 -- fase actual es {self.fase_actual}")
         if excedio_limite_diario(self.usuario_id):
-            return mensaje_limite_alcanzado(self.idioma), False
+            return {"cobertura": {}, "cerrado": False, "mensaje_cierre": None}
 
-        idioma_preguntas = "en" if self.idioma == "en" else "es"
-        preguntas = PREGUNTAS_EXPLORACION[idioma_preguntas]
-        progreso = leer_progreso_exploracion(self.usuario_id)
-        if not progreso or not progreso.get("axes"):
-            progreso = {
-                "active_axis": None,
-                "active_question_id": None,
-                "axes": {
-                    eje: {"status": "pending", "question_id": None, "evidence": None, "attempts": 0} for eje in EJES
-                },
+        idioma_arbol = "en" if self.idioma == "en" else "es"
+        encontrado = buscar_nodo_con_ruta(idioma_arbol, nodo_id)
+        if encontrado is None:
+            raise ValueError(f"nodo_id desconocido en la taxonomía de Fase 1: {nodo_id!r}")
+        nodo, ruta = encontrado
+
+        progreso = leer_selecciones_estructuradas(self.usuario_id)
+        if not progreso or "selecciones" not in progreso:
+            progreso = {"selecciones": [], "cobertura": {dim: 0 for dim in DIMENSIONES_IKIGAI}}
+        progreso["selecciones"].append(
+            {
+                "nodo_id": nodo_id,
+                "label": nodo["label"],
+                "ruta": ruta,
+                "dimensiones": list(nodo["dimensiones"]),
+                "detalle_libre": detalle_libre,
             }
-        else:
-            eje_activo = progreso.get("active_axis")
-            id_pregunta_activa = progreso.get("active_question_id")
-            if eje_activo and id_pregunta_activa:
-                texto_pregunta_activa = next(
-                    (p["text"] for p in preguntas[eje_activo] if p["id"] == id_pregunta_activa), None
-                )
-                evaluacion = (
-                    evaluar_respuesta(texto_pregunta_activa, texto, self.idioma) if texto_pregunta_activa else None
-                )
-                eje_info = progreso["axes"][eje_activo]
-                if evaluacion is None:
-                    logger.warning(
-                        "Explorador: evaluar_respuesta falló para el eje %s -- se reintenta la misma pregunta",
-                        eje_activo,
-                    )
-                elif evaluacion.status == "answered":
-                    eje_info["status"] = "answered"
-                    eje_info["evidence"] = evaluacion.evidence or texto[:200]
-                elif evaluacion.status == "clarification":
-                    pass  # repetir la misma pregunta, sin gastar intento
-                else:  # partial, off_topic, refusal
-                    eje_info["attempts"] += 1
-                    if evaluacion.evidence and not eje_info.get("evidence"):
-                        eje_info["evidence"] = evaluacion.evidence
-                    if eje_info["attempts"] >= MAX_INTENTOS_POR_EJE:
-                        # Invariante del sistema, no algo que el modelo pueda
-                        # evitar -- ver MAX_INTENTOS_POR_EJE.
-                        eje_info["status"] = "skipped"
-
-        if self._proposito_listo(progreso):
-            datos = {eje: (info.get("evidence") or "") for eje, info in progreso["axes"].items()}
-            guardar_ficha_usuario_fusionada(
-                self.usuario_id,
-                datos,
-                fase=1,
-                motivo_version="Evidencia suficiente en los ejes -- cierre determinado por código (Explorer v2)",
-                turn_id=turn_id,
-            )
-            borrar_progreso_exploracion(self.usuario_id)
-            return _MENSAJE_CIERRE_EXPLORADOR[self.idioma], True
-
-        seleccion = self._seleccionar_siguiente_pregunta(progreso, preguntas)
-        if seleccion is None:
-            # Red de seguridad: no debería pasar (_proposito_listo ya
-            # cubre "todos los ejes en estado terminal"), pero si pasara,
-            # mejor cerrar con lo que haya que quedar sin poder avanzar.
-            datos = {eje: (info.get("evidence") or "") for eje, info in progreso["axes"].items()}
-            guardar_ficha_usuario_fusionada(
-                self.usuario_id, datos, fase=1, motivo_version="Todos los ejes en estado terminal", turn_id=turn_id
-            )
-            borrar_progreso_exploracion(self.usuario_id)
-            return _MENSAJE_CIERRE_EXPLORADOR[self.idioma], True
-
-        eje, id_pregunta, texto_pregunta = seleccion
-        progreso["active_axis"] = eje
-        progreso["active_question_id"] = id_pregunta
-        guardar_progreso_exploracion(self.usuario_id, progreso)
-
-        evidencia_por_eje = {e: info["evidence"] for e, info in progreso["axes"].items() if info.get("evidence")}
-        turnos = leer_turnos(self.usuario_id, 1)
-        agente = crear_agente_explorador(
-            self.usuario_id,
-            self.idioma,
-            pregunta_activa=texto_pregunta,
-            evidencia_por_eje=evidencia_por_eje,
-            mensajes_previos=_turnos_a_mensajes(turnos),
-            nombre=self.nombre,
         )
-        resultado = agente(texto)
+        for dimension in nodo["dimensiones"]:
+            progreso["cobertura"][dimension] = progreso["cobertura"].get(dimension, 0) + 1
+        guardar_selecciones_estructuradas(self.usuario_id, progreso)
+
+        if not self._cobertura_suficiente(progreso["cobertura"]):
+            return {"cobertura": progreso["cobertura"], "cerrado": False, "mensaje_cierre": None}
+
+        mensaje_cierre = self._cerrar_fase_1(progreso)
+        return {"cobertura": progreso["cobertura"], "cerrado": True, "mensaje_cierre": mensaje_cierre}
+
+    def _cobertura_suficiente(self, cobertura: dict) -> bool:
+        """Determinístico -- Fase 1 cierra cuando las 5 dimensiones del
+        Ikigai (DIMENSIONES_IKIGAI) ya fueron tocadas por al menos
+        `_MIN_SELECCIONES_POR_DIMENSION` selecciones distintas. Sin
+        "intentos" ni evaluación que pueda fallar -- a diferencia de
+        Explorer v2, acá no hace falta una red de seguridad de "todos los
+        ejes en estado terminal": la persona simplemente sigue eligiendo
+        hasta llegar al mínimo."""
+        return all(cobertura.get(dim, 0) >= _MIN_SELECCIONES_POR_DIMENSION for dim in DIMENSIONES_IKIGAI)
+
+    def _cerrar_fase_1(self, progreso: dict) -> str:
+        """Cierre 100% por código: sintetiza las selecciones ya
+        acumuladas en el material crudo que antes armaba el Explorador
+        (una sola invocación al modelo, sin tools de datos -- ver
+        _sintetizar_selecciones), lo guarda directo con
+        guardar_ficha_usuario_fusionada, y avanza la fase. Nunca pasa por
+        ninguna tool que el modelo tenga que acordarse de llamar."""
+        selecciones_por_convergencia = sorted(
+            progreso["selecciones"], key=lambda s: len(s["dimensiones"]), reverse=True
+        )
+        material = self._sintetizar_selecciones(selecciones_por_convergencia)
+        guardar_ficha_usuario_fusionada(
+            self.usuario_id,
+            {"materia_prima": material},
+            fase=1,
+            motivo_version="Selecciones del árbol Ikigai -- cierre determinado por código",
+            turn_id=str(uuid.uuid4()),
+        )
+        borrar_selecciones_estructuradas(self.usuario_id)
+        self.fase_actual = 2
+        return _MENSAJE_CIERRE_SELECCION[self.idioma]
+
+    def _sintetizar_selecciones(self, selecciones: list[dict]) -> str:
+        """Única invocación real al modelo en todo el cierre de Fase 1 --
+        sin tools, transforma las selecciones (ya ordenadas por
+        convergencia, las que tocan más dimensiones primero) en un
+        párrafo de material crudo para que lo use Fase 2 (Sintetizador).
+        No decide nada -- ni qué es válido, ni cuándo cerrar -- solo
+        redacta."""
+        lineas = []
+        for s in selecciones:
+            linea = f"- {s['label']} (dimensiones: {', '.join(s['dimensiones']) or 'ninguna'})"
+            if s.get("detalle_libre"):
+                linea += f" -- detalle de la persona: {s['detalle_libre']}"
+            lineas.append(linea)
+        texto_selecciones = "\n".join(lineas)
+        agente = Agent(model=crear_modelo_subagente(), callback_handler=None)
+        prompt = _PROMPT_SINTESIS_SELECCION[self.idioma].format(selecciones=texto_selecciones)
+        resultado = agente(prompt)
         registrar_invocacion(self.usuario_id)
-        return _texto_de_resultado(resultado), False
-
-    def _seleccionar_siguiente_pregunta(self, progreso: dict, preguntas: dict) -> tuple[str, str, str] | None:
-        """Determinístico -- nunca un LLM. Orden: (1) seguir con el eje
-        activo si sigue "pending" y todavía tiene una pregunta de la
-        biblioteca sin usar (la de profundización, para el caso
-        "partial"/"off_topic"/"refusal"); (2) si no, el siguiente eje
-        pendiente en el orden fijo de EJES. None si todos los ejes ya
-        están en un estado terminal (answered/skipped)."""
-        eje_activo = progreso.get("active_axis")
-        if eje_activo and progreso["axes"][eje_activo]["status"] == "pending":
-            info = progreso["axes"][eje_activo]
-            lista = preguntas[eje_activo]
-            indice = info["attempts"]
-            if indice < len(lista):
-                p = lista[indice]
-                return eje_activo, p["id"], p["text"]
-            info["status"] = "skipped"
-        for eje in EJES:
-            info = progreso["axes"][eje]
-            if info["status"] == "pending":
-                p = preguntas[eje][0]
-                return eje, p["id"], p["text"]
-        return None
-
-    def _proposito_listo(self, progreso: dict) -> bool:
-        """Política de cierre configurable (ver revisión de arquitectura
-        externa, sección "purpose_ready()") -- reemplaza "¿se hicieron
-        las 5 preguntas?" por "¿hay evidencia suficiente?". Cierra si
-        todos los ejes llegaron a un estado terminal (nunca se bloquea
-        indefinidamente, ver MAX_INTENTOS_POR_EJE), o antes si ya hay
-        suficientes ejes con evidencia real como para no seguir
-        preguntando. `_MIN_EJES_RESPONDIDOS_PARA_CERRAR` es a propósito
-        un número ajustable por producto, no una regla fija del agente."""
-        valores_ejes = progreso["axes"].values()
-        todos_terminales = all(info["status"] in ("answered", "skipped") for info in valores_ejes)
-        if todos_terminales:
-            return True
-        respondidos = sum(1 for info in valores_ejes if info["status"] == "answered")
-        return respondidos >= _MIN_EJES_RESPONDIDOS_PARA_CERRAR
+        return _texto_de_resultado(resultado)
 
     def _verificar_y_reforzar(
         self, fase: int, respuesta: str, cerrado_declarado: bool, total_versiones_antes: int
@@ -874,11 +873,11 @@ class SesionTelos:
         if actual["fase"] != fase_que_respondio:
             return  # la versión nueva no corresponde a la fase que respondió
 
-        if fase_que_respondio == 1:
-            # La Fase 1 realmente cerró -- el progreso de ejes ya cumplió
-            # su función (ver tools/progreso_exploracion.py), no hace
-            # falta conservarlo.
-            borrar_progreso_exploracion(self.usuario_id)
+        # fase_que_respondio == 1 no debería llegar hasta acá -- Fase 1
+        # cierra y avanza self.fase_actual directo en
+        # SesionTelos._cerrar_fase_1, sin pasar por enviar_mensaje. Se
+        # deja el caso igual (en vez de asumir que nunca puede pasar) por
+        # si algún día algo la invoca por el camino genérico de texto.
         if fase_que_respondio in (1, 2, 3):
             self.fase_actual = fase_que_respondio + 1
         elif fase_que_respondio == 4:

@@ -15,6 +15,25 @@ class EnviarMensajeRequest(BaseModel):
     idioma: str = "en"
 
 
+class ConfirmarSeleccionRequest(BaseModel):
+    """Fase 1: una hoja confirmada en el árbol Ikigai (ver
+    tools/categorias_ikigai.py y agents/orquestador.py::SesionTelos.
+    confirmar_seleccion). `ruta`/`dimensiones` NO se mandan desde acá --
+    el backend las deriva de la taxonomía, nunca confía en lo que mande
+    el cliente."""
+
+    nodo_id: str
+    idioma: str = "en"
+    detalle_libre: str | None = None
+
+
+class SeleccionConfirmadaResponse(BaseModel):
+    cobertura: dict[str, int]
+    cerrado: bool
+    mensaje_cierre: str | None
+    fase_actual: int
+
+
 class FichaVersion(BaseModel):
     fase: int
     datos: dict

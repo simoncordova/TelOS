@@ -41,6 +41,11 @@ class _SesionFalsa:
         # lo que ya haya quedado monkeypatchado como main.leer_ficha_usuario.
         return main.leer_ficha_usuario(self.usuario_id)
 
+    def confirmar_seleccion(self, nodo_id: str, detalle_libre: str | None = None) -> dict:
+        if nodo_id == "id_desconocido":
+            raise ValueError("nodo_id desconocido en la taxonomía de Fase 1: 'id_desconocido'")
+        return {"cobertura": {"amas": 1, "sos_bueno": 1}, "cerrado": False, "mensaje_cierre": None}
+
 
 _FICHA_FALSA = {
     "existe": True,
@@ -132,4 +137,38 @@ def test_auth_me_401_sin_sesion():
     main.app.dependency_overrides.clear()
     with TestClient(main.app) as cliente_sin_auth:
         respuesta = cliente_sin_auth.get("/api/auth/me")
+    assert respuesta.status_code == 401
+
+
+def test_obtener_categorias_fase_1(cliente):
+    respuesta = cliente.get("/api/categorias/1?idioma=es")
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["dimensiones"] == ["amas", "sos_bueno", "mundo_necesita", "pueden_pagar", "valores"]
+    assert len(cuerpo["categorias"]) > 0
+
+
+def test_obtener_categorias_fase_sin_taxonomia_404(cliente):
+    respuesta = cliente.get("/api/categorias/4")
+    assert respuesta.status_code == 404
+
+
+def test_confirmar_seleccion_devuelve_cobertura(cliente):
+    respuesta = cliente.post("/api/seleccion/confirmar", json={"nodo_id": "crear_apps", "idioma": "es"})
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["cobertura"] == {"amas": 1, "sos_bueno": 1}
+    assert cuerpo["cerrado"] is False
+    assert cuerpo["fase_actual"] == 1
+
+
+def test_confirmar_seleccion_nodo_desconocido_400(cliente):
+    respuesta = cliente.post("/api/seleccion/confirmar", json={"nodo_id": "id_desconocido", "idioma": "es"})
+    assert respuesta.status_code == 400
+
+
+def test_confirmar_seleccion_requiere_autenticacion_sin_override():
+    main.app.dependency_overrides.clear()
+    with TestClient(main.app) as cliente_sin_auth:
+        respuesta = cliente_sin_auth.post("/api/seleccion/confirmar", json={"nodo_id": "crear_apps"})
     assert respuesta.status_code == 401

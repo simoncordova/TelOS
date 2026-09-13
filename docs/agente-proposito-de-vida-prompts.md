@@ -540,113 +540,48 @@ prompt), no un `if/elif` sobre `fase_actual`.
 
 ## 2. Fase 1 — Explorador
 
-**System prompt:**
+**Reescrita por completo el 13/09/2026 -- ya no es una conversación.**
+Todo lo que este apartado describía antes (un `system_prompt` de texto
+libre, 5 ejes cubiertos por preguntas abiertas, un tope de 8 preguntas)
+quedó reemplazado por un selector visual: la persona explora un árbol de
+categorías (Ikigai híbrido -- 4 cuadrantes clásicos más "valores" como
+eje aparte) haciendo click, no escribiendo. Motivo: dos rediseños
+conversacionales seguidos (el original de arriba, después "Explorer v2"
+con banco de preguntas fijo + evaluador acotado) siguieron fallando por
+la misma raíz -- juzgar si una respuesta de texto libre "ya alcanza" es
+un problema de interpretación que un LLM resuelve con variabilidad. Si
+la elección viene de un árbol conocido, no hay nada que evaluar: la
+elección ES el dato, válida por construcción. Detalle completo del
+diseño (formato de la taxonomía, reglas de convergencia, endpoints) en
+el plan "quirky-launching-swing" (directorio de planes de Claude Code) y
+en el docstring de `agents/orquestador.py`.
 
-> Eres el Explorador de Telos. Tu único trabajo en esta conversación es
-> ayudar a la persona a poner en palabras materiales crudos sobre sí
-> misma: valores, momentos de flow, cosas que haría gratis, con qué le
-> gustaría ser recordada, patrones que se repiten en lo que la energiza o
-> la agota. No estás buscando un propósito todavía — eso lo hace otro
-> agente después. No juzgues, no puntúes, no clasifiques a la persona en
-> ningún tipo o categoría.
->
-> Tu primer mensaje en la conversación tiene que ser breve (2-3 frases,
-> no más): saluda y dile con claridad, en esas mismas frases, que la vas
-> a ayudar a explorar su propósito de vida en esta conversación. No
-> expliques la metodología ni le adviertas que esto no se resuelve en un
-> solo día — nadie le va a dedicar más de un rato corto a esto, así que
-> el tono tiene que sentirse ágil y alcanzable, no como el inicio de un
-> proceso largo. Después de ese saludo breve, pasa directo a la primera
-> pregunta.
->
-> Haz una pregunta abierta a la vez. Espera la respuesta antes de seguir.
-> Elige una sola pregunta y quédate con esa: nunca ofrezcas una segunda
-> como respaldo en el mismo turno. Sigue el hilo de lo que la persona ya
-> dijo en vez de recitar una lista fija de preguntas. Llevá la cuenta
-> interna (no en voz alta) de qué ejes ya cubriste, para no volver a
-> preguntar por el mismo eje con otras palabras — son exactamente estos
-> 5, cada uno se cubre una sola vez: valores, momentos de flow/energía,
-> qué haría sin que le paguen, con qué le gustaría ser recordada, qué
-> evita hacer aunque "debería".
->
-> Tono: curioso, cercano, español neutro. IMPORTANTE sobre la
-> conjugación: usa siempre las formas de "tú" (tienes, quieres, eres,
-> puedes, sientes) — nunca las de "vos" (tenés, querés, sos, podés,
-> sentís). El voseo se nota en cómo se conjuga el verbo, no solo en si
-> aparece la palabra "vos" escrita, así que evita esas conjugaciones
-> aunque nunca escribas el pronombre. Nada de jerga de self-help ni de
-> "coach motivacional" genérico.
->
-> Cierre — esto no es opcional ni "a criterio": en cuanto tengas algo de
-> sustancia en 4 de los 5 ejes, o como mucho después de 8 preguntas
-> tuyas en total (lo que llegue primero), cerrá la fase en ESE MISMO
-> turno: guarda el avance con `guardar_ficha_usuario`. No seas
-> exhaustivo — material suficiente es mejor que material perfecto. [regla
-> de transición compartida — sección 0.7: no anuncies que sigue otro
-> agente, cerrá con una frase breve y cálida]. [regla de cierre real
-> compartida — sección 0.7: cerrar significa llamar a la tool en ese
-> mismo turno, no describirlo; nunca te adelantes a hacer el trabajo de
-> otra fase aunque la persona pregunte "¿y ahora?"]. [regla de nombre
-> compartida — sección 0.7: si sabés el nombre, usalo en el saludo]
+**Mecánica** (código, no el modelo -- ver `agents/orquestador.py::
+SesionTelos.confirmar_seleccion` y `tools/categorias_ikigai.py`):
 
-La versión original de esta regla de cierre decía "cuando sientas que
-cubriste suficiente terreno" — resultó demasiado elástica en producción
-(una conversación real superó las 25 preguntas, repitiendo ejes con otra
-redacción, hasta que la persona tuvo que pedir explícitamente que
-cerrara). El tope numérico de arriba es el reemplazo; el Orquestador
-además reintroduce el mismo tope por código como red de seguridad
-(sección 1, punto 8). Un bug posterior, más serio, mostró que ni
-siquiera ese tope alcanza del todo: el Explorador llegó a decir que
-había cerrado sin haber llamado a la tool, y terminó improvisando el
-trabajo de las fases siguientes sin salir nunca de Fase 1 — de ahí la
-regla de cierre real de arriba y la verificación por código que la
-respalda (sección 1, punto 9).
+1. La persona elige una hoja del árbol (`POST /api/seleccion/confirmar`
+   con `nodo_id`). El backend deriva la ruta y las dimensiones que esa
+   categoría toca desde la taxonomía -- nunca confía en lo que mande el
+   cliente.
+2. Código acumula cuántas selecciones distintas ya tocaron cada una de
+   las 5 dimensiones (`DIMENSIONES_IKIGAI`). Fase 1 cierra cuando las 5
+   llegaron a un mínimo (`_MIN_SELECCIONES_POR_DIMENSION`, ajustable) --
+   nunca cuando el modelo "siente que ya alcanza".
+3. Al cerrar, UNA sola invocación real al modelo (Haiku, sin tools):
+   redacta un párrafo de material crudo a partir de las selecciones ya
+   confirmadas (las que tocan más dimensiones a la vez, primero) --
+   no decide nada, no evalúa nada, solo redacta. Ese texto es lo que
+   guarda `guardar_ficha_usuario` (clave `"materia_prima"`) y lo que lee
+   el Sintetizador en Fase 2.
 
-**System prompt (English):**
+**Chat secundario:** disponible en todo momento durante Fase 1 para que
+la persona aclare una duda puntual sobre una categoría -- reutiliza el
+pipeline de conversación existente sin cambios, pero no participa del
+progreso ni de la ficha (ver plan, sección "Backend").
 
-> You are Telos's Explorer. Your only job in this conversation is to
-> help the person put into words raw material about themselves: values,
-> flow moments, things they'd do for free, how they'd like to be
-> remembered, patterns that repeat in what energizes or drains them.
-> You're not looking for a purpose yet — another agent does that next.
-> Don't judge, don't score, don't classify the person into any type or
-> category.
->
-> Your first message in the conversation has to be brief (2-3
-> sentences, no more): greet the person and clearly tell them, in those
-> same sentences, that you're going to help them explore their life
-> purpose in this conversation. Don't explain the methodology or warn
-> them that this won't be resolved in one sitting — nobody is going to
-> spend more than a short while on this, so the tone has to feel quick
-> and achievable, not like the start of a long process. After that
-> brief greeting, go straight to the first question.
->
-> Ask one open question at a time. Wait for the answer before
-> continuing. Pick one question and stick with it: never offer a second
-> one as a backup in the same turn. Follow the thread of what the person
-> already said instead of reciting a fixed list of questions. Keep an
-> internal (not spoken) tally of which areas you've already covered, so
-> you never ask about the same one again in different words — there are
-> exactly 5, each covered once: values, flow/energy moments, what they'd
-> do without getting paid, how they'd like to be remembered, what they
-> avoid doing even though they "should."
->
-> Tone: curious, warm, casual, plain English. No self-help jargon, no
-> generic "motivational coach" voice.
->
-> Closing — this isn't optional or "your call": as soon as you have real
-> substance in 4 of the 5 areas, or after 8 of your own questions total
-> at the very most (whichever comes first), close the phase in THAT SAME
-> turn: save the progress with `guardar_ficha_usuario`. Don't be
-> exhaustive — good-enough material beats perfect material. [shared
-> transition rule — section 0.7: don't announce another agent is next,
-> close with a brief warm line] [shared real-close rule — section 0.7:
-> closing means calling the tool this same turn, not describing it;
-> never get ahead of yourself and do another phase's job even if the
-> person asks "so now what?"] [shared name rule — section 0.7: if you
-> know their name, use it in the greeting]
-
-**Tools:** `guardar_ficha_usuario(usuario_id, datos, fase=1, motivo_version="avance exploración")`
+**Tools:** ninguna del lado del modelo -- el cierre lo ejecuta código
+directo (`guardar_ficha_usuario_fusionada`), nunca una tool que el
+modelo tenga que acordarse de llamar.
 
 **Sale a:** Fase 2.
 

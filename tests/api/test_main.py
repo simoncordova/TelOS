@@ -44,7 +44,10 @@ class _SesionFalsa:
     def confirmar_seleccion(self, nodo_id: str, detalle_libre: str | None = None) -> dict:
         if nodo_id == "id_desconocido":
             raise ValueError("nodo_id desconocido en la taxonomía de Fase 1: 'id_desconocido'")
-        return {"cobertura": {"amas": 1, "sos_bueno": 1}, "cerrado": False, "mensaje_cierre": None}
+        return {"cobertura": {"L": 1, "G": 1}, "puede_cerrar": False, "mostrar_valores": False}
+
+    def cerrar_fase_1_manual(self) -> dict:
+        return {"cerrado": True, "mensaje_cierre": "Con esto ya tengo material real."}
 
     def confirmar_seleccion_sistema(self, pregunta_id: str, nodo_id: str, detalle_libre: str | None = None) -> dict:
         return {"respuestas": {pregunta_id: {"nodo_id": nodo_id}}, "cerrado": False, "mensaje_cierre": None}
@@ -181,12 +184,21 @@ def test_obtener_categorias_fase_sin_taxonomia_404(cliente):
 
 
 def test_confirmar_seleccion_devuelve_cobertura(cliente):
-    respuesta = cliente.post("/api/seleccion/confirmar", json={"nodo_id": "crear_apps", "idioma": "es"})
+    respuesta = cliente.post("/api/seleccion/confirmar", json={"nodo_id": "crear/tech/IA", "idioma": "es"})
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
-    assert cuerpo["cobertura"] == {"amas": 1, "sos_bueno": 1}
+    assert cuerpo["cobertura"] == {"L": 1, "G": 1}
+    assert cuerpo["puede_cerrar"] is False
     assert cuerpo["cerrado"] is False
     assert cuerpo["fase_actual"] == 1
+
+
+def test_cerrar_fase1_manual(cliente):
+    respuesta = cliente.post("/api/seleccion/cerrar-fase1", json={"idioma": "es"})
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["cerrado"] is True
+    assert cuerpo["mensaje_cierre"]
 
 
 def test_confirmar_seleccion_nodo_desconocido_400(cliente):

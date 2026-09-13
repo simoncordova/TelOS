@@ -6,7 +6,7 @@
 // telos_stack.py, DistribucionWeb), así que nunca hace falta CORS ni
 // conocer una URL absoluta acá. `credentials: "include"` manda la
 // cookie de sesión (HttpOnly, api/auth.py) en cada request.
-import type { FichaSnapshot, Idioma } from "./types";
+import type { CategoriasFase1, CategoriasFase3, CategoriasFase4, FichaSnapshot, Idioma, SeleccionConfirmada } from "./types";
 
 async function streamPost(ruta: string, cuerpo: unknown): Promise<Response> {
   const respuesta = await fetch(ruta, {
@@ -29,6 +29,15 @@ export function enviarMensaje(texto: string, idioma: Idioma): Promise<Response> 
   return streamPost("/api/sesion/mensaje", { texto, idioma });
 }
 
+// Fases 1/4 pueden cerrar por selección visual, fuera del pipeline de
+// texto -- esto arranca al agente de la fase siguiente si es
+// conversacional (ver agents/orquestador.py::SesionTelos.
+// continuar_tras_seleccion). Llamar SOLO cuando confirmarSeleccion
+// devuelva `cerrado: true`.
+export function continuarSesion(idioma: Idioma): Promise<Response> {
+  return streamPost("/api/sesion/continuar", { idioma });
+}
+
 export async function obtenerFicha(idioma: Idioma): Promise<FichaSnapshot> {
   const respuesta = await fetch(`/api/ficha?idioma=${idioma}`, { credentials: "include" });
   if (!respuesta.ok) throw new Error(`GET /api/ficha devolvió ${respuesta.status}`);
@@ -47,13 +56,58 @@ export function urlLogout(): string {
   return "/api/auth/logout";
 }
 
-// --- Push (Fase 3) ---
-
 async function jsonFetch<T>(ruta: string, init: RequestInit): Promise<T> {
   const respuesta = await fetch(ruta, { credentials: "include", ...init });
   if (!respuesta.ok) throw new Error(`${ruta} devolvió ${respuesta.status}`);
   return respuesta.status === 204 ? (undefined as T) : respuesta.json();
 }
+
+// --- Selector visual (Fases 1/3/4) -- ver api/main.py::obtener_categorias/
+// confirmar_seleccion/confirmar_valores. Un solo GET trae el árbol/selector
+// completo; la navegación entre niveles es 100% client-side, sin otra
+// llamada de red hasta confirmar una hoja real. ---
+
+export function obtenerCategoriasFase1(idioma: Idioma): Promise<CategoriasFase1> {
+  return jsonFetch(`/api/categorias/1?idioma=${idioma}`, { method: "GET" });
+}
+
+export function obtenerCategoriasFase3(idioma: Idioma): Promise<CategoriasFase3> {
+  return jsonFetch(`/api/categorias/3?idioma=${idioma}`, { method: "GET" });
+}
+
+export function obtenerCategoriasFase4(idioma: Idioma): Promise<CategoriasFase4> {
+  return jsonFetch(`/api/categorias/4?idioma=${idioma}`, { method: "GET" });
+}
+
+export function confirmarSeleccion(params: {
+  fase: number;
+  nodoId: string;
+  idioma: Idioma;
+  detalleLibre?: string;
+  preguntaId?: string;
+}): Promise<SeleccionConfirmada> {
+  return jsonFetch("/api/seleccion/confirmar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fase: params.fase,
+      nodo_id: params.nodoId,
+      idioma: params.idioma,
+      detalle_libre: params.detalleLibre ?? null,
+      pregunta_id: params.preguntaId ?? null,
+    }),
+  });
+}
+
+export function confirmarValores(valores: string[], idioma: Idioma): Promise<{ valores: string[] }> {
+  return jsonFetch("/api/seleccion/valores", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ valores, idioma }),
+  });
+}
+
+// --- Push (Fase 3 del plan de migración) ---
 
 export function obtenerConfigPush(): Promise<{ configurado: boolean; clavePublica: string }> {
   return jsonFetch("/api/push/config", { method: "GET" });

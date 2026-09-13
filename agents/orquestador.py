@@ -622,18 +622,22 @@ class SesionTelos:
         (tools/categorias_ikigai.py::buscar_hoja/unir_dimensiones), nunca
         se confía en lo que mande el cliente.
 
-        Devuelve {"cobertura": {dimension: int, ...}, "cerrado": bool,
-        "mensaje_cierre": str | None, "mostrar_valores": bool}. Este
-        último es True exactamente en el turno donde se completa la 2da
-        selección y todavía no se pasó por confirmar_valores -- el
-        frontend debe mostrar ahí el paso único de "tus valores" antes de
-        seguir explorando (ver confirmar_valores). Levanta ValueError si
-        la fase actual no es 1, o si `nodo_id` no es una combinación
+        Devuelve {"cobertura": {dimension: int, ...}, "puede_cerrar": bool,
+        "mostrar_valores": bool}. `puede_cerrar` NO cierra la fase sola
+        -- solo habilita, del lado del frontend, el botón "Ver mi
+        propósito" (mismo criterio que el prototipo real de Claude
+        Design: llegar al mínimo no fuerza el cierre, la persona decide
+        cuándo -- ver cerrar_fase_1_manual, que sí ejecuta el cierre de
+        verdad). `mostrar_valores` es True exactamente en el turno donde
+        se completa la 2da selección y todavía no se pasó por
+        confirmar_valores -- el frontend debe mostrar ahí el paso único
+        de "tus valores" antes de seguir explorando. Levanta ValueError
+        si la fase actual no es 1, o si `nodo_id` no es una combinación
         verbo/dominio/hoja válida."""
         if self.fase_actual != 1:
             raise ValueError(f"confirmar_seleccion solo aplica en Fase 1 -- fase actual es {self.fase_actual}")
         if excedio_limite_diario(self.usuario_id):
-            return {"cobertura": {}, "cerrado": False, "mensaje_cierre": None, "mostrar_valores": False}
+            return {"cobertura": {}, "puede_cerrar": False, "mostrar_valores": False}
 
         partes = nodo_id.split("/")
         if len(partes) != 3:
@@ -673,16 +677,26 @@ class SesionTelos:
         guardar_selecciones_estructuradas(self.usuario_id, progreso)
 
         mostrar_valores = len(progreso["selecciones"]) >= 2 and not progreso.get("valores_hecho")
-        if not self._puede_cerrar(progreso):
-            return {
-                "cobertura": progreso["cobertura"],
-                "cerrado": False,
-                "mensaje_cierre": None,
-                "mostrar_valores": mostrar_valores,
-            }
+        return {
+            "cobertura": progreso["cobertura"],
+            "puede_cerrar": self._puede_cerrar(progreso),
+            "mostrar_valores": mostrar_valores,
+        }
 
+    def cerrar_fase_1_manual(self) -> dict:
+        """Fase 1: cierre explícito, disparado por la persona (botón "Ver
+        mi propósito" en el frontend, habilitado cuando `confirmar_seleccion`
+        devuelve `puede_cerrar=True`) -- nunca automático al llegar al
+        mínimo, mismo criterio que el prototipo real: alcanzar el umbral
+        habilita, no fuerza. Levanta ValueError si la fase actual no es
+        1, o si todavía no se llegó al mínimo de selecciones."""
+        if self.fase_actual != 1:
+            raise ValueError(f"cerrar_fase_1_manual solo aplica en Fase 1 -- fase actual es {self.fase_actual}")
+        progreso = leer_selecciones_estructuradas(self.usuario_id)
+        if not progreso or not self._puede_cerrar(progreso):
+            raise ValueError("Todavía no hay selecciones suficientes para cerrar Fase 1.")
         mensaje_cierre = self._cerrar_fase_1(progreso)
-        return {"cobertura": progreso["cobertura"], "cerrado": True, "mensaje_cierre": mensaje_cierre, "mostrar_valores": False}
+        return {"cerrado": True, "mensaje_cierre": mensaje_cierre}
 
     def confirmar_valores(self, valores: list[str]) -> dict:
         """Fase 1: confirma hasta MAX_VALORES valores elegidos de
@@ -1124,23 +1138,35 @@ class SesionTelos:
 
         # La fase cambió en este mismo turno: si el destino no es Fase 5
         # (que espera a una conversación nueva, no continúa en caliente),
-        # arrancamos al agente siguiente ya mismo, directo (ya sabemos
-        # cuál es, no hace falta el orquestador) para no dejar a la
-        # persona esperando sin saber que le toca escribir algo. Se
-        # entrega como un mensaje aparte, no concatenado al anterior --
-        # así quien llama puede mostrar el primero apenas está listo, sin
-        # esperar a que este segundo termine de generarse.
-        if self.fase_actual != fase_antes and self.fase_actual != 5:
-            kickoff = _KICKOFF[self.idioma]
-            total_versiones_previas_cascada = self._contar_versiones()
-            continuacion, cerrado_cascada = self._invocar_fase_directo(
-                self.fase_actual, kickoff, turn_id=str(uuid.uuid4())
-            )
-            continuacion = self._verificar_y_reforzar(
-                self.fase_actual, continuacion, cerrado_cascada, total_versiones_previas_cascada
-            )
-            guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, continuacion)
-            yield self.fase_actual, continuacion, list(self._contenedor_opciones)
+        # arrancamos al agente siguiente ya mismo -- ver continuar_tras_seleccion,
+        # que es este mismo mecanismo extraído para reusarlo cuando el
+        # cambio de fase viene de una selección visual, no de un mensaje
+        # de texto (ver docstring de ese método).
+        if self.fase_actual != fase_antes:
+            yield from self.continuar_tras_seleccion()
+
+    def continuar_tras_seleccion(self):
+        """Generador: arranca al agente de `self.fase_actual` con el
+        mismo nudge interno (`_KICKOFF`) que usa la cascada de
+        `enviar_mensaje` de arriba -- extraído acá porque Fases 1 y 4
+        pueden cerrar por selección visual (confirmar_seleccion/
+        confirmar_seleccion_sistema), completamente fuera del pipeline de
+        texto de `enviar_mensaje`, así que esa cascada nunca se dispara
+        sola en ese caso. El frontend llama a esto (vía
+        `POST /api/sesion/continuar`) justo después de que una selección
+        devuelva `cerrado=True`, para arrancar de verdad al agente de la
+        fase nueva si es conversacional -- si la fase nueva es Fase 5 (que
+        espera a una conversación nueva, no continúa en caliente) o
+        también resuelve su arranque por selección (Fase 3 en etapa de
+        selección, Fase 4), no hace nada."""
+        if self.fase_actual == 5:
+            return
+        kickoff = _KICKOFF[self.idioma]
+        total_versiones_antes = self._contar_versiones()
+        continuacion, cerrado = self._invocar_fase_directo(self.fase_actual, kickoff, turn_id=str(uuid.uuid4()))
+        continuacion = self._verificar_y_reforzar(self.fase_actual, continuacion, cerrado, total_versiones_antes)
+        guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, continuacion)
+        yield self.fase_actual, continuacion, list(self._contenedor_opciones)
 
     def contar_versiones_ficha(self) -> int:
         """Público (a diferencia de _leer_ficha_con_reintento, que sigue

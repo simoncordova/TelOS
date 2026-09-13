@@ -22,6 +22,7 @@ from api import push
 from api.auth import NOMBRE_COOKIE, obtener_usuario_actual, requiere_login, verificar_secreto_scheduler
 from api.esquemas import (
     AbrirSesionRequest,
+    CerrarFase1Request,
     ConfirmarSeleccionRequest,
     ConfirmarValoresRequest,
     EliminarSuscripcionPushRequest,
@@ -204,6 +205,22 @@ def enviar_mensaje(body: EnviarMensajeRequest, usuario_id: str = Depends(obtener
     return StreamingResponse(stream_eventos(eventos), media_type="text/event-stream")
 
 
+@app.post("/api/sesion/continuar")
+def continuar_sesion(body: AbrirSesionRequest, usuario_id: str = Depends(obtener_usuario_actual)) -> StreamingResponse:
+    """Fases 1 y 4 pueden cerrar por selección visual
+    (`POST /api/seleccion/confirmar`), fuera del pipeline de texto de
+    `POST /api/sesion/mensaje` -- así que la cascada que arranca a la
+    fase siguiente en el mismo turno nunca se dispara sola ahí. El
+    frontend llama a esto una vez, justo después de que una selección
+    devuelva `cerrado=True`, para arrancar de verdad al agente de la
+    fase nueva si es conversacional (ver
+    agents/orquestador.py::SesionTelos.continuar_tras_seleccion) -- no
+    hace nada si la fase nueva también resuelve su arranque por
+    selección, o es Fase 5."""
+    eventos = _eventos_turno(usuario_id, body.idioma, lambda sesion: sesion.continuar_tras_seleccion())
+    return StreamingResponse(stream_eventos(eventos), media_type="text/event-stream")
+
+
 @app.get("/api/categorias/{fase}")
 def obtener_categorias(fase: int, idioma: str = "en") -> dict:
     """Sirve el árbol/selector de categorías completo de una sola vez --
@@ -268,8 +285,34 @@ def confirmar_seleccion(
         etapa=resultado.get("etapa"),
         mensaje_apertura_refinado=resultado.get("mensaje_apertura_refinado"),
         mostrar_valores=resultado.get("mostrar_valores", False),
+        puede_cerrar=resultado.get("puede_cerrar", False),
         cerrado=resultado.get("cerrado", False),
         mensaje_cierre=resultado.get("mensaje_cierre"),
+        fase_actual=fase_actual,
+    )
+
+
+@app.post("/api/seleccion/cerrar-fase1")
+def cerrar_fase1(
+    body: CerrarFase1Request, usuario_id: str = Depends(obtener_usuario_actual)
+) -> SeleccionConfirmadaResponse:
+    """Fase 1: cierre explícito, disparado por la persona (botón "Ver mi
+    propósito", habilitado cuando `POST /api/seleccion/confirmar` devolvió
+    `puede_cerrar=True`) -- ver agents/orquestador.py::SesionTelos.
+    cerrar_fase_1_manual. El frontend debe llamar a
+    `POST /api/sesion/continuar` inmediatamente después para arrancar al
+    Sintetizador (Fase 2)."""
+    lock = _obtener_lock(usuario_id, body.idioma)
+    with lock:
+        sesion = _obtener_sesion(usuario_id, body.idioma)
+        try:
+            resultado = sesion.cerrar_fase_1_manual()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        fase_actual = sesion.fase_actual
+    return SeleccionConfirmadaResponse(
+        cerrado=resultado["cerrado"],
+        mensaje_cierre=resultado["mensaje_cierre"],
         fase_actual=fase_actual,
     )
 

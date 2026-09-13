@@ -43,8 +43,11 @@ class SeleccionConfirmadaResponse(BaseModel):
     (Fase 1) es True exactamente en el turno donde se completa la 2da
     selección y todavía no se pasó por `POST /api/seleccion/valores` --
     ahí el frontend debe mostrar el paso único de "tus valores" (ver
-    agents/orquestador.py::SesionTelos.confirmar_seleccion). Fase 3 nunca
-    cierra a través de este endpoint (`cerrado` siempre False, ver
+    agents/orquestador.py::SesionTelos.confirmar_seleccion). `puede_cerrar`
+    (Fase 1) habilita el botón "Ver mi propósito" -- llegar al mínimo NO
+    cierra la fase sola, la persona decide cuándo con
+    `POST /api/seleccion/cerrar-fase1` (ver cerrar_fase_1_manual). Fase 3
+    nunca cierra a través de este endpoint (`cerrado` siempre False, ver
     agents/orquestador.py::SesionTelos.confirmar_seleccion_validacion)
     -- su cierre real pasa por `POST /api/sesion/mensaje` una vez en
     etapa "refinando", que sí es una conversación de texto."""
@@ -54,6 +57,7 @@ class SeleccionConfirmadaResponse(BaseModel):
     etapa: str | None = None
     mensaje_apertura_refinado: str | None = None
     mostrar_valores: bool = False
+    puede_cerrar: bool = False
     cerrado: bool
     mensaje_cierre: str | None
     fase_actual: int
@@ -65,6 +69,10 @@ class ConfirmarValoresRequest(BaseModel):
     SesionTelos.confirmar_valores."""
 
     valores: list[str]
+    idioma: str = "en"
+
+
+class CerrarFase1Request(BaseModel):
     idioma: str = "en"
 
 

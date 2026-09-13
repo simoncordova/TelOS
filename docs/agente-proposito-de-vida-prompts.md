@@ -544,32 +544,32 @@ prompt), no un `if/elif` sobre `fase_actual`.
 Todo lo que este apartado describía antes (un `system_prompt` de texto
 libre, 5 ejes cubiertos por preguntas abiertas, un tope de 8 preguntas)
 quedó reemplazado por un selector visual: la persona explora un árbol de
-categorías (Ikigai híbrido -- 4 cuadrantes clásicos más "valores" como
-eje aparte) haciendo click, no escribiendo. Motivo: dos rediseños
-conversacionales seguidos (el original de arriba, después "Explorer v2"
-con banco de preguntas fijo + evaluador acotado) siguieron fallando por
-la misma raíz -- juzgar si una respuesta de texto libre "ya alcanza" es
-un problema de interpretación que un LLM resuelve con variabilidad. Si
-la elección viene de un árbol conocido, no hay nada que evaluar: la
-elección ES el dato, válida por construcción. Detalle completo del
-diseño (formato de la taxonomía, reglas de convergencia, endpoints) en
-el plan "quirky-launching-swing" (directorio de planes de Claude Code) y
-en el docstring de `agents/orquestador.py`.
+categorías haciendo click, no escribiendo. Contenido y mecánica exacta
+portados del prototipo interactivo real hecho en Claude Design (mismo
+día) -- no una invención propia, ver tools/categorias_ikigai.py.
+
+**4 dimensiones, no 5**: L (lo que ama), G (en lo que destaca), V (lo
+que aporta valor), N (lo que el mundo necesita). "Valores" NO es una
+dimensión de cobertura -- es un paso único, aparte, que se ofrece una
+sola vez (al completar la 2da selección): la persona elige hasta 3
+valores no negociables de una lista fija, que se muestran como el
+anillo que envuelve las 4 áreas, no como una 5ta área más.
 
 **Mecánica** (código, no el modelo -- ver `agents/orquestador.py::
-SesionTelos.confirmar_seleccion` y `tools/categorias_ikigai.py`):
+SesionTelos.confirmar_seleccion` / `confirmar_valores`):
 
-1. La persona elige una hoja del árbol (`POST /api/seleccion/confirmar`
-   con `nodo_id`). El backend deriva la ruta y las dimensiones que esa
-   categoría toca desde la taxonomía -- nunca confía en lo que mande el
-   cliente.
-2. Código acumula cuántas selecciones distintas ya tocaron cada una de
-   las 5 dimensiones (`DIMENSIONES_IKIGAI`). Fase 1 cierra cuando las 5
-   llegaron a un mínimo (`_MIN_SELECCIONES_POR_DIMENSION`, ajustable) --
-   nunca cuando el modelo "siente que ya alcanza".
+1. La persona elige verbo (nivel 1, ej. "Crear") -> dominio (nivel 2,
+   ej. "Tecnología") -> hoja específica (nivel 3, ej. "IA"), con un
+   detalle libre opcional al final. El backend une las dimensiones del
+   verbo y de la hoja (`tools/categorias_ikigai.py::unir_dimensiones`) --
+   la misma hoja alcanzada desde un verbo distinto puede dar una
+   convergencia distinta, nunca se confía en lo que mande el cliente.
+2. Fase 1 cierra cuando hay 4 categorías elegidas EN TOTAL (mismo umbral
+   que el prototipo real, `_MIN_NODOS_PARA_CERRAR`) -- no exige que las 4
+   dimensiones estén cada una individualmente completas.
 3. Al cerrar, UNA sola invocación real al modelo (Haiku, sin tools):
-   redacta un párrafo de material crudo a partir de las selecciones ya
-   confirmadas (las que tocan más dimensiones a la vez, primero) --
+   redacta un párrafo de material crudo a partir de las selecciones (las
+   que tocan más dimensiones a la vez, primero) y los valores elegidos --
    no decide nada, no evalúa nada, solo redacta. Ese texto es lo que
    guarda `guardar_ficha_usuario` (clave `"materia_prima"`) y lo que lee
    el Sintetizador en Fase 2.
@@ -577,7 +577,7 @@ SesionTelos.confirmar_seleccion` y `tools/categorias_ikigai.py`):
 **Chat secundario:** disponible en todo momento durante Fase 1 para que
 la persona aclare una duda puntual sobre una categoría -- reutiliza el
 pipeline de conversación existente sin cambios, pero no participa del
-progreso ni de la ficha (ver plan, sección "Backend").
+progreso ni de la ficha.
 
 **Tools:** ninguna del lado del modelo -- el cierre lo ejecuta código
 directo (`guardar_ficha_usuario_fusionada`), nunca una tool que el

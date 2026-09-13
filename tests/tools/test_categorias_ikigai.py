@@ -1,71 +1,85 @@
-"""Cobertura de tools/categorias_ikigai.py -- el grafo único del selector
-visual (reemplaza al banco de preguntas del Explorer v2). Sin AWS, sin
-Bedrock: es dato puro + una búsqueda determinística."""
+"""Cobertura de tools/categorias_ikigai.py -- contenido y mecánica
+portados del prototipo interactivo real de Claude Design (13/09/2026).
+Sin AWS, sin Bedrock: es dato puro + una búsqueda/unión determinística."""
 
-from tools.categorias_ikigai import CATEGORIAS_IKIGAI, DIMENSIONES_IKIGAI, buscar_nodo_con_ruta
+from tools.categorias_ikigai import (
+    DIMENSIONES_IKIGAI,
+    DOMINIOS,
+    HOJAS,
+    MAX_VALORES,
+    VALORES_DISPONIBLES,
+    VERBOS,
+    buscar_hoja,
+    unir_dimensiones,
+)
 
 
-def test_dimensiones_son_las_5_del_ikigai_hibrido():
-    assert DIMENSIONES_IKIGAI == ("amas", "sos_bueno", "mundo_necesita", "pueden_pagar", "valores")
+def test_dimensiones_son_las_4_del_prototipo():
+    assert DIMENSIONES_IKIGAI == ("L", "G", "V", "N")
 
 
-def test_buscar_nodo_conocido_devuelve_nodo_y_ruta():
-    encontrado = buscar_nodo_con_ruta("es", "crear_apps")
+def test_unir_dimensiones_sin_duplicados_preserva_orden():
+    assert unir_dimensiones("LG", "LV") == ["L", "G", "V"]
+    assert unir_dimensiones("GV", "NV") == ["G", "V", "N"]
+
+
+def test_buscar_hoja_conocida_une_dimensiones_de_verbo_y_hoja():
+    # crear (LG) + IA (LG) -> LG (sin duplicar)
+    encontrado = buscar_hoja("es", "crear", "tech", "IA")
     assert encontrado is not None
-    nodo, ruta = encontrado
-    assert nodo["id"] == "crear_apps"
-    assert set(nodo["dimensiones"]) == {"amas", "sos_bueno", "pueden_pagar"}
-    assert ruta == ["crear_construir", "software_tecnologia", "crear_apps"]
+    verbo, hoja, dims = encontrado
+    assert verbo["id"] == "crear"
+    assert hoja["id"] == "IA"
+    assert dims == ["L", "G"]
 
 
-def test_buscar_nodo_desconocido_devuelve_none():
-    assert buscar_nodo_con_ruta("es", "no_existe_este_id") is None
+def test_buscar_hoja_convergencia_real_de_3_dimensiones():
+    # crear (LG) + Apps (LV) -> L, G, V (3 dimensiones -- punto de
+    # convergencia real, el mismo caso que muestra el prototipo).
+    encontrado = buscar_hoja("es", "crear", "tech", "Apps")
+    assert encontrado is not None
+    _verbo, _hoja, dims = encontrado
+    assert dims == ["L", "G", "V"]
 
 
-def test_es_y_en_tienen_los_mismos_ids():
-    def _ids(nodos: list[dict]) -> set[str]:
-        ids = set()
-        for nodo in nodos:
-            ids.add(nodo["id"])
-            ids |= _ids(nodo.get("hijos") or [])
-        return ids
-
-    assert _ids(CATEGORIAS_IKIGAI["es"]) == _ids(CATEGORIAS_IKIGAI["en"])
+def test_buscar_hoja_dominio_no_valido_para_ese_verbo():
+    # "ciencia" no está en los dominios de "crear".
+    assert buscar_hoja("es", "crear", "ciencia", "Método") is None
 
 
-def test_cada_dimension_tiene_cobertura_real_en_hojas():
-    # Sanity check del contenido semilla -- si alguna dimensión quedara
-    # sin ninguna hoja que la etiquete, _cobertura_suficiente nunca
-    # podría cumplirse y Fase 1 se bloquearía para siempre.
-    def _hojas(nodos: list[dict]) -> list[dict]:
-        hojas = []
-        for nodo in nodos:
-            hijos = nodo.get("hijos")
-            if hijos:
-                hojas.extend(_hojas(hijos))
-            else:
-                hojas.append(nodo)
-        return hojas
-
-    hojas = _hojas(CATEGORIAS_IKIGAI["es"])
-    for dimension in DIMENSIONES_IKIGAI:
-        tocada_por = [h for h in hojas if dimension in h["dimensiones"]]
-        assert len(tocada_por) >= 2, f"dimensión {dimension!r} sin cobertura suficiente en la semilla"
+def test_buscar_hoja_desconocida_en_dominio_valido():
+    assert buscar_hoja("es", "crear", "tech", "No existe") is None
 
 
-def test_convergencia_algunas_hojas_tocan_varias_dimensiones():
-    # El punto del rediseño en grafo (vs. un árbol por eje): algunas
-    # categorías tienen que aportar a 3+ dimensiones a la vez.
-    def _hojas(nodos: list[dict]) -> list[dict]:
-        hojas = []
-        for nodo in nodos:
-            hijos = nodo.get("hijos")
-            if hijos:
-                hojas.extend(_hojas(hijos))
-            else:
-                hojas.append(nodo)
-        return hojas
+def test_verbo_desconocido():
+    assert buscar_hoja("es", "no_existe", "tech", "IA") is None
 
-    hojas = _hojas(CATEGORIAS_IKIGAI["es"])
-    convergentes = [h for h in hojas if len(h["dimensiones"]) >= 3]
-    assert len(convergentes) >= 1
+
+def test_mismo_dominio_hoja_por_verbos_distintos_da_dimensiones_distintas():
+    # "tech" es dominio de "crear" (LG) y de "resolver" (GV) -- la misma
+    # hoja "IA" (LG) da una unión distinta según por qué verbo se llegó.
+    _v1, _h1, dims_crear = buscar_hoja("es", "crear", "tech", "IA")
+    _v2, _h2, dims_resolver = buscar_hoja("es", "resolver", "tech", "IA")
+    assert dims_crear == ["L", "G"]
+    assert set(dims_resolver) == {"G", "V", "L"}
+
+
+def test_es_y_en_tienen_los_mismos_ids_de_verbos_y_dominios():
+    ids_verbos_es = {v["id"] for v in VERBOS["es"]}
+    ids_verbos_en = {v["id"] for v in VERBOS["en"]}
+    assert ids_verbos_es == ids_verbos_en
+    assert set(DOMINIOS["es"].keys()) == set(DOMINIOS["en"].keys())
+    assert set(HOJAS["es"].keys()) == set(HOJAS["en"].keys())
+
+
+def test_cada_dominio_de_cada_verbo_tiene_hojas_definidas():
+    for verbo in VERBOS["es"]:
+        for dominio_id in verbo["dominios"]:
+            assert dominio_id in DOMINIOS["es"], f"dominio {dominio_id!r} sin label"
+            assert len(HOJAS["es"].get(dominio_id, [])) > 0, f"dominio {dominio_id!r} sin hojas"
+
+
+def test_valores_disponibles_maximo_3():
+    assert MAX_VALORES == 3
+    assert len(VALORES_DISPONIBLES["es"]) >= MAX_VALORES
+    assert len(VALORES_DISPONIBLES["es"]) == len(VALORES_DISPONIBLES["en"])

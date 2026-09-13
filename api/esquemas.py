@@ -39,7 +39,11 @@ class ConfirmarSeleccionRequest(BaseModel):
 class SeleccionConfirmadaResponse(BaseModel):
     """`cobertura` (Fase 1), `respuestas` (Fase 4) y `etapa`/
     `mensaje_apertura_refinado` (Fase 3) son mutuamente excluyentes --
-    cuál viene poblada depende de `fase` en el request. Fase 3 nunca
+    cuál viene poblada depende de `fase` en el request. `mostrar_valores`
+    (Fase 1) es True exactamente en el turno donde se completa la 2da
+    selección y todavía no se pasó por `POST /api/seleccion/valores` --
+    ahí el frontend debe mostrar el paso único de "tus valores" (ver
+    agents/orquestador.py::SesionTelos.confirmar_seleccion). Fase 3 nunca
     cierra a través de este endpoint (`cerrado` siempre False, ver
     agents/orquestador.py::SesionTelos.confirmar_seleccion_validacion)
     -- su cierre real pasa por `POST /api/sesion/mensaje` una vez en
@@ -49,9 +53,19 @@ class SeleccionConfirmadaResponse(BaseModel):
     respuestas: dict[str, dict] | None = None
     etapa: str | None = None
     mensaje_apertura_refinado: str | None = None
+    mostrar_valores: bool = False
     cerrado: bool
     mensaje_cierre: str | None
     fase_actual: int
+
+
+class ConfirmarValoresRequest(BaseModel):
+    """Fase 1: hasta MAX_VALORES valores elegidos de VALORES_DISPONIBLES
+    (tools/categorias_ikigai.py) -- ver agents/orquestador.py::
+    SesionTelos.confirmar_valores."""
+
+    valores: list[str]
+    idioma: str = "en"
 
 
 class FichaVersion(BaseModel):

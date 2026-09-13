@@ -1,6 +1,5 @@
-"""Taxonomía del selector visual Ikigai (Fase 1) -- ver
-C:\\Users\\Wendy\\.claude\\plans\\quirky-launching-swing.md ("Formato de la
-taxonomía -- Fase 1: UN grafo/árbol, no 4-5 árboles paralelos").
+"""Taxonomía del selector visual Ikigai (Fase 1) -- ver el plan
+"quirky-launching-swing" (directorio de planes de Claude Code).
 
 Reemplaza la generación libre de preguntas del Explorador conversacional
 (Explorer v2, sacado el 13/09/2026): en vez de que un modelo pregunte y
@@ -8,463 +7,162 @@ otro evalúe si la respuesta "ya alcanza", la persona elige de este árbol
 -- la elección ES el dato, válida por construcción, sin nada que un LLM
 tenga que juzgar.
 
-UN solo árbol de categorías de interés/actividad, no un árbol por
-dimensión: una misma categoría puede aportar a varias dimensiones del
-Ikigai a la vez (`dimensiones`), que es literalmente el punto del
-framework (la zona de superposición de los círculos). Etiquetas
-booleanas por dimensión, no pesos numéricos -- más fácil de autorar de
-forma consistente a mano sobre muchos nodos, y sigue capturando la
-convergencia con precisión: un nodo etiquetado en 3-4 dimensiones a la
-vez ES un punto de intersección real.
+**Contenido y mecánica portados del prototipo interactivo real hecho en
+Claude Design (13/09/2026)** -- no la semilla original que se había
+inventado acá antes de tener el diseño. Diferencias respecto a esa
+primera versión, todas deliberadas para que backend y frontend coincidan
+exacto:
 
-3 niveles (amplio → intermedio → específico/hoja). Los nodos de
-organización (niveles 1-2, en general) no etiquetan dimensión propia --
-`dimensiones: []` -- son solo agrupadores; las hojas son las que
-etiquetan con precisión.
+- **4 dimensiones, no 5** -- L (lo que amás), G (en lo que destacás),
+  V (lo que aporta valor), N (lo que el mundo necesita). "Valores" no es
+  una dimensión de cobertura acá: es un paso aparte, una sola vez, ver
+  VALORES_DISPONIBLES y agents/orquestador.py::SesionTelos.confirmar_valores.
+- **3 niveles con IDs compuestos, no un solo árbol plano**: VERBOS
+  (nivel 1, ej. "crear") -> DOMINIOS (nivel 2, ej. "tech", reutilizado
+  por varios verbos) -> HOJAS (nivel 3, específico, ej. "IA"). El mismo
+  dominio+hoja alcanzado desde un verbo distinto es una selección
+  distinta -- el verbo también aporta sus propias dimensiones. El
+  `nodo_id` que manda el cliente es la ruta completa unida con "/"
+  (`"crear/tech/IA"`), igual que en el prototipo.
+- **Convergencia por unión, no por hoja sola**: las dimensiones finales
+  de una selección son la unión de las del verbo y las de la hoja
+  (`unir_dimensiones`) -- ej. "crear" (LG) + "IA" (LG) = LG; "crear" (LG)
+  + "Apps" (LV) = LGV. Autoría más eficiente que etiquetar cada hoja
+  desde cero.
+"""
 
-Contenido: semilla inicial (32 hojas, ES/EN), pensada para dar cobertura
-real a las 5 dimensiones y validar el mecanismo -- no es exhaustiva
-("miles de combinaciones" es una autoría de contenido considerable
-aparte, ver el plan). Puramente datos -- sin I/O, sin lógica de
-navegación ni de convergencia (eso vive en agents/orquestador.py, que sí
-conoce el progreso de la persona)."""
+DIMENSIONES_IKIGAI = ("L", "G", "V", "N")
 
-DIMENSIONES_IKIGAI = ("amas", "sos_bueno", "mundo_necesita", "pueden_pagar", "valores")
-
-
-def _nodo(id_: str, label: str, dimensiones: list[str] | None = None, hijos: list[dict] | None = None) -> dict:
-    nodo = {"id": id_, "label": label, "dimensiones": dimensiones or []}
-    if hijos:
-        nodo["hijos"] = hijos
-    return nodo
-
-
-CATEGORIAS_IKIGAI = {
-    "es": [
-        _nodo(
-            "crear_construir",
-            "Crear o construir cosas",
-            hijos=[
-                _nodo(
-                    "software_tecnologia",
-                    "Software y tecnología",
-                    hijos=[
-                        _nodo("crear_apps", "Aplicaciones o productos digitales", ["amas", "sos_bueno", "pueden_pagar"]),
-                        _nodo("automatizar_tedioso", "Automatizar algo tedioso", ["sos_bueno", "mundo_necesita"]),
-                    ],
-                ),
-                _nodo(
-                    "con_las_manos",
-                    "Con las manos",
-                    hijos=[
-                        _nodo("carpinteria_reparaciones", "Carpintería, reparaciones, manualidades", ["amas", "pueden_pagar"]),
-                        _nodo("cocinar_recetas", "Cocinar o crear recetas propias", ["amas", "mundo_necesita"]),
-                    ],
-                ),
-                _nodo(
-                    "contenido_ideas",
-                    "Contenido e ideas",
-                    hijos=[
-                        _nodo("escribir", "Escribir (historias, ensayos, guiones)", ["amas", "valores"]),
-                        _nodo("musica_audiovisual", "Música o producción audiovisual", ["amas", "sos_bueno"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "ayudar_cuidar",
-            "Ayudar o cuidar a otros",
-            hijos=[
-                _nodo(
-                    "uno_a_uno",
-                    "Uno a uno",
-                    hijos=[
-                        _nodo("mentorear", "Enseñar o mentorear a una persona", ["sos_bueno", "mundo_necesita", "valores"]),
-                        _nodo("acompañar_dificil", "Acompañar en un momento difícil", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-                _nodo(
-                    "grupo_comunidad",
-                    "A un grupo o comunidad",
-                    hijos=[
-                        _nodo("liderar_grupo", "Organizar o liderar un grupo", ["sos_bueno", "pueden_pagar"]),
-                        _nodo("voluntariado", "Voluntariado o causa social", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-                _nodo(
-                    "cuidado_cercano",
-                    "Cuidado cercano",
-                    hijos=[
-                        _nodo("cuidar_familia", "Cuidar a la familia", ["mundo_necesita", "valores"]),
-                        _nodo("presente_amigos", "Estar presente para amigos", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "resolver_entender",
-            "Resolver problemas / entender cómo funcionan las cosas",
-            hijos=[
-                _nodo(
-                    "problemas_tecnicos",
-                    "Problemas técnicos o lógicos",
-                    hijos=[
-                        _nodo("depurar_diagnosticar", "Depurar o diagnosticar qué está fallando", ["sos_bueno", "pueden_pagar"]),
-                        _nodo("optimizar", "Optimizar algo que ya funciona pero mal", ["sos_bueno", "mundo_necesita"]),
-                    ],
-                ),
-                _nodo(
-                    "problemas_personas",
-                    "Problemas de personas o de organización",
-                    hijos=[
-                        _nodo("mediar_conflicto", "Mediar un conflicto", ["sos_bueno", "valores"]),
-                        _nodo("ordenar_caos", "Ordenar el caos (procesos, planificación)", ["sos_bueno", "pueden_pagar"]),
-                    ],
-                ),
-                _nodo(
-                    "curiosidad_pura",
-                    "Curiosidad pura",
-                    hijos=[
-                        _nodo("investigar_a_fondo", "Investigar un tema a fondo", ["amas", "sos_bueno"]),
-                        _nodo("aprender_de_punta_a_punta", "Aprender algo nuevo de punta a punta", ["amas"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "enseñar_transmitir",
-            "Enseñar o transmitir conocimiento",
-            hijos=[
-                _nodo(
-                    "frente_a_grupo",
-                    "Frente a un grupo",
-                    hijos=[
-                        _nodo("dar_clases_talleres", "Dar clases o talleres", ["sos_bueno", "mundo_necesita", "pueden_pagar"]),
-                        _nodo("hablar_publico", "Hablar en público sobre un tema que domino", ["sos_bueno", "pueden_pagar"]),
-                    ],
-                ),
-                _nodo(
-                    "contenido_que_queda",
-                    "Contenido que queda",
-                    hijos=[
-                        _nodo("escribir_guias", "Escribir guías o tutoriales", ["sos_bueno", "mundo_necesita"]),
-                        _nodo("grabar_contenido_educativo", "Grabar contenido educativo", ["sos_bueno", "pueden_pagar"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "liderar_organizar",
-            "Liderar u organizar",
-            hijos=[
-                _nodo(
-                    "equipo_proyecto",
-                    "Un equipo o proyecto",
-                    hijos=[
-                        _nodo("coordinar_personas", "Coordinar personas hacia un objetivo común", ["sos_bueno", "pueden_pagar"]),
-                        _nodo("decisiones_dificiles", "Tomar decisiones difíciles por el grupo", ["sos_bueno", "valores"]),
-                    ],
-                ),
-                _nodo(
-                    "causa_propia",
-                    "Una causa o iniciativa propia",
-                    hijos=[
-                        _nodo("emprender", "Emprender algo desde cero", ["amas", "pueden_pagar"]),
-                        _nodo("impulsar_cambio", "Impulsar un cambio en mi entorno", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "investigar_aprender",
-            "Investigar o aprender continuamente",
-            hijos=[
-                _nodo(
-                    "ciencia_tecnologia",
-                    "Ciencia o tecnología",
-                    hijos=[
-                        _nodo("seguir_avances", "Seguir de cerca avances de un campo", ["amas", "sos_bueno"]),
-                        _nodo("experimentar", "Experimentar y probar cosas nuevas", ["amas", "sos_bueno"]),
-                    ],
-                ),
-                _nodo(
-                    "personas_cultura",
-                    "Personas o cultura",
-                    hijos=[
-                        _nodo("entender_gente", "Entender por qué la gente hace lo que hace", ["amas", "sos_bueno"]),
-                        _nodo("explorar_formas_de_vivir", "Explorar otras formas de pensar o vivir", ["amas", "valores"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "expresarme",
-            "Expresarme o mostrar algo mío",
-            hijos=[
-                _nodo(
-                    "performance_en_vivo",
-                    "Performance en vivo",
-                    hijos=[
-                        _nodo("actuar_tocar_en_vivo", "Hablar en público, actuar, tocar en vivo", ["amas", "sos_bueno"]),
-                        _nodo("enseñar_con_estilo", "Enseñar frente a un grupo con estilo propio", ["amas", "sos_bueno"]),
-                    ],
-                ),
-                _nodo(
-                    "obra_que_queda",
-                    "Obra que queda",
-                    hijos=[
-                        _nodo("publicar_algo", "Publicar algo (escrito, código, arte)", ["amas", "valores"]),
-                        _nodo("diseñar_para_otros", "Diseñar algo que otros van a usar o ver", ["amas", "sos_bueno", "pueden_pagar"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "cuidar_entorno",
-            "Cuidar mi entorno o causas sociales",
-            hijos=[
-                _nodo(
-                    "medio_ambiente",
-                    "Medio ambiente",
-                    hijos=[
-                        _nodo("reducir_impacto", "Reducir el impacto ambiental en lo que hago", ["mundo_necesita", "valores"]),
-                        _nodo("soluciones_ambientales", "Trabajar en soluciones ambientales", ["mundo_necesita", "pueden_pagar"]),
-                    ],
-                ),
-                _nodo(
-                    "justicia_equidad",
-                    "Justicia o equidad",
-                    hijos=[
-                        _nodo("defender_a_quien_no_puede", "Defender a quien no puede defenderse solo", ["mundo_necesita", "valores"]),
-                        _nodo("igualdad_de_oportunidades", "Trabajar por más igualdad de oportunidades", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-            ],
-        ),
-    ],
-    "en": [
-        _nodo(
-            "crear_construir",
-            "Create or build things",
-            hijos=[
-                _nodo(
-                    "software_tecnologia",
-                    "Software and technology",
-                    hijos=[
-                        _nodo("crear_apps", "Apps or digital products", ["amas", "sos_bueno", "pueden_pagar"]),
-                        _nodo("automatizar_tedioso", "Automating something tedious", ["sos_bueno", "mundo_necesita"]),
-                    ],
-                ),
-                _nodo(
-                    "con_las_manos",
-                    "With my hands",
-                    hijos=[
-                        _nodo("carpinteria_reparaciones", "Carpentry, repairs, crafts", ["amas", "pueden_pagar"]),
-                        _nodo("cocinar_recetas", "Cooking or creating my own recipes", ["amas", "mundo_necesita"]),
-                    ],
-                ),
-                _nodo(
-                    "contenido_ideas",
-                    "Content and ideas",
-                    hijos=[
-                        _nodo("escribir", "Writing (stories, essays, scripts)", ["amas", "valores"]),
-                        _nodo("musica_audiovisual", "Music or audiovisual production", ["amas", "sos_bueno"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "ayudar_cuidar",
-            "Help or take care of others",
-            hijos=[
-                _nodo(
-                    "uno_a_uno",
-                    "One on one",
-                    hijos=[
-                        _nodo("mentorear", "Teaching or mentoring one person", ["sos_bueno", "mundo_necesita", "valores"]),
-                        _nodo("acompañar_dificil", "Being there for someone in a hard moment", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-                _nodo(
-                    "grupo_comunidad",
-                    "A group or community",
-                    hijos=[
-                        _nodo("liderar_grupo", "Organizing or leading a group", ["sos_bueno", "pueden_pagar"]),
-                        _nodo("voluntariado", "Volunteering or a social cause", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-                _nodo(
-                    "cuidado_cercano",
-                    "Close care",
-                    hijos=[
-                        _nodo("cuidar_familia", "Taking care of family", ["mundo_necesita", "valores"]),
-                        _nodo("presente_amigos", "Being present for friends", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "resolver_entender",
-            "Solve problems / understand how things work",
-            hijos=[
-                _nodo(
-                    "problemas_tecnicos",
-                    "Technical or logical problems",
-                    hijos=[
-                        _nodo("depurar_diagnosticar", "Debugging or diagnosing what's failing", ["sos_bueno", "pueden_pagar"]),
-                        _nodo("optimizar", "Optimizing something that works, poorly", ["sos_bueno", "mundo_necesita"]),
-                    ],
-                ),
-                _nodo(
-                    "problemas_personas",
-                    "People or organizational problems",
-                    hijos=[
-                        _nodo("mediar_conflicto", "Mediating a conflict", ["sos_bueno", "valores"]),
-                        _nodo("ordenar_caos", "Bringing order to chaos (process, planning)", ["sos_bueno", "pueden_pagar"]),
-                    ],
-                ),
-                _nodo(
-                    "curiosidad_pura",
-                    "Pure curiosity",
-                    hijos=[
-                        _nodo("investigar_a_fondo", "Researching a topic in depth", ["amas", "sos_bueno"]),
-                        _nodo("aprender_de_punta_a_punta", "Learning something new end to end", ["amas"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "enseñar_transmitir",
-            "Teach or pass on knowledge",
-            hijos=[
-                _nodo(
-                    "frente_a_grupo",
-                    "In front of a group",
-                    hijos=[
-                        _nodo("dar_clases_talleres", "Teaching classes or workshops", ["sos_bueno", "mundo_necesita", "pueden_pagar"]),
-                        _nodo("hablar_publico", "Public speaking on something I know well", ["sos_bueno", "pueden_pagar"]),
-                    ],
-                ),
-                _nodo(
-                    "contenido_que_queda",
-                    "Content that lasts",
-                    hijos=[
-                        _nodo("escribir_guias", "Writing guides or tutorials", ["sos_bueno", "mundo_necesita"]),
-                        _nodo("grabar_contenido_educativo", "Recording educational content", ["sos_bueno", "pueden_pagar"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "liderar_organizar",
-            "Lead or organize",
-            hijos=[
-                _nodo(
-                    "equipo_proyecto",
-                    "A team or project",
-                    hijos=[
-                        _nodo("coordinar_personas", "Coordinating people toward a shared goal", ["sos_bueno", "pueden_pagar"]),
-                        _nodo("decisiones_dificiles", "Making hard calls for the group", ["sos_bueno", "valores"]),
-                    ],
-                ),
-                _nodo(
-                    "causa_propia",
-                    "My own cause or initiative",
-                    hijos=[
-                        _nodo("emprender", "Starting something from scratch", ["amas", "pueden_pagar"]),
-                        _nodo("impulsar_cambio", "Driving change in my environment", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "investigar_aprender",
-            "Research or keep learning",
-            hijos=[
-                _nodo(
-                    "ciencia_tecnologia",
-                    "Science or technology",
-                    hijos=[
-                        _nodo("seguir_avances", "Following advances in a field closely", ["amas", "sos_bueno"]),
-                        _nodo("experimentar", "Experimenting and trying new things", ["amas", "sos_bueno"]),
-                    ],
-                ),
-                _nodo(
-                    "personas_cultura",
-                    "People or culture",
-                    hijos=[
-                        _nodo("entender_gente", "Understanding why people do what they do", ["amas", "sos_bueno"]),
-                        _nodo("explorar_formas_de_vivir", "Exploring other ways of thinking or living", ["amas", "valores"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "expresarme",
-            "Express myself / show something of my own",
-            hijos=[
-                _nodo(
-                    "performance_en_vivo",
-                    "Live performance",
-                    hijos=[
-                        _nodo("actuar_tocar_en_vivo", "Public speaking, acting, performing live", ["amas", "sos_bueno"]),
-                        _nodo("enseñar_con_estilo", "Teaching a group with my own style", ["amas", "sos_bueno"]),
-                    ],
-                ),
-                _nodo(
-                    "obra_que_queda",
-                    "Work that lasts",
-                    hijos=[
-                        _nodo("publicar_algo", "Publishing something (writing, code, art)", ["amas", "valores"]),
-                        _nodo("diseñar_para_otros", "Designing something others will use or see", ["amas", "sos_bueno", "pueden_pagar"]),
-                    ],
-                ),
-            ],
-        ),
-        _nodo(
-            "cuidar_entorno",
-            "Care for my environment or social causes",
-            hijos=[
-                _nodo(
-                    "medio_ambiente",
-                    "Environment",
-                    hijos=[
-                        _nodo("reducir_impacto", "Reducing my own environmental impact", ["mundo_necesita", "valores"]),
-                        _nodo("soluciones_ambientales", "Working on environmental solutions", ["mundo_necesita", "pueden_pagar"]),
-                    ],
-                ),
-                _nodo(
-                    "justicia_equidad",
-                    "Justice or equity",
-                    hijos=[
-                        _nodo("defender_a_quien_no_puede", "Standing up for someone who can't do it alone", ["mundo_necesita", "valores"]),
-                        _nodo("igualdad_de_oportunidades", "Working toward more equal opportunity", ["mundo_necesita", "valores"]),
-                    ],
-                ),
-            ],
-        ),
-    ],
+ETIQUETAS_DIMENSION = {
+    "es": {"L": "Lo que amas", "G": "En lo que destacas", "V": "Lo que aporta valor", "N": "Lo que el mundo necesita"},
+    "en": {"L": "What you love", "G": "What you're good at", "V": "What creates value", "N": "What the world needs"},
 }
 
 
-def buscar_nodo_con_ruta(idioma: str, nodo_id: str) -> tuple[dict, list[str]] | None:
-    """Busca `nodo_id` en el árbol del idioma dado (DFS) y devuelve
-    (nodo, ruta_de_ids_desde_la_raiz) -- o None si no existe. El backend
-    deriva la ruta y las `dimensiones` de acá en vez de confiar en lo que
-    mande el cliente, mismo criterio de "código decide, no el cliente ni
-    el modelo" que el resto del proyecto."""
-    arbol = CATEGORIAS_IKIGAI.get(idioma, CATEGORIAS_IKIGAI["es"])
+def _verbo(id_: str, label: str, desc: str, dims: str, dominios: list[str]) -> dict:
+    return {"id": id_, "label": label, "desc": desc, "dims": dims, "dominios": dominios}
 
-    def _buscar(nodos: list[dict], ruta: list[str]) -> tuple[dict, list[str]] | None:
-        for nodo in nodos:
-            ruta_actual = ruta + [nodo["id"]]
-            if nodo["id"] == nodo_id:
-                return nodo, ruta_actual
-            hijos = nodo.get("hijos")
-            if hijos:
-                encontrado = _buscar(hijos, ruta_actual)
-                if encontrado:
-                    return encontrado
+
+VERBOS = {
+    "es": [
+        _verbo("crear", "Crear", "Dar forma a algo que antes no existía.", "LG", ["tech", "arte", "producto", "palabra", "sistemas", "naturaleza"]),
+        _verbo("ayudar", "Ayudar", "Estar del lado de alguien que lo necesita.", "LN", ["personas", "salud", "comunidad", "aprendizaje", "palabra", "naturaleza"]),
+        _verbo("resolver", "Resolver", "Desarmar un problema hasta que ceda.", "GV", ["sistemas", "tech", "datos", "producto", "naturaleza", "salud"]),
+        _verbo("ensenar", "Enseñar", "Que otro pueda hacer lo que tú sabes.", "LN", ["aprendizaje", "tech", "arte", "palabra", "personas", "ciencia"]),
+        _verbo("liderar", "Liderar", "Llevar a un grupo a un lugar mejor.", "GV", ["producto", "personas", "comunidad", "sistemas", "tech", "aprendizaje"]),
+        _verbo("investigar", "Investigar", "Perseguir una pregunta hasta el fondo.", "LG", ["ciencia", "datos", "naturaleza", "personas", "tech", "palabra"]),
+        _verbo("construir", "Construir", "Hacer que algo se sostenga en el tiempo.", "GV", ["tech", "sistemas", "producto", "naturaleza", "arte", "comunidad"]),
+        _verbo("transformar", "Transformar", "Cambiar cómo funcionan las cosas.", "NV", ["sistemas", "comunidad", "personas", "naturaleza", "producto", "aprendizaje"]),
+    ],
+    "en": [
+        _verbo("crear", "Create", "Give shape to something that didn't exist before.", "LG", ["tech", "arte", "producto", "palabra", "sistemas", "naturaleza"]),
+        _verbo("ayudar", "Help", "Stand by someone who needs it.", "LN", ["personas", "salud", "comunidad", "aprendizaje", "palabra", "naturaleza"]),
+        _verbo("resolver", "Solve", "Take a problem apart until it gives.", "GV", ["sistemas", "tech", "datos", "producto", "naturaleza", "salud"]),
+        _verbo("ensenar", "Teach", "Make it so someone else can do what you know.", "LN", ["aprendizaje", "tech", "arte", "palabra", "personas", "ciencia"]),
+        _verbo("liderar", "Lead", "Take a group somewhere better.", "GV", ["producto", "personas", "comunidad", "sistemas", "tech", "aprendizaje"]),
+        _verbo("investigar", "Investigate", "Chase a question all the way down.", "LG", ["ciencia", "datos", "naturaleza", "personas", "tech", "palabra"]),
+        _verbo("construir", "Build", "Make something hold up over time.", "GV", ["tech", "sistemas", "producto", "naturaleza", "arte", "comunidad"]),
+        _verbo("transformar", "Transform", "Change how things work.", "NV", ["sistemas", "comunidad", "personas", "naturaleza", "producto", "aprendizaje"]),
+    ],
+}
+
+DOMINIOS = {
+    "es": {
+        "tech": {"label": "Tecnología", "desc": "Software, IA, datos y herramientas."},
+        "arte": {"label": "Arte y estética", "desc": "Forma, imagen, sonido, materia."},
+        "producto": {"label": "Productos y negocios", "desc": "Soluciones que alguien usa de verdad."},
+        "palabra": {"label": "Palabra e historias", "desc": "Escribir, narrar, comunicar."},
+        "personas": {"label": "Personas", "desc": "Vínculos, acompañamiento, desarrollo."},
+        "comunidad": {"label": "Comunidad", "desc": "Grupos, territorio, lo colectivo."},
+        "salud": {"label": "Cuerpo y salud", "desc": "Bienestar físico y mental."},
+        "aprendizaje": {"label": "Aprendizaje", "desc": "Cómo aprendemos y enseñamos."},
+        "sistemas": {"label": "Sistemas y procesos", "desc": "Cómo funcionan las cosas por dentro."},
+        "datos": {"label": "Datos y evidencia", "desc": "Medir, entender, anticipar."},
+        "naturaleza": {"label": "Naturaleza y entorno", "desc": "Territorio, clima, ciudad."},
+        "ciencia": {"label": "Ciencia", "desc": "Preguntas, método, descubrimiento."},
+    },
+    "en": {
+        "tech": {"label": "Technology", "desc": "Software, AI, data and tools."},
+        "arte": {"label": "Art and aesthetics", "desc": "Form, image, sound, material."},
+        "producto": {"label": "Products and business", "desc": "Solutions someone actually uses."},
+        "palabra": {"label": "Words and stories", "desc": "Writing, storytelling, communicating."},
+        "personas": {"label": "People", "desc": "Bonds, support, growth."},
+        "comunidad": {"label": "Community", "desc": "Groups, place, the collective."},
+        "salud": {"label": "Body and health", "desc": "Physical and mental wellbeing."},
+        "aprendizaje": {"label": "Learning", "desc": "How we learn and teach."},
+        "sistemas": {"label": "Systems and processes", "desc": "How things work underneath."},
+        "datos": {"label": "Data and evidence", "desc": "Measuring, understanding, anticipating."},
+        "naturaleza": {"label": "Nature and environment", "desc": "Land, climate, the city."},
+        "ciencia": {"label": "Science", "desc": "Questions, method, discovery."},
+    },
+}
+
+
+def _hoja(id_: str, desc: str, dims: str) -> dict:
+    return {"id": id_, "label": id_, "desc": desc, "dims": dims}
+
+
+HOJAS = {
+    "es": {
+        "tech": [_hoja("IA", "Tecnología que aprende y crea.", "LG"), _hoja("Apps", "Productos digitales cotidianos.", "LV"), _hoja("Software", "Sistemas que otros usan a diario.", "GV"), _hoja("Automatización", "Quitar del medio el trabajo repetitivo.", "GV"), _hoja("Hardware", "Objetos que piensan.", "GL"), _hoja("Infraestructura", "Lo invisible que sostiene todo.", "GN")],
+        "arte": [_hoja("Imagen", "Fotografía, ilustración, visual.", "L"), _hoja("Sonido", "Música y paisaje sonoro.", "L"), _hoja("Espacio", "Objetos, interiores, materia.", "LG"), _hoja("Movimiento", "Video, animación, cuerpo.", "LG"), _hoja("Dirección", "Dar coherencia estética a algo.", "GV"), _hoja("Artesanía", "Hacer con las manos.", "LN")],
+        "producto": [_hoja("Producto digital", "Construir soluciones útiles para otros.", "LV"), _hoja("Emprender", "Llevar una idea al mundo real.", "LV"), _hoja("Estrategia", "Decidir dónde jugar.", "GV"), _hoja("Ventas", "Conectar valor con quien lo necesita.", "VN"), _hoja("Operaciones", "Que funcione todos los días.", "GV"), _hoja("Impacto social", "Negocio con propósito.", "NV")],
+        "palabra": [_hoja("Escritura", "Ordenar ideas en palabras.", "LG"), _hoja("Narrativa", "Contar lo que importa.", "LN"), _hoja("Divulgación", "Hacer entendible lo complejo.", "GN"), _hoja("Marca", "Dar voz a algo.", "GV"), _hoja("Periodismo", "Sacar cosas a la luz.", "NV"), _hoja("Conversación", "Facilitar el diálogo.", "LN")],
+        "personas": [_hoja("Mentoría", "Ayudar a otros a crecer.", "LN"), _hoja("Acompañar", "Estar al lado en lo difícil.", "LN"), _hoja("Equipos", "Que trabajar juntos funcione.", "GV"), _hoja("Talento", "Encontrar a la persona correcta.", "GV"), _hoja("Mundo interior", "Trabajar lo que no se ve.", "LN"), _hoja("Cuidado", "Sostener a quien no puede solo.", "LN")],
+        "comunidad": [_hoja("Territorio", "Lo que pasa cerca.", "LN"), _hoja("Organizar", "Mover a un grupo hacia algo.", "GN"), _hoja("Cultura local", "Lo que nos identifica.", "LN"), _hoja("Inclusión", "Que nadie quede afuera.", "NV"), _hoja("Redes", "Conectar personas entre sí.", "GV"), _hoja("Voluntariado", "Entregar tiempo propio.", "LN")],
+        "salud": [_hoja("Movimiento", "Entrenar el cuerpo.", "LG"), _hoja("Salud mental", "Sostener la mente.", "LN"), _hoja("Nutrición", "Lo que comemos.", "GN"), _hoja("Prevención", "Actuar antes de que duela.", "GN"), _hoja("Rehabilitación", "Volver a funcionar.", "GN"), _hoja("Longevidad", "Vivir mejor más tiempo.", "LN")],
+        "aprendizaje": [_hoja("Diseño de aprendizaje", "Cómo se enseña algo.", "GV"), _hoja("Contenido educativo", "Ayudar a otros a desarrollar conocimiento.", "LV"), _hoja("Aula", "Enseñar cara a cara.", "LN"), _hoja("Habilidades", "Entrenar para hacer.", "GV"), _hoja("Infancia", "Los primeros años.", "LN"), _hoja("Reconversión", "Aprender otro oficio.", "NV")],
+        "sistemas": [_hoja("Procesos", "Ordenar cómo se hace.", "GV"), _hoja("Diagnóstico", "Encontrar la falla.", "GN"), _hoja("Rediseño", "Cambiar la forma del sistema.", "GV"), _hoja("Política pública", "Reglas que afectan a muchos.", "NV"), _hoja("Logística", "Mover cosas y tiempo.", "GV"), _hoja("Calidad", "Que salga bien siempre.", "GV")],
+        "datos": [_hoja("Análisis", "Entender lo que pasó.", "GV"), _hoja("Predicción", "Anticipar lo que viene.", "LG"), _hoja("Visualización", "Hacer ver el patrón.", "LG"), _hoja("Medición de impacto", "Saber si sirvió.", "NV"), _hoja("Investigación", "Preguntar con números.", "GN"), _hoja("Modelos", "Simular la realidad.", "LG")],
+        "naturaleza": [_hoja("Clima", "El problema grande.", "NV"), _hoja("Paisaje", "Habitar el lugar.", "LN"), _hoja("Alimentos", "De dónde viene la comida.", "GN"), _hoja("Energía", "Cómo movemos el mundo.", "NV"), _hoja("Conservación", "Proteger lo que queda.", "LN"), _hoja("Ciudad", "Vivir juntos mejor.", "GN")],
+        "ciencia": [_hoja("Preguntas abiertas", "Lo que nadie sabe aún.", "LG"), _hoja("Método", "Cómo se prueba una idea.", "GV"), _hoja("Biología", "La vida por dentro.", "GN"), _hoja("Materia", "Las reglas del mundo.", "LG"), _hoja("Cognición", "Cómo pensamos.", "LN"), _hoja("Transferencia", "Del laboratorio a la calle.", "VN")],
+    },
+    "en": {
+        "tech": [_hoja("AI", "Technology that learns and creates.", "LG"), _hoja("Apps", "Everyday digital products.", "LV"), _hoja("Software", "Systems others use daily.", "GV"), _hoja("Automation", "Taking repetitive work out of the way.", "GV"), _hoja("Hardware", "Objects that think.", "GL"), _hoja("Infrastructure", "The invisible thing holding it all up.", "GN")],
+        "arte": [_hoja("Image", "Photography, illustration, visuals.", "L"), _hoja("Sound", "Music and soundscape.", "L"), _hoja("Space", "Objects, interiors, material.", "LG"), _hoja("Motion", "Video, animation, the body.", "LG"), _hoja("Direction", "Giving something aesthetic coherence.", "GV"), _hoja("Craft", "Making with your hands.", "LN")],
+        "producto": [_hoja("Digital product", "Building useful solutions for others.", "LV"), _hoja("Entrepreneurship", "Bringing an idea into the real world.", "LV"), _hoja("Strategy", "Deciding where to play.", "GV"), _hoja("Sales", "Connecting value with who needs it.", "VN"), _hoja("Operations", "Making it work every day.", "GV"), _hoja("Social impact", "Business with purpose.", "NV")],
+        "palabra": [_hoja("Writing", "Putting ideas into words.", "LG"), _hoja("Narrative", "Telling what matters.", "LN"), _hoja("Explaining", "Making the complex understandable.", "GN"), _hoja("Brand", "Giving something a voice.", "GV"), _hoja("Journalism", "Bringing things to light.", "NV"), _hoja("Conversation", "Facilitating dialogue.", "LN")],
+        "personas": [_hoja("Mentorship", "Helping others grow.", "LN"), _hoja("Being there", "Standing by someone through something hard.", "LN"), _hoja("Teams", "Making working together work.", "GV"), _hoja("Talent", "Finding the right person.", "GV"), _hoja("Inner world", "Working on what doesn't show.", "LN"), _hoja("Care", "Holding up someone who can't alone.", "LN")],
+        "comunidad": [_hoja("Place", "What happens close by.", "LN"), _hoja("Organizing", "Moving a group toward something.", "GN"), _hoja("Local culture", "What makes us who we are.", "LN"), _hoja("Inclusion", "Making sure no one is left out.", "NV"), _hoja("Networks", "Connecting people to each other.", "GV"), _hoja("Volunteering", "Giving your own time.", "LN")],
+        "salud": [_hoja("Movement", "Training the body.", "LG"), _hoja("Mental health", "Holding up the mind.", "LN"), _hoja("Nutrition", "What we eat.", "GN"), _hoja("Prevention", "Acting before it hurts.", "GN"), _hoja("Rehabilitation", "Getting back to function.", "GN"), _hoja("Longevity", "Living better, longer.", "LN")],
+        "aprendizaje": [_hoja("Learning design", "How something gets taught.", "GV"), _hoja("Educational content", "Helping others build knowledge.", "LV"), _hoja("Classroom", "Teaching face to face.", "LN"), _hoja("Skills", "Training people to do.", "GV"), _hoja("Early childhood", "The first years.", "LN"), _hoja("Reskilling", "Learning another trade.", "NV")],
+        "sistemas": [_hoja("Processes", "Putting order into how it's done.", "GV"), _hoja("Diagnosis", "Finding the failure.", "GN"), _hoja("Redesign", "Changing the system's shape.", "GV"), _hoja("Public policy", "Rules that affect many.", "NV"), _hoja("Logistics", "Moving things and time.", "GV"), _hoja("Quality", "Making it come out right, always.", "GV")],
+        "datos": [_hoja("Analysis", "Understanding what happened.", "GV"), _hoja("Prediction", "Anticipating what's coming.", "LG"), _hoja("Visualization", "Making the pattern visible.", "LG"), _hoja("Impact measurement", "Knowing if it worked.", "NV"), _hoja("Research", "Asking with numbers.", "GN"), _hoja("Models", "Simulating reality.", "LG")],
+        "naturaleza": [_hoja("Climate", "The big problem.", "NV"), _hoja("Landscape", "Inhabiting a place.", "LN"), _hoja("Food", "Where food comes from.", "GN"), _hoja("Energy", "How we move the world.", "NV"), _hoja("Conservation", "Protecting what's left.", "LN"), _hoja("City", "Living together better.", "GN")],
+        "ciencia": [_hoja("Open questions", "What no one knows yet.", "LG"), _hoja("Method", "How an idea gets tested.", "GV"), _hoja("Biology", "Life from the inside.", "GN"), _hoja("Matter", "The rules of the world.", "LG"), _hoja("Cognition", "How we think.", "LN"), _hoja("Transfer", "From the lab to the street.", "VN")],
+    },
+}
+
+VALORES_DISPONIBLES = {
+    "es": ["Autonomía", "Honestidad", "Tiempo con los míos", "Aprender siempre", "Justicia", "Calma", "Excelencia", "Libertad creativa", "Pertenencia", "Coherencia"],
+    "en": ["Autonomy", "Honesty", "Time with my people", "Always learning", "Justice", "Calm", "Excellence", "Creative freedom", "Belonging", "Coherence"],
+}
+MAX_VALORES = 3
+
+
+def unir_dimensiones(dims_a: str, dims_b: str) -> list[str]:
+    """Une dos strings de letras de dimensión (ej. "LG" + "LV" -> ["L","G","V"]),
+    sin duplicados, preservando el orden de aparición -- mismo criterio
+    que `union()` en el prototipo de Claude Design."""
+    vistas: list[str] = []
+    for letra in dims_a + dims_b:
+        if letra not in vistas:
+            vistas.append(letra)
+    return vistas
+
+
+def buscar_hoja(idioma: str, verbo_id: str, dominio_id: str, hoja_id: str) -> tuple[dict, dict, list[str]] | None:
+    """Busca la combinación (verbo, dominio, hoja) y devuelve
+    (verbo, hoja, dimensiones_unidas) -- o None si no existe esa
+    combinación exacta (ej. un dominio que no está en `verbo["dominios"]`,
+    o una hoja que no está definida para ese dominio). El backend
+    calcula acá las dimensiones finales, nunca confía en lo que mande el
+    cliente."""
+    idioma = idioma if idioma in VERBOS else "es"
+    verbo = next((v for v in VERBOS[idioma] if v["id"] == verbo_id), None)
+    if verbo is None or dominio_id not in verbo["dominios"]:
         return None
-
-    return _buscar(arbol, [])
+    hoja = next((h for h in HOJAS[idioma].get(dominio_id, []) if h["id"] == hoja_id), None)
+    if hoja is None:
+        return None
+    return verbo, hoja, unir_dimensiones(verbo["dims"], hoja["dims"])

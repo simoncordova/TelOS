@@ -152,8 +152,11 @@ def test_obtener_categorias_fase_1(cliente):
     respuesta = cliente.get("/api/categorias/1?idioma=es")
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
-    assert cuerpo["dimensiones"] == ["amas", "sos_bueno", "mundo_necesita", "pueden_pagar", "valores"]
-    assert len(cuerpo["categorias"]) > 0
+    assert cuerpo["dimensiones"] == ["L", "G", "V", "N"]
+    assert len(cuerpo["verbos"]) > 0
+    assert len(cuerpo["dominios"]) > 0
+    assert len(cuerpo["hojas"]) > 0
+    assert len(cuerpo["valoresDisponibles"]) >= cuerpo["maxValores"]
 
 
 def test_obtener_categorias_fase_4(cliente):

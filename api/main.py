@@ -23,6 +23,7 @@ from api.auth import NOMBRE_COOKIE, obtener_usuario_actual, requiere_login, veri
 from api.esquemas import (
     AbrirSesionRequest,
     ConfirmarSeleccionRequest,
+    ConfirmarValoresRequest,
     EliminarSuscripcionPushRequest,
     EnviarMensajeRequest,
     EnviarPruebaPushRequest,
@@ -30,7 +31,7 @@ from api.esquemas import (
     SuscripcionPushRequest,
 )
 from api.sse import stream_eventos
-from tools.categorias_ikigai import CATEGORIAS_IKIGAI, DIMENSIONES_IKIGAI
+from tools.categorias_ikigai import DIMENSIONES_IKIGAI, DOMINIOS, ETIQUETAS_DIMENSION, HOJAS, MAX_VALORES, VALORES_DISPONIBLES, VERBOS
 from tools.categorias_sistema import CATEGORIAS_SISTEMA, PREGUNTAS_SISTEMA_IDS
 from tools.categorias_validacion import AREAS_VIDA
 from tools.ficha import leer_ficha_usuario
@@ -207,14 +208,23 @@ def enviar_mensaje(body: EnviarMensajeRequest, usuario_id: str = Depends(obtener
 def obtener_categorias(fase: int, idioma: str = "en") -> dict:
     """Sirve el árbol/selector de categorías completo de una sola vez --
     el frontend lo cachea y navega client-side, sin otra llamada de red
-    por click (ver el plan del selector visual Ikigai). Fase 1: un grafo
-    único (tools/categorias_ikigai.py). Fase 3: un selector plano de
-    áreas de vida, reutilizado para evidencia pasada y fricción futura
-    (tools/categorias_validacion.py). Fase 4: 4 árboles independientes,
-    uno por pregunta (tools/categorias_sistema.py)."""
+    por click (ver el plan del selector visual Ikigai). Fase 1: verbo
+    (nivel 1) -> dominio (nivel 2) -> hoja (nivel 3), tal como en el
+    prototipo real de Claude Design (tools/categorias_ikigai.py). Fase 3:
+    un selector plano de áreas de vida, reutilizado para evidencia pasada
+    y fricción futura (tools/categorias_validacion.py). Fase 4: 4 árboles
+    independientes, uno por pregunta (tools/categorias_sistema.py)."""
     idioma_arbol = "es" if idioma == "es" else "en"
     if fase == 1:
-        return {"dimensiones": list(DIMENSIONES_IKIGAI), "categorias": CATEGORIAS_IKIGAI[idioma_arbol]}
+        return {
+            "dimensiones": list(DIMENSIONES_IKIGAI),
+            "etiquetasDimension": ETIQUETAS_DIMENSION[idioma_arbol],
+            "verbos": VERBOS[idioma_arbol],
+            "dominios": DOMINIOS[idioma_arbol],
+            "hojas": HOJAS[idioma_arbol],
+            "valoresDisponibles": VALORES_DISPONIBLES[idioma_arbol],
+            "maxValores": MAX_VALORES,
+        }
     if fase == 3:
         return {"areas": AREAS_VIDA[idioma_arbol]}
     if fase == 4:
@@ -257,10 +267,28 @@ def confirmar_seleccion(
         respuestas=resultado.get("respuestas"),
         etapa=resultado.get("etapa"),
         mensaje_apertura_refinado=resultado.get("mensaje_apertura_refinado"),
+        mostrar_valores=resultado.get("mostrar_valores", False),
         cerrado=resultado.get("cerrado", False),
         mensaje_cierre=resultado.get("mensaje_cierre"),
         fase_actual=fase_actual,
     )
+
+
+@app.post("/api/seleccion/valores")
+def confirmar_valores(
+    body: ConfirmarValoresRequest, usuario_id: str = Depends(obtener_usuario_actual)
+) -> dict:
+    """Fase 1: confirma hasta MAX_VALORES valores elegidos -- paso único,
+    no una dimensión de cobertura más (ver agents/orquestador.py::
+    SesionTelos.confirmar_valores y tools/categorias_ikigai.py)."""
+    lock = _obtener_lock(usuario_id, body.idioma)
+    with lock:
+        sesion = _obtener_sesion(usuario_id, body.idioma)
+        try:
+            resultado = sesion.confirmar_valores(body.valores)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    return resultado
 
 
 @app.get("/api/ficha")

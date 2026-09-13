@@ -409,7 +409,7 @@ CATEGORIAS_SISTEMA = {
 
 
 def buscar_nodo_sistema_con_ruta(idioma: str, pregunta_id: str, nodo_id: str) -> tuple[dict, list[str]] | None:
-    """Mismo criterio que tools/categorias_ikigai.py::buscar_nodo_con_ruta
+    """Mismo criterio que tools/categorias_ikigai.py::buscar_hoja
     -- el backend deriva la ruta de la taxonomía, nunca confía en lo que
     mande el cliente. Busca dentro del árbol de UNA sola pregunta (no
     hay convergencia entre preguntas en Fase 4)."""

@@ -27,13 +27,15 @@ en él.
 
 Fase 1 (Explorador) es completamente distinta desde el 13/09/2026 -- ya
 no es una conversación de texto libre en absoluto (ver el plan
-"quirky-launching-swing" en el directorio de planes de Claude Code). La
-persona
-elige de un árbol de categorías fijo (tools/categorias_ikigai.py, un
-grafo único donde cada nodo aporta a una o más de las 5 dimensiones del
-Ikigai -- ver DIMENSIONES_IKIGAI) en vez de responder preguntas: la
-elección ES el dato, válida por construcción, sin que ningún LLM tenga
-que juzgar si "ya alcanza". `confirmar_seleccion` más abajo reemplaza a
+"quirky-launching-swing" en el directorio de planes de Claude Code, y el
+prototipo real hecho en Claude Design del que se portó el contenido y la
+mecánica exacta -- ver tools/categorias_ikigai.py). La persona elige de
+un árbol de categorías fijo (un grafo único donde cada selección aporta
+a una o más de las 4 dimensiones del Ikigai -- ver DIMENSIONES_IKIGAI;
+"valores" es un paso aparte, no una dimensión más, ver
+confirmar_valores) en vez de responder preguntas: la elección ES el
+dato, válida por construcción, sin que ningún LLM tenga que juzgar si
+"ya alcanza". `confirmar_seleccion` más abajo reemplaza a
 `_invocar_explorador` (Explorer v2, el intento anterior con preguntas
 fijas + evaluador acotado -- sacado en este mismo cambio, ver git
 history si hace falta comparar): código calcula cobertura por dimensión
@@ -72,7 +74,7 @@ from agents.coach_validacion import crear_agente_coach_validacion
 from agents.evaluador_confirmacion import evaluar_confirmacion
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
-from tools.categorias_ikigai import DIMENSIONES_IKIGAI, buscar_nodo_con_ruta
+from tools.categorias_ikigai import DIMENSIONES_IKIGAI, MAX_VALORES, VALORES_DISPONIBLES, buscar_hoja
 from tools.categorias_sistema import PREGUNTAS_SISTEMA_IDS, buscar_nodo_sistema_con_ruta
 from tools.categorias_validacion import buscar_area_vida
 from tools.contexto_usuario import agregar_insight
@@ -116,12 +118,13 @@ _KICKOFF = {
 }
 
 # Selector Ikigai (Fase 1, ver docstring del módulo) -- invariante
-# garantizada por código, no por instrucción: la fase cierra cuando cada
-# una de las 5 dimensiones (tools/categorias_ikigai.py::DIMENSIONES_IKIGAI)
-# ya fue tocada por al menos este número de selecciones distintas.
-# Ajustable -- un valor más alto pide más material antes de sintetizar,
-# uno más bajo cierra antes.
-_MIN_SELECCIONES_POR_DIMENSION = 2
+# garantizada por código, no por instrucción: la fase cierra al llegar a
+# este número de categorías elegidas EN TOTAL, sin exigir que las 4
+# dimensiones (tools/categorias_ikigai.py::DIMENSIONES_IKIGAI) estén cada
+# una individualmente completa -- mismo umbral que el prototipo real de
+# Claude Design (`nodeCount >= 4`). Ajustable -- un valor más alto pide
+# más material antes de sintetizar, uno más bajo cierra antes.
+_MIN_NODOS_PARA_CERRAR = 4
 
 _MENSAJE_CIERRE_SELECCION = {
     "es": "Con esto ya tengo material real para reflejarte algo. Vamos al siguiente paso.",
@@ -187,10 +190,11 @@ _PROMPT_SINTESIS_SELECCION = {
         "Estas son las categorías que una persona eligió al explorar su "
         "Ikigai en un árbol visual, de la más reveladora (toca más "
         "dimensiones del Ikigai a la vez) a la menos. Cada una indica a "
-        "qué dimensiones aporta: amas (lo que ama), sos_bueno (en lo que "
-        "es bueno), mundo_necesita (lo que el mundo necesita), "
-        "pueden_pagar (por lo que le pueden pagar), valores (un valor no "
-        "negociable).\n\n{selecciones}\n\n"
+        "qué dimensiones aporta: L (lo que ama), G (en lo que destaca), "
+        "V (lo que aporta valor), N (lo que el mundo necesita).\n\n"
+        "{selecciones}\n\n"
+        "Valores que eligió como no negociables (el límite que atraviesa "
+        "todo lo anterior, no una dimensión más): {valores}\n\n"
         "Redactá un párrafo breve, en español neutro, en tercera persona "
         "(\"Esta persona...\"), que describa el material crudo que surge "
         "de estas elecciones -- sin inventar nada que no esté en la "
@@ -202,10 +206,11 @@ _PROMPT_SINTESIS_SELECCION = {
         "These are the categories a person chose while exploring their "
         "Ikigai on a visual tree, from the most revealing (touches the "
         "most Ikigai dimensions at once) to the least. Each one shows "
-        "which dimensions it contributes to: amas (what they love), "
-        "sos_bueno (what they're good at), mundo_necesita (what the "
-        "world needs), pueden_pagar (what they could be paid for), "
-        "valores (a non-negotiable value).\n\n{selecciones}\n\n"
+        "which dimensions it contributes to: L (what they love), "
+        "G (what they're good at), V (what creates value), N (what the "
+        "world needs).\n\n{selecciones}\n\n"
+        "Values they picked as non-negotiable (the boundary that runs "
+        "through everything above, not one more dimension): {valores}\n\n"
         "Write a short paragraph, in plain English, in third person "
         "(\"This person...\"), describing the raw material that comes "
         "out of these choices -- don't invent anything not in the list, "
@@ -608,72 +613,124 @@ class SesionTelos:
         tools/categorias_ikigai.py). Reemplaza por completo al Explorador
         conversacional -- ya no hay texto libre que evaluar: la elección
         de la persona ES el dato, válida por construcción, así que no
-        hace falta ningún evaluador acotado (a diferencia de Explorer v2,
-        el intento anterior con preguntas fijas + agents/evaluador_respuesta.py,
-        sacado en este mismo cambio).
+        hace falta ningún evaluador acotado.
 
-        La `ruta` y las `dimensiones` se derivan acá de la taxonomía
-        (tools/categorias_ikigai.py::buscar_nodo_con_ruta), nunca se
-        confía en lo que mande el cliente -- mismo criterio de "código
-        decide" que el resto del proyecto.
+        `nodo_id` es la ruta compuesta "verbo/dominio/hoja" (mismo
+        esquema que el prototipo real de Claude Design, ej.
+        "crear/tech/IA") -- las dimensiones finales se calculan acá
+        uniendo las del verbo y las de la hoja
+        (tools/categorias_ikigai.py::buscar_hoja/unir_dimensiones), nunca
+        se confía en lo que mande el cliente.
 
         Devuelve {"cobertura": {dimension: int, ...}, "cerrado": bool,
-        "mensaje_cierre": str | None}. Levanta ValueError si la fase
-        actual no es 1, o si `nodo_id` no existe en la taxonomía."""
+        "mensaje_cierre": str | None, "mostrar_valores": bool}. Este
+        último es True exactamente en el turno donde se completa la 2da
+        selección y todavía no se pasó por confirmar_valores -- el
+        frontend debe mostrar ahí el paso único de "tus valores" antes de
+        seguir explorando (ver confirmar_valores). Levanta ValueError si
+        la fase actual no es 1, o si `nodo_id` no es una combinación
+        verbo/dominio/hoja válida."""
         if self.fase_actual != 1:
             raise ValueError(f"confirmar_seleccion solo aplica en Fase 1 -- fase actual es {self.fase_actual}")
         if excedio_limite_diario(self.usuario_id):
-            return {"cobertura": {}, "cerrado": False, "mensaje_cierre": None}
+            return {"cobertura": {}, "cerrado": False, "mensaje_cierre": None, "mostrar_valores": False}
 
+        partes = nodo_id.split("/")
+        if len(partes) != 3:
+            raise ValueError(f"nodo_id debe ser \"verbo/dominio/hoja\": {nodo_id!r}")
+        verbo_id, dominio_id, hoja_id = partes
         idioma_arbol = "en" if self.idioma == "en" else "es"
-        encontrado = buscar_nodo_con_ruta(idioma_arbol, nodo_id)
+        encontrado = buscar_hoja(idioma_arbol, verbo_id, dominio_id, hoja_id)
         if encontrado is None:
             raise ValueError(f"nodo_id desconocido en la taxonomía de Fase 1: {nodo_id!r}")
-        nodo, ruta = encontrado
+        verbo, hoja, dimensiones = encontrado
 
         progreso = leer_selecciones_estructuradas(self.usuario_id)
         if not progreso or "selecciones" not in progreso:
-            progreso = {"selecciones": [], "cobertura": {dim: 0 for dim in DIMENSIONES_IKIGAI}}
+            progreso = {
+                "selecciones": [],
+                "cobertura": {dim: 0 for dim in DIMENSIONES_IKIGAI},
+                "valores": [],
+                "valores_hecho": False,
+            }
+        # Reemplaza una elección anterior de la MISMA ruta -- mismo
+        # criterio que el prototipo (dedup por id, la última gana),
+        # nunca la duplica.
+        progreso["selecciones"] = [s for s in progreso["selecciones"] if s["nodo_id"] != nodo_id]
         progreso["selecciones"].append(
             {
                 "nodo_id": nodo_id,
-                "label": nodo["label"],
-                "ruta": ruta,
-                "dimensiones": list(nodo["dimensiones"]),
+                "label": hoja["label"],
+                "verbo": verbo["label"],
+                "dimensiones": dimensiones,
                 "detalle_libre": detalle_libre,
             }
         )
-        for dimension in nodo["dimensiones"]:
-            progreso["cobertura"][dimension] = progreso["cobertura"].get(dimension, 0) + 1
+        progreso["cobertura"] = {dim: 0 for dim in DIMENSIONES_IKIGAI}
+        for s in progreso["selecciones"]:
+            for dimension in s["dimensiones"]:
+                progreso["cobertura"][dimension] = progreso["cobertura"].get(dimension, 0) + 1
         guardar_selecciones_estructuradas(self.usuario_id, progreso)
 
-        if not self._cobertura_suficiente(progreso["cobertura"]):
-            return {"cobertura": progreso["cobertura"], "cerrado": False, "mensaje_cierre": None}
+        mostrar_valores = len(progreso["selecciones"]) >= 2 and not progreso.get("valores_hecho")
+        if not self._puede_cerrar(progreso):
+            return {
+                "cobertura": progreso["cobertura"],
+                "cerrado": False,
+                "mensaje_cierre": None,
+                "mostrar_valores": mostrar_valores,
+            }
 
         mensaje_cierre = self._cerrar_fase_1(progreso)
-        return {"cobertura": progreso["cobertura"], "cerrado": True, "mensaje_cierre": mensaje_cierre}
+        return {"cobertura": progreso["cobertura"], "cerrado": True, "mensaje_cierre": mensaje_cierre, "mostrar_valores": False}
 
-    def _cobertura_suficiente(self, cobertura: dict) -> bool:
-        """Determinístico -- Fase 1 cierra cuando las 5 dimensiones del
-        Ikigai (DIMENSIONES_IKIGAI) ya fueron tocadas por al menos
-        `_MIN_SELECCIONES_POR_DIMENSION` selecciones distintas. Sin
-        "intentos" ni evaluación que pueda fallar -- a diferencia de
-        Explorer v2, acá no hace falta una red de seguridad de "todos los
-        ejes en estado terminal": la persona simplemente sigue eligiendo
-        hasta llegar al mínimo."""
-        return all(cobertura.get(dim, 0) >= _MIN_SELECCIONES_POR_DIMENSION for dim in DIMENSIONES_IKIGAI)
+    def confirmar_valores(self, valores: list[str]) -> dict:
+        """Fase 1: confirma hasta MAX_VALORES valores elegidos de
+        VALORES_DISPONIBLES -- paso único, no una dimensión de cobertura
+        (ver tools/categorias_ikigai.py, docstring del módulo). Se ofrece
+        una sola vez, cuando `confirmar_seleccion` devuelve
+        `mostrar_valores=True`; llamarlo de nuevo simplemente sobrescribe
+        la elección anterior. No bloquea el cierre de la fase -- mismo
+        criterio que el prototipo real, que tampoco lo exige."""
+        if self.fase_actual != 1:
+            raise ValueError(f"confirmar_valores solo aplica en Fase 1 -- fase actual es {self.fase_actual}")
+        idioma_arbol = "en" if self.idioma == "en" else "es"
+        disponibles = set(VALORES_DISPONIBLES[idioma_arbol])
+        desconocidos = [v for v in valores if v not in disponibles]
+        if desconocidos:
+            raise ValueError(f"valores desconocidos: {desconocidos!r}")
+        if len(valores) > MAX_VALORES:
+            raise ValueError(f"como mucho {MAX_VALORES} valores, se recibieron {len(valores)}")
+
+        progreso = leer_selecciones_estructuradas(self.usuario_id)
+        if not progreso or "selecciones" not in progreso:
+            progreso = {"selecciones": [], "cobertura": {dim: 0 for dim in DIMENSIONES_IKIGAI}, "valores": [], "valores_hecho": False}
+        progreso["valores"] = list(valores)
+        progreso["valores_hecho"] = True
+        guardar_selecciones_estructuradas(self.usuario_id, progreso)
+        return {"valores": progreso["valores"]}
+
+    def _puede_cerrar(self, progreso: dict) -> bool:
+        """Determinístico -- Fase 1 cierra cuando ya hay
+        `_MIN_NODOS_PARA_CERRAR` categorías elegidas en total (mismo
+        umbral que el prototipo real de Claude Design, `nodeCount >= 4`),
+        sin exigir que las 4 dimensiones estén cada una individualmente
+        completas. Sin "intentos" ni evaluación que pueda fallar: la
+        persona simplemente sigue eligiendo hasta llegar al mínimo."""
+        return len(progreso["selecciones"]) >= _MIN_NODOS_PARA_CERRAR
 
     def _cerrar_fase_1(self, progreso: dict) -> str:
         """Cierre 100% por código: sintetiza las selecciones ya
-        acumuladas en el material crudo que antes armaba el Explorador
-        (una sola invocación al modelo, sin tools de datos -- ver
+        acumuladas (y los valores, si se llegaron a confirmar) en el
+        material crudo que antes armaba el Explorador (una sola
+        invocación al modelo, sin tools de datos -- ver
         _sintetizar_selecciones), lo guarda directo con
         guardar_ficha_usuario_fusionada, y avanza la fase. Nunca pasa por
         ninguna tool que el modelo tenga que acordarse de llamar."""
         selecciones_por_convergencia = sorted(
             progreso["selecciones"], key=lambda s: len(s["dimensiones"]), reverse=True
         )
-        material = self._sintetizar_selecciones(selecciones_por_convergencia)
+        material = self._sintetizar_selecciones(selecciones_por_convergencia, progreso.get("valores") or [])
         guardar_ficha_usuario_fusionada(
             self.usuario_id,
             {"materia_prima": material},
@@ -685,22 +742,23 @@ class SesionTelos:
         self.fase_actual = 2
         return _MENSAJE_CIERRE_SELECCION[self.idioma]
 
-    def _sintetizar_selecciones(self, selecciones: list[dict]) -> str:
+    def _sintetizar_selecciones(self, selecciones: list[dict], valores: list[str]) -> str:
         """Única invocación real al modelo en todo el cierre de Fase 1 --
         sin tools, transforma las selecciones (ya ordenadas por
-        convergencia, las que tocan más dimensiones primero) en un
-        párrafo de material crudo para que lo use Fase 2 (Sintetizador).
-        No decide nada -- ni qué es válido, ni cuándo cerrar -- solo
-        redacta."""
+        convergencia, las que tocan más dimensiones primero) y los
+        valores elegidos en un párrafo de material crudo para que lo use
+        Fase 2 (Sintetizador). No decide nada -- ni qué es válido, ni
+        cuándo cerrar -- solo redacta."""
         lineas = []
         for s in selecciones:
-            linea = f"- {s['label']} (dimensiones: {', '.join(s['dimensiones']) or 'ninguna'})"
+            linea = f"- {s['verbo']} → {s['label']} (dimensiones: {', '.join(s['dimensiones']) or 'ninguna'})"
             if s.get("detalle_libre"):
                 linea += f" -- detalle de la persona: {s['detalle_libre']}"
             lineas.append(linea)
         texto_selecciones = "\n".join(lineas)
+        texto_valores = ", ".join(valores) if valores else "(no eligió ninguno)"
         agente = Agent(model=crear_modelo_subagente(), callback_handler=None)
-        prompt = _PROMPT_SINTESIS_SELECCION[self.idioma].format(selecciones=texto_selecciones)
+        prompt = _PROMPT_SINTESIS_SELECCION[self.idioma].format(selecciones=texto_selecciones, valores=texto_valores)
         resultado = agente(prompt)
         registrar_invocacion(self.usuario_id)
         return _texto_de_resultado(resultado)

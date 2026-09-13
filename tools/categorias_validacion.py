@@ -42,7 +42,7 @@ AREAS_VIDA = {
 
 
 def buscar_area_vida(idioma: str, area_id: str) -> dict | None:
-    """Mismo criterio que tools/categorias_ikigai.py::buscar_nodo_con_ruta
+    """Mismo criterio que tools/categorias_ikigai.py::buscar_hoja
     -- el backend valida contra la taxonomía, nunca confía en lo que
     mande el cliente. Sin `ruta` (un solo nivel, no hace falta)."""
     for area in AREAS_VIDA.get(idioma, AREAS_VIDA["es"]):

@@ -82,10 +82,13 @@ def crear_modelo_orquestador() -> BedrockModel:
 
 
 def crear_modelo_subagente() -> BedrockModel:
-    """Haiku -- ejecuta la tarea puntual de una fase (explorar, sintetizar,
-    validar, diseñar el sistema, hacer seguimiento). Usado por los 5
-    factories de agents/{explorador,sintetizador,coach_validacion,
-    estratega_sistemas,seguimiento}.py."""
+    """Haiku -- ejecuta la tarea puntual de una fase (sintetizar,
+    validar, hacer seguimiento) o una llamada acotada de una sola
+    invocación (agents/orquestador.py::SesionTelos._sintetizar_selecciones,
+    _extraer_nombre). Usado por los factories de
+    agents/{sintetizador,coach_validacion,seguimiento}.py -- Fases 1 y 4
+    ya no tienen agente conversacional propio, ver docstring de
+    agents/orquestador.py."""
     return _crear_modelo(MODEL_ID_SUBAGENTE)
 
 

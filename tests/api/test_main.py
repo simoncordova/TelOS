@@ -46,6 +46,9 @@ class _SesionFalsa:
             raise ValueError("nodo_id desconocido en la taxonomía de Fase 1: 'id_desconocido'")
         return {"cobertura": {"amas": 1, "sos_bueno": 1}, "cerrado": False, "mensaje_cierre": None}
 
+    def confirmar_seleccion_sistema(self, pregunta_id: str, nodo_id: str, detalle_libre: str | None = None) -> dict:
+        return {"respuestas": {pregunta_id: {"nodo_id": nodo_id}}, "cerrado": False, "mensaje_cierre": None}
+
 
 _FICHA_FALSA = {
     "existe": True,
@@ -148,8 +151,16 @@ def test_obtener_categorias_fase_1(cliente):
     assert len(cuerpo["categorias"]) > 0
 
 
+def test_obtener_categorias_fase_4(cliente):
+    respuesta = cliente.get("/api/categorias/4?idioma=es")
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["preguntas"] == ["accion", "cuando_donde", "metrica", "obstaculo"]
+    assert len(cuerpo["categorias"]["accion"]) > 0
+
+
 def test_obtener_categorias_fase_sin_taxonomia_404(cliente):
-    respuesta = cliente.get("/api/categorias/4")
+    respuesta = cliente.get("/api/categorias/3")
     assert respuesta.status_code == 404
 
 
@@ -164,6 +175,22 @@ def test_confirmar_seleccion_devuelve_cobertura(cliente):
 
 def test_confirmar_seleccion_nodo_desconocido_400(cliente):
     respuesta = cliente.post("/api/seleccion/confirmar", json={"nodo_id": "id_desconocido", "idioma": "es"})
+    assert respuesta.status_code == 400
+
+
+def test_confirmar_seleccion_fase_4_devuelve_respuestas(cliente):
+    respuesta = cliente.post(
+        "/api/seleccion/confirmar",
+        json={"fase": 4, "pregunta_id": "accion", "nodo_id": "ejercicio_cardio", "idioma": "es"},
+    )
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["respuestas"] == {"accion": {"nodo_id": "ejercicio_cardio"}}
+    assert cuerpo["cobertura"] is None
+
+
+def test_confirmar_seleccion_fase_4_sin_pregunta_id_400(cliente):
+    respuesta = cliente.post("/api/seleccion/confirmar", json={"fase": 4, "nodo_id": "ejercicio_cardio"})
     assert respuesta.status_code == 400
 
 

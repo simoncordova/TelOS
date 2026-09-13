@@ -1,8 +1,10 @@
 // Port 1:1 de _parsear_sistema en ui/app.py: separa el string de
-// "sistema" (formato libre de líneas "Etiqueta: valor", ver
-// agents/estratega_sistemas.py) en filas para mostrarlas como checklist.
-// Si el modelo no siguió ese formato, devuelve una sola fila con todo el
-// texto tal cual -- nunca falla, solo se degrada a texto plano.
+// "sistema" (líneas "Etiqueta: valor", armado por código en
+// agents/orquestador.py::SesionTelos._formatear_sistema, no por el
+// modelo) en filas para mostrarlas como checklist. Si el texto no sigue
+// ese formato (fichas de antes del selector visual), devuelve una sola
+// fila con todo el texto tal cual -- nunca falla, solo se degrada a
+// texto plano.
 export function parsearSistema(sistemaTexto: string): [string, string][] {
   if (!sistemaTexto) return [];
   const filas: [string, string][] = [];

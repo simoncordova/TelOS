@@ -69,10 +69,10 @@ from strands.agent import Agent
 
 from agents._modelo import crear_modelo_subagente
 from agents.coach_validacion import crear_agente_coach_validacion
-from agents.estratega_sistemas import crear_agente_estratega_sistemas
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
 from tools.categorias_ikigai import DIMENSIONES_IKIGAI, buscar_nodo_con_ruta
+from tools.categorias_sistema import PREGUNTAS_SISTEMA_IDS, buscar_nodo_sistema_con_ruta
 from tools.contexto_usuario import agregar_insight
 from tools.conversacion import guardar_intercambio, leer_turnos
 from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
@@ -87,16 +87,17 @@ from tools.selecciones_estructuradas import (
 
 logger = logging.getLogger(__name__)
 
-# Fase 1 (Explorador) queda AFUERA de este dict a propósito -- ya no es
-# una conversación en absoluto (ver docstring del módulo y
-# confirmar_seleccion más abajo). _invocar_fase_directo despacha a fase 1
-# ANTES de llegar al camino genérico de abajo, con un aviso fijo -- si
-# algún día fase 1 llegara acá por error, preferible un KeyError
-# inmediato a un crash confuso más adelante.
+# Fases 1 y 4 quedan AFUERA de este dict a propósito -- ninguna de las
+# dos es una conversación en absoluto (ver docstring del módulo,
+# confirmar_seleccion y confirmar_seleccion_sistema más abajo).
+# _invocar_fase_directo despacha ambas ANTES de llegar al camino
+# genérico de abajo, con un aviso fijo -- si alguna llegara acá por
+# error, preferible un KeyError inmediato a un crash confuso más
+# adelante. agents/estratega_sistemas.py (el agente conversacional
+# viejo de Fase 4) se borró en el mismo cambio que introdujo esto.
 _FABRICAS_POR_FASE = {
     2: crear_agente_sintetizador,
     3: crear_agente_coach_validacion,
-    4: crear_agente_estratega_sistemas,
     5: crear_agente_seguimiento,
 }
 
@@ -121,6 +122,28 @@ _MENSAJE_CIERRE_SELECCION = {
     "en": "I've got real material to reflect back to you now. Let's move to the next step.",
 }
 
+# Fase 4: cierre 100% determinístico, sin invocar al modelo -- a
+# diferencia de Fase 1 (que sí necesita UNA síntesis en lenguaje natural
+# de selecciones variadas), acá son exactamente 4 respuestas fijas, así
+# que el texto de "sistema" se arma directo por código (ver
+# _formatear_sistema). Etiquetas del spec (sección 5), no inventadas acá.
+_ETIQUETAS_SISTEMA = {
+    "es": {"accion": "Acción", "cuando_donde": "Cuándo/dónde", "metrica": "Métrica", "obstaculo": "Obstáculo"},
+    "en": {"accion": "Action", "cuando_donde": "When/where", "metrica": "Metric", "obstaculo": "Obstacle"},
+}
+_MENSAJE_CIERRE_SISTEMA = {
+    "es": (
+        "Con esto ya tenés tu sistema completo. Por hoy es todo -- la "
+        "próxima vez que abras una conversación nueva, va a ser un "
+        "check-in breve sobre este sistema."
+    ),
+    "en": (
+        "With this, your system is complete. That's it for today -- next "
+        "time you open a new conversation, it'll be a brief check-in on "
+        "this system."
+    ),
+}
+
 # Fase 1 ya no acepta texto libre como mecanismo principal (ver docstring
 # del módulo) -- este es el único texto que puede devolver el camino de
 # `enviar_mensaje`/`abrir_conversacion` mientras esa fase esté activa,
@@ -137,6 +160,7 @@ _PLACEHOLDER_FASE_1 = {
         "step yet."
     ),
 }
+_PLACEHOLDER_FASE_4 = _PLACEHOLDER_FASE_1  # mismo aviso, mismo motivo -- ver confirmar_seleccion_sistema
 
 # Única invocación al modelo en el cierre de Fase 1 -- ver
 # SesionTelos._sintetizar_selecciones. Sin tools: la respuesta del
@@ -498,11 +522,13 @@ class SesionTelos:
         ya se sabe con certeza a qué fase invocar y no tiene sentido
         gastar otra decisión del orquestador. Devuelve (texto, cerrado).
 
-        Fase 1 ya no es una conversación de texto (ver docstring del
-        módulo y confirmar_seleccion) -- devuelve un aviso fijo, sin
-        gastar ninguna invocación real."""
+        Fases 1 y 4 ya no son conversaciones de texto (ver docstring del
+        módulo, confirmar_seleccion y confirmar_seleccion_sistema) --
+        devuelven un aviso fijo, sin gastar ninguna invocación real."""
         if fase == 1:
             return _PLACEHOLDER_FASE_1[self.idioma], False
+        if fase == 4:
+            return _PLACEHOLDER_FASE_4[self.idioma], False
         if excedio_limite_diario(self.usuario_id):
             return mensaje_limite_alcanzado(self.idioma), False
         contenedor_opciones: list = []
@@ -657,6 +683,88 @@ class SesionTelos:
         resultado = agente(prompt)
         registrar_invocacion(self.usuario_id)
         return _texto_de_resultado(resultado)
+
+    def confirmar_seleccion_sistema(self, pregunta_id: str, nodo_id: str, detalle_libre: str | None = None) -> dict:
+        """Fase 4: confirma la respuesta a UNA de las 4 preguntas fijas
+        del sistema (tools/categorias_sistema.py::PREGUNTAS_SISTEMA_IDS).
+        A diferencia de Fase 1, acá no hay convergencia entre dimensiones
+        -- cada pregunta es independiente y se responde una sola vez; el
+        cierre es tener las 4 respondidas, no un umbral de cobertura.
+
+        `ruta` se deriva de la taxonomía de esa pregunta puntual (nunca
+        se confía en lo que mande el cliente). Devuelve
+        {"respuestas": {pregunta_id: {...}, ...}, "cerrado": bool,
+        "mensaje_cierre": str | None}. Levanta ValueError si la fase
+        actual no es 4, si `pregunta_id` no es una de las 4 fijas, o si
+        `nodo_id` no existe en la taxonomía de esa pregunta."""
+        if self.fase_actual != 4:
+            raise ValueError(f"confirmar_seleccion_sistema solo aplica en Fase 4 -- fase actual es {self.fase_actual}")
+        if pregunta_id not in PREGUNTAS_SISTEMA_IDS:
+            raise ValueError(f"pregunta_id desconocido: {pregunta_id!r}")
+        if excedio_limite_diario(self.usuario_id):
+            return {"respuestas": {}, "cerrado": False, "mensaje_cierre": None}
+
+        idioma_arbol = "en" if self.idioma == "en" else "es"
+        encontrado = buscar_nodo_sistema_con_ruta(idioma_arbol, pregunta_id, nodo_id)
+        if encontrado is None:
+            raise ValueError(f"nodo_id desconocido para {pregunta_id!r}: {nodo_id!r}")
+        nodo, ruta = encontrado
+
+        # Mismo almacenamiento que Fase 1 (tools/selecciones_estructuradas.py)
+        # -- nunca coexisten de verdad: Fase 1 borra su progreso al cerrar,
+        # antes de que exista ningún progreso de Fase 4 para el mismo
+        # usuario. El chequeo de abajo es una red de seguridad, no el
+        # mecanismo real de aislamiento.
+        progreso = leer_selecciones_estructuradas(self.usuario_id)
+        if not progreso or progreso.get("fase") != 4:
+            progreso = {"fase": 4, "respuestas": {}}
+        progreso["respuestas"][pregunta_id] = {
+            "nodo_id": nodo_id,
+            "label": nodo["label"],
+            "ruta": ruta,
+            "detalle_libre": detalle_libre,
+        }
+        guardar_selecciones_estructuradas(self.usuario_id, progreso)
+
+        if len(progreso["respuestas"]) < len(PREGUNTAS_SISTEMA_IDS):
+            return {"respuestas": progreso["respuestas"], "cerrado": False, "mensaje_cierre": None}
+
+        mensaje_cierre = self._cerrar_fase_4(progreso)
+        return {"respuestas": progreso["respuestas"], "cerrado": True, "mensaje_cierre": mensaje_cierre}
+
+    def _cerrar_fase_4(self, progreso: dict) -> str:
+        """Cierre 100% por código, sin invocar al modelo -- a diferencia
+        de Fase 1, acá no hace falta ninguna síntesis: son 4 respuestas
+        fijas, el texto de "sistema" se arma directo (_formatear_sistema).
+        `datos` solo lleva "sistema" -- "proposito" se hereda de la
+        versión anterior por la fusión de guardar_ficha_usuario_fusionada
+        (confirmado que funciona así, no hace falta re-pasarlo)."""
+        sistema_texto = self._formatear_sistema(progreso["respuestas"])
+        guardar_ficha_usuario_fusionada(
+            self.usuario_id,
+            {"sistema": sistema_texto},
+            fase=4,
+            motivo_version="Sistema de 4 preguntas -- cierre determinado por código (selector visual)",
+            turn_id=str(uuid.uuid4()),
+        )
+        borrar_selecciones_estructuradas(self.usuario_id)
+        self.fase_actual = 5
+        return _MENSAJE_CIERRE_SISTEMA[self.idioma]
+
+    def _formatear_sistema(self, respuestas: dict) -> str:
+        """Arma el texto de "sistema" que pide el spec (sección 5): 4
+        líneas, una por pregunta, con salto de línea real entre cada
+        una. Determinístico -- sin esto, el spec original dependía de
+        que el modelo copiara el formato exacto cada vez."""
+        etiquetas = _ETIQUETAS_SISTEMA[self.idioma]
+        lineas = []
+        for pregunta_id in PREGUNTAS_SISTEMA_IDS:
+            respuesta = respuestas.get(pregunta_id) or {}
+            texto = respuesta.get("label", "")
+            if respuesta.get("detalle_libre"):
+                texto = f"{texto} -- {respuesta['detalle_libre']}"
+            lineas.append(f"{etiquetas[pregunta_id]}: {texto}")
+        return "\n".join(lineas)
 
     def _verificar_y_reforzar(
         self, fase: int, respuesta: str, cerrado_declarado: bool, total_versiones_antes: int
@@ -873,11 +981,12 @@ class SesionTelos:
         if actual["fase"] != fase_que_respondio:
             return  # la versión nueva no corresponde a la fase que respondió
 
-        # fase_que_respondio == 1 no debería llegar hasta acá -- Fase 1
-        # cierra y avanza self.fase_actual directo en
-        # SesionTelos._cerrar_fase_1, sin pasar por enviar_mensaje. Se
-        # deja el caso igual (en vez de asumir que nunca puede pasar) por
-        # si algún día algo la invoca por el camino genérico de texto.
+        # fase_que_respondio == 1 o 4 no deberían llegar hasta acá --
+        # ambas cierran y avanzan self.fase_actual directo en
+        # SesionTelos._cerrar_fase_1/_cerrar_fase_4, sin pasar por
+        # enviar_mensaje. Se dejan los casos igual (en vez de asumir que
+        # nunca pueden pasar) por si algún día algo las invoca por el
+        # camino genérico de texto.
         if fase_que_respondio in (1, 2, 3):
             self.fase_actual = fase_que_respondio + 1
         elif fase_que_respondio == 4:

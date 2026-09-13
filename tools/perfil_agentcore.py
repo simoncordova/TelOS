@@ -31,11 +31,19 @@ def guardar_nombre_usuario(usuario_id: str, nombre: str) -> None:
 
 
 def leer_nombre_usuario(usuario_id: str) -> str | None:
+    # max_results alto a propósito -- ver el comentario equivalente en
+    # tools/progreso_exploracion_agentcore.py::leer_progreso_exploracion,
+    # que sí llegó a fallar en producción con este mismo max_results=10
+    # copiado de acá: list_events() corta con `all_events[:max_results]`
+    # sobre una lista en orden cronológico, así que un valor chico te da
+    # los eventos más VIEJOS, no los recientes. Acá nunca se notó porque
+    # el nombre se guarda una sola vez, pero es el mismo riesgo si algún
+    # día se re-guarda más de 10 veces (ej. corrección de nombre).
     eventos = _obtener_cliente().list_events(
         memory_id=_obtener_memory_id(),
         actor_id=id_seguro(usuario_id),
         session_id=id_seguro(usuario_id) + _SUFIJO_SESION,
-        max_results=10,
+        max_results=100,
         include_payload=True,
     )
     for evento in reversed(eventos):

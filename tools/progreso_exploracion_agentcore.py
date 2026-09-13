@@ -30,11 +30,22 @@ def guardar_progreso_exploracion(usuario_id: str, ejes: dict) -> None:
 
 
 def leer_progreso_exploracion(usuario_id: str) -> dict:
+    # max_results alto a propósito -- MemoryClient.list_events() devuelve
+    # los eventos en orden cronológico y corta con `all_events[:max_results]`
+    # (ver .venv .../bedrock_agentcore/memory/client.py), o sea que un
+    # max_results chico te da los eventos MÁS VIEJOS, no los más
+    # recientes. Bug real (12/09/2026): esto tenía max_results=10 copiado
+    # de perfil_agentcore.py (que guarda el nombre una sola vez, ahí nunca
+    # se notaba); acá se guarda un evento por cada turno de Fase 1
+    # (orquestador.py::_invocar_explorador), así que pasados 10 turnos la
+    # lectura quedaba congelada en un progreso viejo -- un eje marcado
+    # "answered" después del evento #10 volvía a verse "pending" y el
+    # Explorador repetía la pregunta ya contestada.
     eventos = _obtener_cliente().list_events(
         memory_id=_obtener_memory_id(),
         actor_id=id_seguro(usuario_id),
         session_id=id_seguro(usuario_id) + _SUFIJO_SESION,
-        max_results=10,
+        max_results=100,
         include_payload=True,
     )
     for evento in reversed(eventos):

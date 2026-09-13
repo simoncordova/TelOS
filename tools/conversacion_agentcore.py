@@ -25,6 +25,7 @@ import os
 from bedrock_agentcore.memory import MemoryClient
 
 from tools._agentcore_ids import id_seguro
+from tools.ficha_agentcore import en_orden_cronologico
 
 _NOMBRE_MEMORIA = os.environ.get("TELOS_MEMORY_NAME", "telos_fichas_usuario")
 _REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
@@ -69,13 +70,23 @@ def guardar_intercambio(usuario_id: str, fase: int, texto_usuario: str, texto_as
 
 
 def leer_turnos(usuario_id: str, fase: int) -> list[dict]:
-    """Devuelve los turnos guardados de esta fase, en orden cronológico."""
-    eventos = _obtener_cliente().list_events(
-        memory_id=_obtener_memory_id(),
-        actor_id=id_seguro(usuario_id),
-        session_id=_sesion_id(fase),
-        max_results=200,
-        include_payload=True,
+    """Devuelve los turnos guardados de esta fase, en orden cronológico.
+
+    en_orden_cronologico() es obligatorio acá, no cosmético -- list_events()
+    NO devuelve los eventos en orden cronológico ascendente (ver la nota
+    en tools/ficha_agentcore.py, confirmado contra un recurso real el
+    13/09/2026); sin ordenar, esta función le pasaba el historial
+    invertido (el turno más reciente primero) a mensajes_previos de cada
+    agente de fase -- suficiente para romper la coherencia de una
+    conversación larga sin que el error saltara a la vista de inmediato."""
+    eventos = en_orden_cronologico(
+        _obtener_cliente().list_events(
+            memory_id=_obtener_memory_id(),
+            actor_id=id_seguro(usuario_id),
+            session_id=_sesion_id(fase),
+            max_results=200,
+            include_payload=True,
+        )
     )
     turnos = []
     for evento in eventos:

@@ -8,9 +8,22 @@ selector de backend (TELOS_FICHA_BACKEND=agentcore lo activa).
 Cada versión de la ficha se guarda como un blob event de AgentCore Memory
 (un solo hilo de eventos por usuario: actor_id=usuario_id,
 session_id=usuario_id — la ficha no tiene "sesiones" múltiples, es un
-único historial versionado). list_events() de AgentCore ya devuelve los
-eventos en orden cronológico, así que el último elemento es la versión
-vigente.
+único historial versionado).
+
+OJO -- esto decía antes que list_events() ya devuelve los eventos en
+orden cronológico ascendente. Es FALSO: confirmado contra un recurso
+real (13/09/2026, evidencia de `aws bedrock-agentcore list-events` sobre
+una sesión con más de un evento) que el orden real es el más nuevo
+primero, y el SDK (MemoryClient.list_events(), ver
+.venv/.../bedrock_agentcore/memory/client.py) no lo reordena -- pasa
+las páginas tal cual las da la API. Este malentendido, propagado a
+tools/progreso_exploracion_agentcore.py y tools/conversacion_agentcore.py
+por copiar el patrón de acá, fue la causa real de que el Explorador
+repitiera preguntas ya contestadas (leía el progreso más VIEJO de la
+sesión, no el más nuevo) y probablemente distorsionaba el historial de
+turnos que ven los agentes. Por eso _en_orden_cronologico() de abajo
+ordena explícitamente por eventTimestamp en vez de confiar en el orden
+de la respuesta.
 
 El campo `blob` no se serializa/deserializa solo: `create_blob_event`
 manda lo que se le pase tal cual como payload de la API, y AgentCore
@@ -69,6 +82,16 @@ def _obtener_memory_id() -> str:
         )
         _memory_id = memoria.get("memoryId", memoria.get("id"))
     return _memory_id
+
+
+def en_orden_cronologico(eventos: list[dict]) -> list[dict]:
+    """Ordena los eventos que devuelve list_events() por eventTimestamp
+    ascendente (más viejo primero) -- ver la nota del docstring del
+    módulo sobre por qué no hay que asumir el orden que ya trae la
+    respuesta de la API. Usado por todo lo que lee de AgentCore Memory
+    en este proyecto (ficha, perfil, selecciones_estructuradas,
+    conversación), no solo por este módulo."""
+    return sorted(eventos, key=lambda e: e.get("eventTimestamp") or "")
 
 
 def _decodificar_blob(blob):
@@ -130,12 +153,14 @@ def leer_ficha_usuario(usuario_id: str) -> dict:
 
     Misma forma de retorno que tools/ficha_local.py — ver ese módulo.
     """
-    eventos = _obtener_cliente().list_events(
-        memory_id=_obtener_memory_id(),
-        actor_id=id_seguro(usuario_id),
-        session_id=id_seguro(usuario_id),
-        max_results=100,
-        include_payload=True,
+    eventos = en_orden_cronologico(
+        _obtener_cliente().list_events(
+            memory_id=_obtener_memory_id(),
+            actor_id=id_seguro(usuario_id),
+            session_id=id_seguro(usuario_id),
+            max_results=100,
+            include_payload=True,
+        )
     )
     versiones = []
     for evento in eventos:

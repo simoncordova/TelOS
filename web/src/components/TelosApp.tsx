@@ -223,7 +223,12 @@ function Conversacion({
           su docstring). El resto de las fases sigue 100% igual que
           siempre. */}
       {ficha && nombre && faseActual === 1 ? (
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        // Sin overflow-hidden acá a propósito: en mobile, ArbolSelector
+        // pasa a permitir scroll vertical interno (ver su propio media
+        // query) porque el diseño de una sola pantalla sin scroll no
+        // entra en una pantalla angosta -- si este contenedor lo
+        // recortara antes, ese scroll interno no serviría de nada.
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ArbolSelector idioma={idioma} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
         </main>
       ) : (

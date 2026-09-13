@@ -674,6 +674,7 @@ export function ArbolSelector({
 
   return (
     <div
+      className="telos-arbol-selector"
       style={{
         height: "100%",
         minHeight: 0,
@@ -691,6 +692,21 @@ export function ArbolSelector({
         @keyframes telos-rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
         @keyframes telos-fade { from { opacity:0; } to { opacity:1; } }
         @keyframes telos-breathe { 0%,100% { opacity:.55; transform:scale(1); } 50% { opacity:.85; transform:scale(1.035); } }
+
+        /* Mobile: la versión desktop (un solo viewport sin scroll,
+           gráfico grande, grid de auto-fill) no deja lugar para todo en
+           una pantalla angosta -- se prioriza que nada quede cortado por
+           sobre la estética de "todo cabe en una vista", mismo criterio
+           que el resto del proyecto ("que funcione" antes que pixel
+           perfect en el MVP). */
+        @media (max-width: 640px) {
+          .telos-arbol-selector { overflow-y: auto !important; height: auto !important; min-height: 100%; }
+          .telos-grafico { height: min(72vw, 340px) !important; }
+          .telos-opciones-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        }
+        @media (max-width: 380px) {
+          .telos-opciones-grid { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, padding: "12px clamp(18px,4vw,46px) 6px", flexWrap: "wrap" }}>
@@ -760,7 +776,7 @@ export function ArbolSelector({
       )}
 
       <main style={{ flex: "1 1 auto", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: "clamp(10px,2vw,34px)", position: "relative", padding: "4px 12px" }}>
-        <div style={{ position: "relative", height: "min(100%, 58vw, 560px)", aspectRatio: "1/1", flex: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="telos-grafico" style={{ position: "relative", height: "min(100%, 58vw, 560px)", aspectRatio: "1/1", flex: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
           {construirGrafico()}
           <div style={{ position: "absolute", left: "24%", top: "29%", width: "52%", height: "42%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 6, pointerEvents: "none", overflow: "hidden" }}>
             <div style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9, letterSpacing: ".2em", textTransform: "uppercase", color: ACENTO }}>{centerKicker}</div>
@@ -918,7 +934,7 @@ export function ArbolSelector({
             )}
 
             {(stage === "l1" || stage === "l2" || stage === "l3") && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "clamp(6px,.8vw,11px)" }}>
+              <div className="telos-opciones-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "clamp(6px,.8vw,11px)", minWidth: 0 }}>
                 {opciones.items.map((it, i) => (
                   <button
                     key={it.id}

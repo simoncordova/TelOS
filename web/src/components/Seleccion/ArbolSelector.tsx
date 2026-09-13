@@ -202,7 +202,7 @@ export function ArbolSelector({
 }: {
   idioma: Idioma;
   nombre: string | null;
-  onCerrado: () => void;
+  onCerrado: (mensajeCierre?: string) => void;
 }) {
   const t = TEXTOS[idioma];
 
@@ -389,8 +389,8 @@ export function ArbolSelector({
     setCerrando(true);
     setError(null);
     try {
-      await cerrarFase1(idioma);
-      onCerrado();
+      const resultado = await cerrarFase1(idioma);
+      onCerrado(resultado.mensaje_cierre ?? undefined);
     } catch {
       setError(idioma === "es" ? "No se pudo cerrar esta fase. Probá de nuevo." : "Couldn't close this phase. Try again.");
       setCerrando(false);

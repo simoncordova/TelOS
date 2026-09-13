@@ -15,6 +15,8 @@ import type { Festejo } from "./Notifications/Celebracion";
 import { Celebracion } from "./Notifications/Celebracion";
 import { BienvenidaCard } from "./Onboarding/BienvenidaCard";
 import { ArbolSelector } from "./Seleccion/ArbolSelector";
+import { SistemaSelector } from "./Seleccion/SistemaSelector";
+import { ValidacionSelector } from "./Seleccion/ValidacionSelector";
 import { Sidebar } from "./Sidebar/Sidebar";
 
 // Dueño solo del idioma elegido -- todo lo demás (mensajes, ficha,
@@ -70,6 +72,26 @@ function Conversacion({
   // apertura de sesión" son lo mismo.
   const [cargando, setCargando] = useState(true);
   const [festejo, setFestejo] = useState<Festejo | null>(null);
+  // Fase 3 es híbrida (ver ValidacionSelector.tsx): mientras esto es
+  // false, la vista principal es el selector de áreas; en cuanto el
+  // backend confirma la 2da elección y devuelve la primera propuesta del
+  // coach, pasa a true y la vista principal vuelve a ser el chat normal
+  // -- self.fase_actual sigue en 3 todo ese tiempo del lado del backend,
+  // así que esto es puramente estado de UI, no algo que refleje `ficha`.
+  // Se resetea cada vez que se ENTRA a Fase 3 (primera vez o reentrada
+  // real desde Fase 5, ver agents/orquestador.py::_avanzar_fase_si_corresponde)
+  // para no arrastrar el valor de una vuelta anterior.
+  const [fase3EnRefinado, setFase3EnRefinado] = useState(false);
+  // Ajuste de estado durante el render (no en un efecto) siguiendo el
+  // patrón que React mismo recomienda para "resetear un estado cuando
+  // cambia una prop/otro estado" -- evita el reproche de eslint sobre
+  // llamar a setState dentro de un efecto, y además evita el frame extra
+  // de re-render que tendría un efecto acá.
+  const [faseActualAnterior, setFaseActualAnterior] = useState(faseActual);
+  if (faseActual !== faseActualAnterior) {
+    setFaseActualAnterior(faseActual);
+    if (faseActual === 3) setFase3EnRefinado(false);
+  }
 
   const t = TEXTOS[idioma];
 
@@ -176,31 +198,39 @@ function Conversacion({
     [idioma, t],
   );
 
-  // Fase 1 (y, cuando se construya, Fase 4) cierran por selección visual
-  // (ArbolSelector), fuera del pipeline de texto de procesarTurno -- así
-  // que su cascada hacia la fase siguiente nunca se dispara sola. Mismo
-  // criterio que agents/orquestador.py::SesionTelos.continuar_tras_seleccion
-  // (que es justo lo que este endpoint invoca): se llama una sola vez,
-  // después de que el cierre explícito (botón "Ver mi propósito") ya
-  // guardó la ficha del lado del backend.
-  const iniciarFaseSiguiente = useCallback(async () => {
-    setCargando(true);
-    const respuesta = await continuarSesion(idioma);
-    for await (const { evento, datos } of leerEventosSSE(respuesta)) {
-      if (evento === "mensaje") {
-        const d = datos as { fase: number; texto: string; opciones: string[] };
-        setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
-        setFaseActual(d.fase);
-        setOpcionesPendientes(d.opciones);
-      } else if (evento === "ficha") {
-        setFicha(datos as FichaSnapshot);
-      } else if (evento === "error") {
-        console.error("Error del backend:", (datos as { detalle: string }).detalle);
-        setMensajes((prev) => [...prev, { rol: "assistant", texto: t.error_generico }]);
+  // Fases 1, 3 y 4 cierran por selección visual (ArbolSelector,
+  // ValidacionSelector, SistemaSelector), fuera del pipeline de texto de
+  // procesarTurno -- así que su cascada hacia la fase siguiente nunca se
+  // dispara sola. Mismo criterio que agents/orquestador.py::SesionTelos.
+  // continuar_tras_seleccion (que es justo lo que este endpoint invoca):
+  // se llama una sola vez, después de que el cierre explícito ya guardó
+  // la ficha del lado del backend. `mensajeCierre` es el texto que ya
+  // dejó ESE cierre (ej. "Ver mi propósito" en Fase 1) -- se muestra acá
+  // como el turno previo a la cascada, nunca se descarta en silencio.
+  const iniciarFaseSiguiente = useCallback(
+    async (mensajeCierre?: string) => {
+      setCargando(true);
+      if (mensajeCierre) {
+        setMensajes((prev) => [...prev, { rol: "assistant", texto: mensajeCierre }]);
       }
-    }
-    setCargando(false);
-  }, [idioma, t]);
+      const respuesta = await continuarSesion(idioma);
+      for await (const { evento, datos } of leerEventosSSE(respuesta)) {
+        if (evento === "mensaje") {
+          const d = datos as { fase: number; texto: string; opciones: string[] };
+          setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          setFaseActual(d.fase);
+          setOpcionesPendientes(d.opciones);
+        } else if (evento === "ficha") {
+          setFicha(datos as FichaSnapshot);
+        } else if (evento === "error") {
+          console.error("Error del backend:", (datos as { detalle: string }).detalle);
+          setMensajes((prev) => [...prev, { rol: "assistant", texto: t.error_generico }]);
+        }
+      }
+      setCargando(false);
+    },
+    [idioma, t],
+  );
 
   const datos = (ficha?.actual?.datos ?? {}) as { proposito?: string; sistema?: string };
   const nombre = ficha?.nombre ?? null;
@@ -217,11 +247,12 @@ function Conversacion({
         ficha={ficha}
       />
 
-      {/* Fase 1 (y, cuando exista, Fase 4): la interfaz principal deja de
-          ser el chat -- selector visual Ikigai (ArbolSelector), con el
-          chat relegado a apoyo opcional dentro del propio componente (ver
-          su docstring). El resto de las fases sigue 100% igual que
-          siempre. */}
+      {/* Fases 1, 3 (mientras dura la selección de áreas) y 4: la interfaz
+          principal deja de ser el chat -- selector visual, con el chat
+          relegado a apoyo opcional (Fase 1) o directamente ausente hasta
+          que la propia fase lo active (Fase 3, ver ValidacionSelector).
+          El resto de las fases (2, 3 ya en "refinando", 5) sigue 100%
+          igual que siempre. */}
       {ficha && nombre && faseActual === 1 ? (
         // Sin overflow-hidden acá a propósito: en mobile, ArbolSelector
         // pasa a permitir scroll vertical interno (ver su propio media
@@ -230,6 +261,20 @@ function Conversacion({
         // recortara antes, ese scroll interno no serviría de nada.
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ArbolSelector idioma={idioma} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
+        </main>
+      ) : ficha && nombre && faseActual === 3 && !fase3EnRefinado ? (
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <ValidacionSelector
+            idioma={idioma}
+            onEntrarRefinado={(primerMensaje) => {
+              setMensajes((prev) => [...prev, { rol: "assistant", texto: primerMensaje }]);
+              setFase3EnRefinado(true);
+            }}
+          />
+        </main>
+      ) : ficha && nombre && faseActual === 4 ? (
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SistemaSelector idioma={idioma} onCerrado={iniciarFaseSiguiente} />
         </main>
       ) : (
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">

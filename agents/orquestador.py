@@ -19,13 +19,17 @@ fase-tool) y una invocación completa de Bedrock por turno sin
 necesidad. Recuperable de git history si hace falta comparar.
 
 Cada agente de fase, según el spec, guarda su ficha exactamente una vez,
-al cerrar su fase (no hay saves parciales a mitad de fase). A diferencia
-del diseño anterior (que inferí "¿cerró?" leyendo si el texto sonaba a
-un cierre, con un regex), cada agente de fase ahora declara explícitamente
-`cerrado: bool` en su tool `informar_al_orquestador` -- y ese booleano se
-verifica contra AgentCore Memory (¿la ficha realmente tiene una versión
-nueva?) antes de confiar en él, exactamente igual que antes se verificaba
-`_contenedor_guardado`.
+al cerrar su fase (no hay saves parciales a mitad de fase). Fases 2-5
+declaran explícitamente `cerrado: bool` en su tool
+`informar_al_orquestador` -- y ese booleano se verifica contra AgentCore
+Memory (¿la ficha realmente tiene una versión nueva?) antes de confiar
+en él. Fase 1 (Explorador) es distinta desde el 12/09/2026 (Explorer v2,
+revisión de arquitectura externa): no tiene `informar_al_orquestador` ni
+decide su propio cierre -- ver `_invocar_explorador` más abajo, donde
+`cerrado` es 100% una decisión de código (`_proposito_listo`), nunca
+declarada por el modelo. Motivo: dejarle esa decisión al modelo fue la
+causa de dos bugs reales seguidos (repetía ejes ya cubiertos, después
+dejaba ejes con evidencia clara sin marcar por exigir de más).
 
 El guardrail de crisis, el Paso 0 (captura de nombre) y el avance de fase
 siguen siendo código plano, sin involucrar a ningún `Agent` -- son
@@ -54,21 +58,30 @@ from strands.agent import Agent
 from agents._modelo import crear_modelo_subagente
 from agents.coach_validacion import crear_agente_coach_validacion
 from agents.estratega_sistemas import crear_agente_estratega_sistemas
+from agents.evaluador_respuesta import evaluar_respuesta
 from agents.explorador import crear_agente_explorador
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
 from tools.contexto_usuario import agregar_insight
 from tools.conversacion import guardar_intercambio, leer_turnos
 from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
-from tools.ficha import leer_ficha_usuario
+from tools.exploracion_preguntas import EJES, PREGUNTAS_EXPLORACION
+from tools.ficha import guardar_ficha_usuario_fusionada, leer_ficha_usuario
 from tools.limite_uso import excedio_limite_diario, mensaje_limite_alcanzado, registrar_invocacion
 from tools.perfil import guardar_nombre_usuario, leer_nombre_usuario
 from tools.progreso_exploracion import borrar_progreso_exploracion, guardar_progreso_exploracion, leer_progreso_exploracion
 
 logger = logging.getLogger(__name__)
 
+# Fase 1 (Explorador) queda AFUERA de este dict a propósito -- desde el
+# Explorer v2 (ver _invocar_explorador) tiene una firma y un flujo
+# completamente distintos (sin tools, sin informar_al_orquestador, el
+# código elige la pregunta y decide el cierre). _invocar_fase_directo
+# despacha a fase 1 ANTES de llegar al camino genérico de abajo, que ya
+# no sabría cómo invocarla -- si algún día fase 1 llegara acá por error,
+# preferible un KeyError inmediato a un crash confuso más adelante por
+# kwargs que crear_agente_explorador ya no acepta.
 _FABRICAS_POR_FASE = {
-    1: crear_agente_explorador,
     2: crear_agente_sintetizador,
     3: crear_agente_coach_validacion,
     4: crear_agente_estratega_sistemas,
@@ -81,6 +94,23 @@ _FABRICAS_POR_FASE = {
 _KICKOFF = {
     "es": "Continuemos.",
     "en": "Let's continue.",
+}
+
+# Explorer v2 (revisión de arquitectura externa, 12/09/2026) -- invariantes
+# del motor de entrevista, garantizadas por código, no por instrucción:
+# ningún eje puede bloquear el flujo más de 2 intentos (las 2 preguntas
+# que tools/exploracion_preguntas.py define por eje), y el cierre no
+# depende de que el modelo decida "ya tengo suficiente" -- ver
+# _proposito_listo. Con 5 ejes x 2 intentos, el tope duro de preguntas
+# reales quedó en 10 sin necesitar ningún freno de "cantidad de turnos"
+# aparte (el que se sacó antes por inyectar texto al prompt -- acá el
+# límite es estructural, no un recordatorio).
+MAX_INTENTOS_POR_EJE = 2
+_MIN_EJES_RESPONDIDOS_PARA_CERRAR = 3
+
+_MENSAJE_CIERRE_EXPLORADOR = {
+    "es": "Con esto ya tengo material real para reflejarte algo. Vamos al siguiente paso.",
+    "en": "I've got real material to reflect back to you now. Let's move to the next step.",
 }
 
 # Paso 0: pedido de nombre, antes de que exista ninguna fase. Determinístico
@@ -207,9 +237,6 @@ class InformeAlOrquestador(BaseModel):
     texto_para_persona: str
     cerrado: bool
     dato_nuevo: str | None = None
-    # Solo lo llena el Explorador (ver agents/explorador.py) -- el resto
-    # de las fases no reportan esto, queda None y no se usa.
-    ejes_cubiertos: dict[str, str] | None = None
 
 # El mismo bug de "dijo que guardó pero no llamó a la tool" apareció
 # primero en el Explorador y después en el Sintetizador -- por eso ahora
@@ -294,6 +321,15 @@ def _texto_ultimo_mensaje_asistente(agente: Agent) -> str:
         if texto.strip():
             return texto.strip()
     return ""
+
+
+def _texto_de_resultado(resultado) -> str:
+    """Extrae el texto plano de un `AgentResult` puntual -- usado por
+    _invocar_explorador (Explorer v2), que ya no depende de ninguna tool
+    de informe: el Explorador no tiene tools, su propia respuesta
+    conversacional ES el texto para la persona, directo."""
+    mensaje = resultado.message or {}
+    return "".join(bloque.get("text", "") for bloque in mensaje.get("content", [])).strip()
 
 
 def _turnos_a_mensajes(turnos: list[dict]) -> list[dict]:
@@ -412,17 +448,20 @@ class SesionTelos:
         (forzar cierre, completar campos faltantes) y por los mensajes de
         arranque (abrir_conversacion, cascada de cambio de fase), donde
         ya se sabe con certeza a qué fase invocar y no tiene sentido
-        gastar otra decisión del orquestador. Devuelve (texto, cerrado)."""
+        gastar otra decisión del orquestador. Devuelve (texto, cerrado).
+
+        Fase 1 despacha a `_invocar_explorador` -- Explorer v2 (ver
+        docstring de ese método) tiene un flujo completamente distinto,
+        sin `informar_al_orquestador` ni el resto del contrato genérico
+        de abajo."""
+        if fase == 1:
+            return self._invocar_explorador(texto, turn_id)
         if excedio_limite_diario(self.usuario_id):
             return mensaje_limite_alcanzado(self.idioma), False
         contenedor_opciones: list = []
         contenedor_guardado: list = []
         contenedor_informe: list = []
         turnos = leer_turnos(self.usuario_id, fase)
-        # Solo el Explorador (fase 1) acepta este kwarg -- ver
-        # agents/explorador.py y tools/progreso_exploracion.py. Las otras
-        # 4 fases no lo declaran en su firma, por eso va condicional.
-        kwargs_extra = {"ejes_cubiertos_previos": leer_progreso_exploracion(self.usuario_id)} if fase == 1 else {}
         agente = _FABRICAS_POR_FASE[fase](
             self.usuario_id,
             self.idioma,
@@ -432,7 +471,6 @@ class SesionTelos:
             contenedor_guardado=contenedor_guardado,
             contenedor_informe=contenedor_informe,
             turn_id=turn_id,
-            **kwargs_extra,
         )
         agente(texto)
         registrar_invocacion(self.usuario_id)
@@ -469,11 +507,157 @@ class SesionTelos:
         dato_nuevo = informe.get("dato_nuevo")
         if dato_nuevo:
             agregar_insight(self.usuario_id, dato_nuevo)
-        if fase == 1:
-            ejes_cubiertos = informe.get("ejes_cubiertos")
-            if ejes_cubiertos:
-                guardar_progreso_exploracion(self.usuario_id, ejes_cubiertos)
         return (informe.get("texto") or "").strip(), bool(informe.get("cerrado"))
+
+    def _invocar_explorador(self, texto: str, turn_id: str | None) -> tuple[str, bool]:
+        """Explorer v2 (revisión de arquitectura externa, 12/09/2026): acá
+        vive todo el control de flujo que antes se le pedía al modelo por
+        instrucción. Orden de cada turno:
+
+        1. Si ya había una pregunta activa, evaluar la respuesta con
+           agents/evaluador_respuesta.py -- una llamada acotada que solo
+           ve la pregunta activa y la respuesta, no el historial
+           completo -- y actualizar el progreso por código (nunca el
+           modelo decide si un eje quedó cubierto).
+        2. Si con eso ya hay evidencia suficiente (_proposito_listo),
+           cerrar la fase ACÁ MISMO por código: construir `datos` desde
+           la evidencia ya acumulada y guardar la ficha directo, sin
+           pasar por ninguna tool que el modelo tenga que acordarse de
+           llamar.
+        3. Si no, elegir la siguiente pregunta (_seleccionar_siguiente_pregunta,
+           de la biblioteca fija en tools/exploracion_preguntas.py -- el
+           modelo nunca inventa una pregunta nueva) e invocar al
+           Explorador (agents/explorador.py, sin tools) solo para que la
+           haga con calidez.
+
+        `cerrado` en el valor de retorno es siempre una decisión de
+        código acá -- no hay ningún booleano que el modelo declare para
+        verificar después."""
+        if excedio_limite_diario(self.usuario_id):
+            return mensaje_limite_alcanzado(self.idioma), False
+
+        idioma_preguntas = "en" if self.idioma == "en" else "es"
+        preguntas = PREGUNTAS_EXPLORACION[idioma_preguntas]
+        progreso = leer_progreso_exploracion(self.usuario_id)
+        if not progreso or not progreso.get("axes"):
+            progreso = {
+                "active_axis": None,
+                "active_question_id": None,
+                "axes": {
+                    eje: {"status": "pending", "question_id": None, "evidence": None, "attempts": 0} for eje in EJES
+                },
+            }
+        else:
+            eje_activo = progreso.get("active_axis")
+            id_pregunta_activa = progreso.get("active_question_id")
+            if eje_activo and id_pregunta_activa:
+                texto_pregunta_activa = next(
+                    (p["text"] for p in preguntas[eje_activo] if p["id"] == id_pregunta_activa), None
+                )
+                evaluacion = (
+                    evaluar_respuesta(texto_pregunta_activa, texto, self.idioma) if texto_pregunta_activa else None
+                )
+                eje_info = progreso["axes"][eje_activo]
+                if evaluacion is None:
+                    logger.warning(
+                        "Explorador: evaluar_respuesta falló para el eje %s -- se reintenta la misma pregunta",
+                        eje_activo,
+                    )
+                elif evaluacion.status == "answered":
+                    eje_info["status"] = "answered"
+                    eje_info["evidence"] = evaluacion.evidence or texto[:200]
+                elif evaluacion.status == "clarification":
+                    pass  # repetir la misma pregunta, sin gastar intento
+                else:  # partial, off_topic, refusal
+                    eje_info["attempts"] += 1
+                    if evaluacion.evidence and not eje_info.get("evidence"):
+                        eje_info["evidence"] = evaluacion.evidence
+                    if eje_info["attempts"] >= MAX_INTENTOS_POR_EJE:
+                        # Invariante del sistema, no algo que el modelo pueda
+                        # evitar -- ver MAX_INTENTOS_POR_EJE.
+                        eje_info["status"] = "skipped"
+
+        if self._proposito_listo(progreso):
+            datos = {eje: (info.get("evidence") or "") for eje, info in progreso["axes"].items()}
+            guardar_ficha_usuario_fusionada(
+                self.usuario_id,
+                datos,
+                fase=1,
+                motivo_version="Evidencia suficiente en los ejes -- cierre determinado por código (Explorer v2)",
+                turn_id=turn_id,
+            )
+            borrar_progreso_exploracion(self.usuario_id)
+            return _MENSAJE_CIERRE_EXPLORADOR[self.idioma], True
+
+        seleccion = self._seleccionar_siguiente_pregunta(progreso, preguntas)
+        if seleccion is None:
+            # Red de seguridad: no debería pasar (_proposito_listo ya
+            # cubre "todos los ejes en estado terminal"), pero si pasara,
+            # mejor cerrar con lo que haya que quedar sin poder avanzar.
+            datos = {eje: (info.get("evidence") or "") for eje, info in progreso["axes"].items()}
+            guardar_ficha_usuario_fusionada(
+                self.usuario_id, datos, fase=1, motivo_version="Todos los ejes en estado terminal", turn_id=turn_id
+            )
+            borrar_progreso_exploracion(self.usuario_id)
+            return _MENSAJE_CIERRE_EXPLORADOR[self.idioma], True
+
+        eje, id_pregunta, texto_pregunta = seleccion
+        progreso["active_axis"] = eje
+        progreso["active_question_id"] = id_pregunta
+        guardar_progreso_exploracion(self.usuario_id, progreso)
+
+        evidencia_por_eje = {e: info["evidence"] for e, info in progreso["axes"].items() if info.get("evidence")}
+        turnos = leer_turnos(self.usuario_id, 1)
+        agente = crear_agente_explorador(
+            self.usuario_id,
+            self.idioma,
+            pregunta_activa=texto_pregunta,
+            evidencia_por_eje=evidencia_por_eje,
+            mensajes_previos=_turnos_a_mensajes(turnos),
+            nombre=self.nombre,
+        )
+        resultado = agente(texto)
+        registrar_invocacion(self.usuario_id)
+        return _texto_de_resultado(resultado), False
+
+    def _seleccionar_siguiente_pregunta(self, progreso: dict, preguntas: dict) -> tuple[str, str, str] | None:
+        """Determinístico -- nunca un LLM. Orden: (1) seguir con el eje
+        activo si sigue "pending" y todavía tiene una pregunta de la
+        biblioteca sin usar (la de profundización, para el caso
+        "partial"/"off_topic"/"refusal"); (2) si no, el siguiente eje
+        pendiente en el orden fijo de EJES. None si todos los ejes ya
+        están en un estado terminal (answered/skipped)."""
+        eje_activo = progreso.get("active_axis")
+        if eje_activo and progreso["axes"][eje_activo]["status"] == "pending":
+            info = progreso["axes"][eje_activo]
+            lista = preguntas[eje_activo]
+            indice = info["attempts"]
+            if indice < len(lista):
+                p = lista[indice]
+                return eje_activo, p["id"], p["text"]
+            info["status"] = "skipped"
+        for eje in EJES:
+            info = progreso["axes"][eje]
+            if info["status"] == "pending":
+                p = preguntas[eje][0]
+                return eje, p["id"], p["text"]
+        return None
+
+    def _proposito_listo(self, progreso: dict) -> bool:
+        """Política de cierre configurable (ver revisión de arquitectura
+        externa, sección "purpose_ready()") -- reemplaza "¿se hicieron
+        las 5 preguntas?" por "¿hay evidencia suficiente?". Cierra si
+        todos los ejes llegaron a un estado terminal (nunca se bloquea
+        indefinidamente, ver MAX_INTENTOS_POR_EJE), o antes si ya hay
+        suficientes ejes con evidencia real como para no seguir
+        preguntando. `_MIN_EJES_RESPONDIDOS_PARA_CERRAR` es a propósito
+        un número ajustable por producto, no una regla fija del agente."""
+        valores_ejes = progreso["axes"].values()
+        todos_terminales = all(info["status"] in ("answered", "skipped") for info in valores_ejes)
+        if todos_terminales:
+            return True
+        respondidos = sum(1 for info in valores_ejes if info["status"] == "answered")
+        return respondidos >= _MIN_EJES_RESPONDIDOS_PARA_CERRAR
 
     def _verificar_y_reforzar(
         self, fase: int, respuesta: str, cerrado_declarado: bool, total_versiones_antes: int

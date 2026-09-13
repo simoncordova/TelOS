@@ -1,40 +1,32 @@
-"""Cobertura de agents/explorador.py::_formatear_estado_ejes -- el bloque
-de texto que se inyecta en el prompt para que el Explorador vea qué ejes
-ya están cubiertos como un hecho explícito, en vez de tener que llevar
-la cuenta él solo releyendo todo el historial (ver
-tools/progreso_exploracion.py)."""
+"""Cobertura de agents/explorador.py::_formatear_ejes_cubiertos --
+Explorer v2 (revisión de arquitectura externa, 12/09/2026): el
+Explorador ya no decide qué preguntar ni si un eje está cubierto, solo
+conversa con lo que el código ya decidió. Esto testea el bloque de
+evidencia que se le inyecta en el prompt."""
 
 import os
 
 os.environ.setdefault("TELOS_FICHA_BACKEND", "local")
 
-from agents.explorador import _formatear_estado_ejes
+from agents.explorador import _formatear_ejes_cubiertos
 
 
-def test_sin_ejes_previos_es():
-    assert "ninguno todavía" in _formatear_estado_ejes(None, "es")
-    assert "ninguno todavía" in _formatear_estado_ejes({}, "es")
+def test_sin_evidencia_es():
+    assert "ninguno todavía" in _formatear_ejes_cubiertos({}, "es")
 
 
-def test_sin_ejes_previos_en():
-    assert "none yet" in _formatear_estado_ejes(None, "en")
+def test_sin_evidencia_en():
+    assert "none yet" in _formatear_ejes_cubiertos({}, "en")
 
 
-def test_eje_cubierto_muestra_evidencia():
-    texto = _formatear_estado_ejes({"valores": "honestidad y lealtad"}, "es")
-    assert "CUBIERTO" in texto
+def test_incluye_la_evidencia_real():
+    texto = _formatear_ejes_cubiertos({"valores": "honestidad y lealtad"}, "es")
+    assert "valores" in texto
     assert "honestidad y lealtad" in texto
 
 
-def test_eje_vacio_queda_pendiente():
-    texto = _formatear_estado_ejes({"valores": ""}, "es")
-    assert "pendiente" in texto
-    assert "CUBIERTO" not in texto
-
-
-def test_incluye_los_5_ejes_aunque_falten_en_el_dict():
-    # Un dict parcial (solo 1 de 5 ejes) igual tiene que listar los 5 --
-    # si no, el modelo no sabe que los otros 4 siguen pendientes.
-    texto = _formatear_estado_ejes({"valores": "algo"}, "es")
-    for etiqueta in ("valores", "flow", "recordada", "evita"):
-        assert etiqueta in texto
+def test_solo_lista_ejes_con_evidencia():
+    # A diferencia del diseño anterior, acá no hace falta listar los 5 --
+    # el código ya sabe cuáles están pendientes por el progreso guardado.
+    texto = _formatear_ejes_cubiertos({"valores": "algo"}, "es")
+    assert "momentos_flow" not in texto

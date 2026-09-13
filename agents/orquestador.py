@@ -69,10 +69,12 @@ from strands.agent import Agent
 
 from agents._modelo import crear_modelo_subagente
 from agents.coach_validacion import crear_agente_coach_validacion
+from agents.evaluador_confirmacion import evaluar_confirmacion
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
 from tools.categorias_ikigai import DIMENSIONES_IKIGAI, buscar_nodo_con_ruta
 from tools.categorias_sistema import PREGUNTAS_SISTEMA_IDS, buscar_nodo_sistema_con_ruta
+from tools.categorias_validacion import buscar_area_vida
 from tools.contexto_usuario import agregar_insight
 from tools.conversacion import guardar_intercambio, leer_turnos
 from tools.crisis import detectar_señal_crisis, mensaje_crisis, registrar_evento_crisis
@@ -87,17 +89,21 @@ from tools.selecciones_estructuradas import (
 
 logger = logging.getLogger(__name__)
 
-# Fases 1 y 4 quedan AFUERA de este dict a propósito -- ninguna de las
-# dos es una conversación en absoluto (ver docstring del módulo,
-# confirmar_seleccion y confirmar_seleccion_sistema más abajo).
-# _invocar_fase_directo despacha ambas ANTES de llegar al camino
-# genérico de abajo, con un aviso fijo -- si alguna llegara acá por
-# error, preferible un KeyError inmediato a un crash confuso más
-# adelante. agents/estratega_sistemas.py (el agente conversacional
-# viejo de Fase 4) se borró en el mismo cambio que introdujo esto.
+# Fases 1, 3 y 4 quedan AFUERA de este dict a propósito -- ninguna pasa
+# más por el despacho genérico basado en tools/informar_al_orquestador
+# (ver docstring del módulo, confirmar_seleccion,
+# confirmar_seleccion_validacion y confirmar_seleccion_sistema más
+# abajo). _invocar_fase_directo las despacha ANTES de llegar al camino
+# genérico de acá abajo -- si alguna llegara acá por error, preferible
+# un KeyError inmediato a un crash confuso más adelante.
+# agents/explorador.py y agents/estratega_sistemas.py (los agentes
+# conversacionales viejos de Fases 1 y 4) se borraron en el cambio que
+# introdujo esto; agents/coach_validacion.py sigue existiendo pero
+# reescrito sin tools, invocado directo desde
+# SesionTelos._invocar_coach_validacion, solo durante la etapa
+# "refinando".
 _FABRICAS_POR_FASE = {
     2: crear_agente_sintetizador,
-    3: crear_agente_coach_validacion,
     5: crear_agente_seguimiento,
 }
 
@@ -142,6 +148,16 @@ _MENSAJE_CIERRE_SISTEMA = {
         "time you open a new conversation, it'll be a brief check-in on "
         "this system."
     ),
+}
+
+# Fase 3: cierre 100% determinístico una vez que
+# agents/evaluador_confirmacion.py detecta la confirmación -- sin
+# invocar al coach una vez más para una despedida personalizada (mismo
+# criterio que Fase 4: menos una invocación real, un punto menos de
+# falla en el cierre).
+_MENSAJE_CIERRE_VALIDACION = {
+    "es": "Quedó. Esa es la redacción con la que seguimos -- vamos al siguiente paso.",
+    "en": "That's it. That's the wording we'll go with -- let's move to the next step.",
 }
 
 # Fase 1 ya no acepta texto libre como mecanismo principal (ver docstring
@@ -524,9 +540,14 @@ class SesionTelos:
 
         Fases 1 y 4 ya no son conversaciones de texto (ver docstring del
         módulo, confirmar_seleccion y confirmar_seleccion_sistema) --
-        devuelven un aviso fijo, sin gastar ninguna invocación real."""
+        devuelven un aviso fijo, sin gastar ninguna invocación real. Fase
+        3 es híbrida (ver _invocar_coach_validacion): selección de
+        categoría para evidencia pasada/fricción futura, conversación
+        real acotada solo para la etapa de refinar la redacción."""
         if fase == 1:
             return _PLACEHOLDER_FASE_1[self.idioma], False
+        if fase == 3:
+            return self._invocar_coach_validacion(texto, turn_id)
         if fase == 4:
             return _PLACEHOLDER_FASE_4[self.idioma], False
         if excedio_limite_diario(self.usuario_id):
@@ -766,6 +787,148 @@ class SesionTelos:
             lineas.append(f"{etiquetas[pregunta_id]}: {texto}")
         return "\n".join(lineas)
 
+    def confirmar_seleccion_validacion(self, area_id: str, detalle_libre: str | None = None) -> dict:
+        """Fase 3, etapas "evidencia_pasada"/"friccion_futura": confirma
+        el área de vida elegida (tools/categorias_validacion.py) para la
+        etapa activa. Código decide el orden -- evidencia pasada antes
+        que fricción futura, nunca al revés, mismo requisito que ya
+        tenía el spec cuando esto era 100% conversación -- y cuándo pasar
+        a la etapa de conversación real ("refinando").
+
+        Devuelve {"etapa": str, "mensaje_apertura_refinado": str | None}
+        -- este último viene poblado SOLO en el turno donde se completa
+        la 2da etapa: es la primera propuesta de redacción del coach,
+        invocada acá mismo (ver _abrir_refinado), para que la persona no
+        se quede esperando después de confirmar la 2da área."""
+        if self.fase_actual != 3:
+            raise ValueError(f"confirmar_seleccion_validacion solo aplica en Fase 3 -- fase actual es {self.fase_actual}")
+        idioma_arbol = "en" if self.idioma == "en" else "es"
+        area = buscar_area_vida(idioma_arbol, area_id)
+        if area is None:
+            raise ValueError(f"area_id desconocida: {area_id!r}")
+        if excedio_limite_diario(self.usuario_id):
+            return {"etapa": "evidencia_pasada", "mensaje_apertura_refinado": None}
+
+        progreso = leer_selecciones_estructuradas(self.usuario_id)
+        if not progreso or progreso.get("fase") != 3:
+            progreso = {
+                "fase": 3,
+                "etapa": "evidencia_pasada",
+                "evidencia_pasada": None,
+                "friccion_futura": None,
+                "ultima_propuesta_coach": None,
+            }
+
+        etapa_actual = progreso.get("etapa", "evidencia_pasada")
+        if etapa_actual not in ("evidencia_pasada", "friccion_futura"):
+            raise ValueError(f"Fase 3 ya está en etapa {etapa_actual!r}, no acepta más selecciones de área.")
+
+        progreso[etapa_actual] = {"area_id": area_id, "label": area["label"], "detalle_libre": detalle_libre}
+
+        if etapa_actual == "evidencia_pasada":
+            progreso["etapa"] = "friccion_futura"
+            guardar_selecciones_estructuradas(self.usuario_id, progreso)
+            return {"etapa": "friccion_futura", "mensaje_apertura_refinado": None}
+
+        progreso["etapa"] = "refinando"
+        guardar_selecciones_estructuradas(self.usuario_id, progreso)
+        mensaje_apertura = self._abrir_refinado(progreso)
+        return {"etapa": "refinando", "mensaje_apertura_refinado": mensaje_apertura}
+
+    def _abrir_refinado(self, progreso: dict) -> str:
+        """Primera invocación real al coach en Fase 3 -- las dos etapas
+        de evidencia ya están resueltas por selección, así que acá
+        arranca la conversación genuina: el coach propone una primera
+        redacción anclada en esa evidencia. Guarda el turno igual que
+        cualquier kickoff del resto del proyecto (mismo criterio que
+        abrir_conversacion/_capturar_nombre/la cascada de cambio de
+        fase) para que quede en el historial que reconstruye
+        leer_turnos."""
+        ficha = leer_ficha_usuario(self.usuario_id)
+        proposito_candidato = (ficha["actual"] or {}).get("datos", {}).get("proposito", "") if ficha["existe"] else ""
+        agente = crear_agente_coach_validacion(
+            self.usuario_id,
+            self.idioma,
+            proposito_candidato=proposito_candidato,
+            evidencia_pasada=progreso.get("evidencia_pasada"),
+            friccion_futura=progreso.get("friccion_futura"),
+            mensajes_previos=None,
+            nombre=self.nombre,
+        )
+        kickoff = _KICKOFF[self.idioma]
+        resultado = agente(kickoff)
+        registrar_invocacion(self.usuario_id)
+        texto_respuesta = _texto_de_resultado(resultado)
+        progreso["ultima_propuesta_coach"] = texto_respuesta
+        guardar_selecciones_estructuradas(self.usuario_id, progreso)
+        guardar_intercambio(self.usuario_id, 3, kickoff, texto_respuesta)
+        return texto_respuesta
+
+    def _invocar_coach_validacion(self, texto: str, turn_id: str | None) -> tuple[str, bool]:
+        """Fase 3: híbrido selección + conversación acotada (ver
+        tools/categorias_validacion.py y confirmar_seleccion_validacion).
+        Mientras las etapas "evidencia_pasada"/"friccion_futura" siguen
+        pendientes, esta fase no acepta texto libre como mecanismo
+        principal -- mismo aviso fijo que Fases 1/4. Una vez en etapa
+        "refinando", esto SÍ es una conversación real
+        (agents/coach_validacion.py, sin tools) porque afinar una
+        redacción de propósito es un diálogo genuinamente abierto -- pero
+        el cierre sigue sin ser una decisión del modelo: cada turno,
+        ANTES de generar una respuesta nueva, código evalúa con
+        agents/evaluador_confirmacion.py si el mensaje de la persona
+        confirma la última propuesta del coach."""
+        if excedio_limite_diario(self.usuario_id):
+            return mensaje_limite_alcanzado(self.idioma), False
+
+        progreso = leer_selecciones_estructuradas(self.usuario_id)
+        if not progreso or progreso.get("fase") != 3 or progreso.get("etapa") != "refinando":
+            # Todavía en etapa de selección -- no hay nada que un mensaje
+            # de texto pueda hacer acá (ver confirmar_seleccion_validacion).
+            return _PLACEHOLDER_FASE_1[self.idioma], False
+
+        ultima_propuesta = progreso.get("ultima_propuesta_coach")
+        # `texto == _KICKOFF` pasa al reabrir una sesión pausada a mitad
+        # de "refinando" (abrir_conversacion/_capturar_nombre reinvocan
+        # la fase actual con el mismo nudge interno que usa el resto del
+        # proyecto) -- nunca es una respuesta real de la persona, así que
+        # nunca puede ser una "confirmación".
+        es_kickoff_interno = texto == _KICKOFF[self.idioma]
+        if ultima_propuesta and not es_kickoff_interno:
+            evaluacion = evaluar_confirmacion(ultima_propuesta, texto, self.idioma)
+            if evaluacion is None:
+                logger.warning("Coach de Validación: evaluar_confirmacion falló -- se sigue conversando")
+            elif evaluacion.confirmado:
+                redaccion_final = evaluacion.redaccion_final or ultima_propuesta
+                guardar_ficha_usuario_fusionada(
+                    self.usuario_id,
+                    {"proposito": redaccion_final},
+                    fase=3,
+                    motivo_version="Redacción confirmada -- cierre determinado por código (selector visual + evaluador acotado)",
+                    turn_id=turn_id,
+                )
+                borrar_selecciones_estructuradas(self.usuario_id)
+                self.fase_actual = 4
+                return _MENSAJE_CIERRE_VALIDACION[self.idioma], True
+
+        ficha = leer_ficha_usuario(self.usuario_id)
+        proposito_candidato = (ficha["actual"] or {}).get("datos", {}).get("proposito", "") if ficha["existe"] else ""
+        turnos = leer_turnos(self.usuario_id, 3)
+        agente = crear_agente_coach_validacion(
+            self.usuario_id,
+            self.idioma,
+            proposito_candidato=proposito_candidato,
+            evidencia_pasada=progreso.get("evidencia_pasada"),
+            friccion_futura=progreso.get("friccion_futura"),
+            mensajes_previos=_turnos_a_mensajes(turnos),
+            nombre=self.nombre,
+        )
+        resultado = agente(texto)
+        registrar_invocacion(self.usuario_id)
+        texto_respuesta = _texto_de_resultado(resultado)
+        progreso["ultima_propuesta_coach"] = texto_respuesta
+        guardar_selecciones_estructuradas(self.usuario_id, progreso)
+        return texto_respuesta, False
+
     def _verificar_y_reforzar(
         self, fase: int, respuesta: str, cerrado_declarado: bool, total_versiones_antes: int
     ) -> str:
@@ -981,14 +1144,16 @@ class SesionTelos:
         if actual["fase"] != fase_que_respondio:
             return  # la versión nueva no corresponde a la fase que respondió
 
-        # fase_que_respondio == 1 o 4 no deberían llegar hasta acá --
-        # ambas cierran y avanzan self.fase_actual directo en
-        # SesionTelos._cerrar_fase_1/_cerrar_fase_4, sin pasar por
-        # enviar_mensaje. Se dejan los casos igual (en vez de asumir que
-        # nunca pueden pasar) por si algún día algo las invoca por el
-        # camino genérico de texto.
-        if fase_que_respondio in (1, 2, 3):
+        # fase_que_respondio == 1, 3 o 4 no deberían llegar hasta acá --
+        # las tres cierran y avanzan self.fase_actual directo en su
+        # propio método (_cerrar_fase_1/_invocar_coach_validacion/
+        # _cerrar_fase_4), sin pasar por enviar_mensaje. Se dejan los
+        # casos igual (en vez de asumir que nunca pueden pasar) por si
+        # algún día algo las invoca por el camino genérico de texto.
+        if fase_que_respondio in (1, 3):
             self.fase_actual = fase_que_respondio + 1
+        elif fase_que_respondio == 2:
+            self.fase_actual = 3
         elif fase_que_respondio == 4:
             self.fase_actual = 5
         elif fase_que_respondio == 5:

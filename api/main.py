@@ -32,6 +32,7 @@ from api.esquemas import (
 from api.sse import stream_eventos
 from tools.categorias_ikigai import CATEGORIAS_IKIGAI, DIMENSIONES_IKIGAI
 from tools.categorias_sistema import CATEGORIAS_SISTEMA, PREGUNTAS_SISTEMA_IDS
+from tools.categorias_validacion import AREAS_VIDA
 from tools.ficha import leer_ficha_usuario
 from tools.perfil import leer_nombre_usuario
 from tools.push_suscripcion import (
@@ -204,15 +205,18 @@ def enviar_mensaje(body: EnviarMensajeRequest, usuario_id: str = Depends(obtener
 
 @app.get("/api/categorias/{fase}")
 def obtener_categorias(fase: int, idioma: str = "en") -> dict:
-    """Sirve el árbol (o los 4 árboles, en Fase 4) de categorías
-    completo de una sola vez -- el frontend lo cachea y navega
-    client-side, sin otra llamada de red por click (ver el plan del
-    selector visual Ikigai). Fase 1: un grafo único
-    (tools/categorias_ikigai.py). Fase 4: 4 árboles independientes, uno
-    por pregunta (tools/categorias_sistema.py)."""
+    """Sirve el árbol/selector de categorías completo de una sola vez --
+    el frontend lo cachea y navega client-side, sin otra llamada de red
+    por click (ver el plan del selector visual Ikigai). Fase 1: un grafo
+    único (tools/categorias_ikigai.py). Fase 3: un selector plano de
+    áreas de vida, reutilizado para evidencia pasada y fricción futura
+    (tools/categorias_validacion.py). Fase 4: 4 árboles independientes,
+    uno por pregunta (tools/categorias_sistema.py)."""
     idioma_arbol = "es" if idioma == "es" else "en"
     if fase == 1:
         return {"dimensiones": list(DIMENSIONES_IKIGAI), "categorias": CATEGORIAS_IKIGAI[idioma_arbol]}
+    if fase == 3:
+        return {"areas": AREAS_VIDA[idioma_arbol]}
     if fase == 4:
         return {"preguntas": list(PREGUNTAS_SISTEMA_IDS), "categorias": CATEGORIAS_SISTEMA[idioma_arbol]}
     raise HTTPException(status_code=404, detail=f"No hay taxonomía para la fase {fase} todavía.")
@@ -222,13 +226,17 @@ def obtener_categorias(fase: int, idioma: str = "en") -> dict:
 def confirmar_seleccion(
     body: ConfirmarSeleccionRequest, usuario_id: str = Depends(obtener_usuario_actual)
 ) -> SeleccionConfirmadaResponse:
-    """Fase 1 y Fase 4: confirma una hoja de un árbol de categorías --
-    nunca pasa por el camino de texto libre (ver agents/orquestador.py::
-    SesionTelos.confirmar_seleccion/confirmar_seleccion_sistema, que
+    """Fases 1, 3 y 4: confirma una opción de un árbol o selector de
+    categorías -- nunca pasa por el camino de texto libre (ver
+    agents/orquestador.py::SesionTelos.confirmar_seleccion/
+    confirmar_seleccion_validacion/confirmar_seleccion_sistema, que
     derivan `ruta`/`dimensiones` de la taxonomía, nunca del cliente).
-    Mismo lock por (usuario_id, idioma) que _eventos_turno, para
-    serializar selecciones concurrentes del mismo usuario contra la
-    misma SesionTelos en memoria."""
+    Fase 3 nunca cierra acá -- ver docstring de
+    SeleccionConfirmadaResponse; su cierre real pasa por
+    `POST /api/sesion/mensaje` una vez en etapa "refinando". Mismo lock
+    por (usuario_id, idioma) que _eventos_turno, para serializar
+    selecciones concurrentes del mismo usuario contra la misma
+    SesionTelos en memoria."""
     lock = _obtener_lock(usuario_id, body.idioma)
     with lock:
         sesion = _obtener_sesion(usuario_id, body.idioma)
@@ -237,6 +245,8 @@ def confirmar_seleccion(
                 if not body.pregunta_id:
                     raise HTTPException(status_code=400, detail="pregunta_id es obligatorio cuando fase=4.")
                 resultado = sesion.confirmar_seleccion_sistema(body.pregunta_id, body.nodo_id, body.detalle_libre)
+            elif body.fase == 3:
+                resultado = sesion.confirmar_seleccion_validacion(body.nodo_id, body.detalle_libre)
             else:
                 resultado = sesion.confirmar_seleccion(body.nodo_id, body.detalle_libre)
         except ValueError as e:
@@ -245,8 +255,10 @@ def confirmar_seleccion(
     return SeleccionConfirmadaResponse(
         cobertura=resultado.get("cobertura"),
         respuestas=resultado.get("respuestas"),
-        cerrado=resultado["cerrado"],
-        mensaje_cierre=resultado["mensaje_cierre"],
+        etapa=resultado.get("etapa"),
+        mensaje_apertura_refinado=resultado.get("mensaje_apertura_refinado"),
+        cerrado=resultado.get("cerrado", False),
+        mensaje_cierre=resultado.get("mensaje_cierre"),
         fase_actual=fase_actual,
     )
 

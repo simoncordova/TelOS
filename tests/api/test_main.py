@@ -49,6 +49,11 @@ class _SesionFalsa:
     def confirmar_seleccion_sistema(self, pregunta_id: str, nodo_id: str, detalle_libre: str | None = None) -> dict:
         return {"respuestas": {pregunta_id: {"nodo_id": nodo_id}}, "cerrado": False, "mensaje_cierre": None}
 
+    def confirmar_seleccion_validacion(self, area_id: str, detalle_libre: str | None = None) -> dict:
+        if area_id == "trabajo_carrera":
+            return {"etapa": "friccion_futura", "mensaje_apertura_refinado": None}
+        return {"etapa": "refinando", "mensaje_apertura_refinado": "¿Sentís que 'crear con propósito' te representa?"}
+
 
 _FICHA_FALSA = {
     "existe": True,
@@ -159,8 +164,16 @@ def test_obtener_categorias_fase_4(cliente):
     assert len(cuerpo["categorias"]["accion"]) > 0
 
 
+def test_obtener_categorias_fase_3(cliente):
+    respuesta = cliente.get("/api/categorias/3?idioma=es")
+    assert respuesta.status_code == 200
+    areas = respuesta.json()["areas"]
+    assert len(areas) > 0
+    assert {"id", "label"} <= areas[0].keys()
+
+
 def test_obtener_categorias_fase_sin_taxonomia_404(cliente):
-    respuesta = cliente.get("/api/categorias/3")
+    respuesta = cliente.get("/api/categorias/2")
     assert respuesta.status_code == 404
 
 
@@ -192,6 +205,27 @@ def test_confirmar_seleccion_fase_4_devuelve_respuestas(cliente):
 def test_confirmar_seleccion_fase_4_sin_pregunta_id_400(cliente):
     respuesta = cliente.post("/api/seleccion/confirmar", json={"fase": 4, "nodo_id": "ejercicio_cardio"})
     assert respuesta.status_code == 400
+
+
+def test_confirmar_seleccion_fase_3_primera_etapa_no_abre_refinado(cliente):
+    respuesta = cliente.post(
+        "/api/seleccion/confirmar", json={"fase": 3, "nodo_id": "trabajo_carrera", "idioma": "es"}
+    )
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["etapa"] == "friccion_futura"
+    assert cuerpo["mensaje_apertura_refinado"] is None
+    assert cuerpo["cerrado"] is False
+
+
+def test_confirmar_seleccion_fase_3_segunda_etapa_abre_refinado(cliente):
+    respuesta = cliente.post(
+        "/api/seleccion/confirmar", json={"fase": 3, "nodo_id": "hobby_proyecto_personal", "idioma": "es"}
+    )
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["etapa"] == "refinando"
+    assert cuerpo["mensaje_apertura_refinado"]
 
 
 def test_confirmar_seleccion_requiere_autenticacion_sin_override():

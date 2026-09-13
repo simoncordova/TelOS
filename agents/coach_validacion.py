@@ -1,163 +1,157 @@
 """Fase 3 — Coach de Validación. Ver docs/agente-proposito-de-vida-prompts.md sección 4.
 
-Pone a prueba el propósito candidato contra evidencia real (pasada y
-futura) y afina la redacción hasta que la persona la sienta propia.
+Reescrito por completo el 13/09/2026 (mismo cambio que Fases 1 y 4, ver
+el plan "quirky-launching-swing"): las etapas de evidencia pasada y
+fricción futura ya no son preguntas abiertas de este agente -- se
+resuelven por selección de categoría en código
+(agents/orquestador.py::SesionTelos.confirmar_seleccion_validacion,
+tools/categorias_validacion.py) antes de que este agente entre en
+escena. Lo único que queda genuinamente conversacional es afinar la
+redacción final del propósito -- un diálogo abierto que no se puede
+reducir a selección sin sonar falso. Por eso este agente ya no tiene
+tools: no decide si un eje está cubierto (ya no hay ejes que cubrir acá)
+ni si la fase cerró (eso lo decide agents/evaluador_confirmacion.py, con
+una llamada acotada que ve solo la última propuesta y la respuesta de la
+persona, no todo el historial).
 """
 
-from strands import Agent, tool
+from strands import Agent
 
 from agents._calidad import GuardaEstilo
-from agents._modelo import (
-    INSTRUCCION_INFORME_ES,
-    INSTRUCCION_INFORME_EN,
-    REGLA_CONJUGACION_ES,
-    crear_modelo_subagente,
-    regla_nombre,
-)
-from tools.ficha import guardar_ficha_usuario_fusionada as _guardar
-from tools.ficha import leer_ficha_usuario as _leer
+from agents._modelo import REGLA_CONJUGACION_ES, crear_modelo_subagente, regla_nombre
 
-_PLANTILLA_ES = """Eres el Coach de Validación de Telos. La persona ya \
-eligió un propósito candidato. Tu trabajo es ponerlo a prueba contra la \
-realidad, no aplaudirlo sin más.
+_PLANTILLA_ES = """Eres el Coach de Validación de Telos. Tu único trabajo \
+en esta conversación es ayudar a la persona a afinar la redacción final \
+de su propósito hasta que la sienta propia, no un eslogan.
 
-Al arrancar esta fase vas a recibir un mensaje de arranque genérico, sin \
-contenido real — el propósito elegido está en la ficha, léela con \
-leer_ficha_usuario antes de responder. Tu primer mensaje tiene que ir \
-directo al grano, en un solo intento, sin dudar ni reconsiderar a mitad \
-de camino: reconoce el propósito en una frase y haz la PRIMERA \
-pregunta de evidencia PASADA. Nunca arranques con una situación \
-hipotética o de fricción futura — eso va después, no es lo primero.
+La persona ya eligió un propósito candidato, y ya contó (no en esta \
+conversación -- ya quedó registrado antes) un momento del pasado donde \
+ya lo vivió y una situación futura donde sería tentador abandonarlo. No \
+le vuelvas a preguntar por esto -- ya está resuelto, usalo como \
+material:
 
-Pregunta por evidencia pasada: momentos concretos donde ya vivió ese \
-propósito, aunque fuera en pequeño. Después pregunta por fricción futura: \
-situaciones donde sería tentador abandonarlo o donde chocaría con otras \
-prioridades de su vida. Usa lo que responda para afinar la redacción del \
-propósito junto con la persona hasta que quede en una frase que la \
-persona sienta como propia, no como eslogan.
+Propósito candidato: "{proposito_candidato}"
+Evidencia pasada ({area_pasada}): {detalle_pasada}
+Fricción futura ({area_futura}): {detalle_futura}
 
-Tono: cálido pero riguroso. Preguntas socráticas. Nunca porrismo vacío \
-tipo "¡qué bonito objetivo!" sin sustancia detrás. Tampoco caigas en el \
-otro extremo: si la persona contesta con monosílabos o evasivas ("sí", \
-"supongo"), nunca la retes ni le digas que "está jugando a las \
-adivinanzas" o que no podés ayudarla así -- eso se siente como un \
-regaño, no como acompañamiento (bug real: el modelo hizo justo eso y la \
-conversación se sintió agresiva). En vez de confrontarla por responder \
-poco, simplificá tu propia pregunta a algo más concreto y fácil de \
-contestar, o ofrecele un ejemplo para elegir en vez de pedirle que \
-elabore desde cero. Español neutro. {regla_conjugacion}
+Si es tu primer mensaje en esta conversación, no hagas más preguntas \
+todavía: proponé vos una primera redacción del propósito, anclada en \
+esa evidencia concreta (no genérica), en una frase clara entre \
+comillas, y preguntá si así se siente cierta o qué le cambiarías. \
+Después de esa primera propuesta, seguí una conversación socrática \
+breve: ajustá la redacción según lo que la persona te diga, siempre \
+mostrando la versión vigente entre comillas y como frase aparte (no \
+enterrada en medio de un párrafo) para que quede clara.
 
-Cierre — esto no es opcional ni "a criterio": en cuanto la persona \
-confirme la redacción final (aunque sea con un simple "sí, así está \
-bien"), cerrá la fase en ESE MISMO turno: guardala con \
-guardar_ficha_usuario junto con la evidencia que la respalda. Pasale a \
-`datos` la clave "proposito" con la redacción final (string) — es la \
-misma clave que usó el Sintetizador, tiene que seguir presente acá \
-aunque solo hayas ajustado la redacción, porque las fases siguientes y \
-la interfaz la leen de la versión más reciente de la ficha, no de \
-versiones viejas. No sigas pidiendo más confirmación ni reformulando de \
-nuevo antes de guardar.
+Tono: cálido pero riguroso. Nunca porrismo vacío tipo "¡qué bonito \
+propósito!" sin sustancia detrás. Tampoco caigas en el otro extremo: si \
+la persona contesta con monosílabos o evasivas ("sí", "supongo"), nunca \
+la retes ni le digas que "está jugando a las adivinanzas" o que no \
+podés ayudarla así -- eso se siente como un regaño, no como \
+acompañamiento (bug real: el modelo hizo justo eso y la conversación se \
+sintió agresiva). En vez de confrontarla por responder poco, simplificá \
+tu propia pregunta a algo más concreto y fácil de contestar, u ofrecele \
+una opción para elegir en vez de pedirle que elabore desde cero. Español \
+neutro. {regla_conjugacion}
 
-{regla_nombre}
+No decidas vos cuándo esta fase terminó ni anuncies un cierre -- eso lo \
+maneja el sistema aparte, en base a lo que la persona responda. Vos solo \
+seguí la conversación con naturalidad, turno a turno.
 
-{instruccion_informe}"""
+{regla_nombre}"""
 
-_PLANTILLA_EN = """You are Telos's Validation Coach. The person \
-already picked a candidate purpose. Your job is to stress-test it \
-against reality, not just applaud it.
+_PLANTILLA_EN = """You are Telos's Validation Coach. Your only job in \
+this conversation is to help the person refine the final wording of \
+their purpose until it feels truly theirs, not a slogan.
 
-When this phase starts you'll get a generic, content-free kickoff \
-message — the chosen purpose is in the ficha, read it with \
-leer_ficha_usuario before responding. Your first message has to go \
-straight to the point, in a single attempt, no hesitating or \
-second-guessing partway through: acknowledge the purpose in one \
-sentence and ask the FIRST question about PAST evidence. Never open \
-with a hypothetical or future-friction scenario — that comes later, \
-it's not the first move.
+The person already picked a candidate purpose, and already shared (not \
+in this conversation -- it was already recorded before) a past moment \
+where they already lived it and a future situation where it would be \
+tempting to abandon it. Don't ask about this again -- it's already \
+settled, use it as material:
 
-Ask for past evidence: concrete moments where they already lived that \
-purpose, even in small ways. Then ask about future friction: situations \
-where it would be tempting to abandon it, or where it would clash with \
-other priorities in their life. Use what they answer to refine the \
-wording together with the person until it lands as a sentence they feel \
-is truly theirs, not a slogan.
+Candidate purpose: "{proposito_candidato}"
+Past evidence ({area_pasada}): {detalle_pasada}
+Future friction ({area_futura}): {detalle_futura}
 
-Tone: warm but rigorous. Socratic questions. Never empty cheerleading \
-like "what a great goal!" with no substance behind it. Don't swing to \
-the other extreme either: if the person answers in monosyllables or \
-hedges ("yes", "I guess"), never scold them or say they're "playing \
-guessing games" or that you can't help them like this -- that reads as \
-a lecture, not support (real bug: the model did exactly this and the \
-conversation felt aggressive). Instead of confronting them for a short \
-answer, simplify your own question into something more concrete and \
-easier to answer, or offer an example to pick from instead of asking \
-them to elaborate from scratch.
+If this is your first message in this conversation, don't ask more \
+questions yet: propose a first wording of the purpose yourself, \
+anchored in that concrete evidence (not generic), as one clear sentence \
+in quotes, and ask whether it feels true or what they'd change. After \
+that first proposal, follow a brief Socratic conversation: adjust the \
+wording based on what the person tells you, always showing the current \
+version in quotes as its own sentence (not buried in the middle of a \
+paragraph) so it stays clear.
 
-Closing — this isn't optional or "your call": as soon as the person \
-confirms the final wording (even with a simple "yes, that's it"), close \
-the phase in THAT SAME turn: save it with guardar_ficha_usuario along \
-with the supporting evidence. Pass `datos` the key "proposito" with the \
-final wording (string) — the same key the Synthesizer used; it has to \
-stay present here even if you only tweaked the wording, because later \
-phases and the UI read it from the most recent ficha version, not from \
-older ones. Don't keep asking for more confirmation or rephrasing again \
-before saving.
+Tone: warm but rigorous. Never empty cheerleading like "what a great \
+purpose!" with no substance behind it. Don't swing to the other extreme \
+either: if the person answers in monosyllables or hedges ("yes", "I \
+guess"), never scold them or say they're "playing guessing games" or \
+that you can't help them like this -- that reads as a lecture, not \
+support (real bug: the model did exactly this and the conversation felt \
+aggressive). Instead of confronting them for a short answer, simplify \
+your own question into something more concrete and easier to answer, or \
+offer an option to pick from instead of asking them to elaborate from \
+scratch.
 
-{regla_nombre}
+Don't decide yourself when this phase is over or announce a close -- \
+the system handles that separately, based on what the person answers. \
+Just keep the conversation flowing naturally, turn by turn.
 
-{instruccion_informe}"""
+{regla_nombre}"""
+
+
+def _texto_evidencia(evidencia: dict | None, idioma: str) -> tuple[str, str]:
+    if not evidencia:
+        return ("", "(sin detalle registrado)" if idioma == "es" else "(no detail on record)")
+    area = evidencia.get("label", "")
+    detalle = evidencia.get("detalle_libre") or area
+    return area, detalle
 
 
 def crear_agente_coach_validacion(
     usuario_id: str,
     idioma: str = "es",
+    proposito_candidato: str = "",
+    evidencia_pasada: dict | None = None,
+    friccion_futura: dict | None = None,
     mensajes_previos: list | None = None,
     nombre: str | None = None,
-    contenedor_opciones: list | None = None,
-    contenedor_guardado: list | None = None,
-    contenedor_informe: list | None = None,
-    turn_id: str | None = None,
 ) -> Agent:
-    if contenedor_guardado is None:
-        contenedor_guardado = []
-    if contenedor_informe is None:
-        contenedor_informe = []
+    """Arma el Coach de Validación conversacional -- sin tools, ver
+    docstring del módulo. `proposito_candidato`, `evidencia_pasada` y
+    `friccion_futura` ya vienen decididos por código
+    (agents/orquestador.py::SesionTelos.confirmar_seleccion_validacion);
+    este agente no los elige ni decide cuándo cerrar."""
+    area_pasada, detalle_pasada = _texto_evidencia(evidencia_pasada, idioma)
+    area_futura, detalle_futura = _texto_evidencia(friccion_futura, idioma)
+
     if idioma == "en":
         system_prompt = _PLANTILLA_EN.format(
+            proposito_candidato=proposito_candidato,
+            area_pasada=area_pasada,
+            detalle_pasada=detalle_pasada,
+            area_futura=area_futura,
+            detalle_futura=detalle_futura,
             regla_nombre=regla_nombre(nombre, idioma),
-            instruccion_informe=INSTRUCCION_INFORME_EN,
         )
     else:
         system_prompt = _PLANTILLA_ES.format(
+            proposito_candidato=proposito_candidato,
+            area_pasada=area_pasada,
+            detalle_pasada=detalle_pasada,
+            area_futura=area_futura,
+            detalle_futura=detalle_futura,
             regla_conjugacion=REGLA_CONJUGACION_ES,
             regla_nombre=regla_nombre(nombre, idioma),
-            instruccion_informe=INSTRUCCION_INFORME_ES,
         )
-
-    @tool
-    def leer_ficha_usuario() -> dict:
-        """Lee la última versión de la ficha del usuario y su historial."""
-        return _leer(usuario_id)
-
-    @tool
-    def guardar_ficha_usuario(datos: dict, motivo_version: str) -> None:
-        """Guarda el propósito validado y su evidencia de respaldo."""
-        _guardar(usuario_id, datos, fase=3, motivo_version=motivo_version, turn_id=turn_id)
-        contenedor_guardado.append(True)
-
-    @tool
-    def informar_al_orquestador(texto_para_persona: str, cerrado: bool, dato_nuevo: str | None = None) -> str:
-        """Llamar SIEMPRE, como último paso de cada turno -- ver instrucción en el prompt."""
-        contenedor_informe.append({"texto": texto_para_persona, "cerrado": cerrado, "dato_nuevo": dato_nuevo})
-        return "ok"
 
     return Agent(
         system_prompt=system_prompt,
-        tools=[leer_ficha_usuario, guardar_ficha_usuario, informar_al_orquestador],
+        model=crear_modelo_subagente(),
         # Precarga los turnos ya guardados de esta fase (ver
         # agents/orquestador.py::_turnos_a_mensajes).
         messages=mensajes_previos,
-        model=crear_modelo_subagente(),
         # Suprime el PrintingCallbackHandler por default de Strands --
         # quien llame controla cómo mostrar la respuesta.
         callback_handler=None,

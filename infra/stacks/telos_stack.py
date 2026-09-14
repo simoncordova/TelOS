@@ -731,3 +731,13 @@ class TelosStack(Stack):
                 "(Guardrails > telos-guardrail) -- ej. la pestaña \"Test\" con un prompt fuera de tema."
             ),
         )
+        CfnOutput(
+            self,
+            "VersionGuardrailTelos",
+            value=guardrail_version.attr_version,
+            description=(
+                "GUARDRAIL_VERSION para reactivar el guardrail (ver comentario junto al docker run "
+                "de la instancia web: desactivado temporalmente por falsos positivos, no se borró el "
+                "recurso) -- sin este output habría que buscar la versión a mano en la consola."
+            ),
+        )

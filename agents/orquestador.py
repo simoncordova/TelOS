@@ -474,7 +474,11 @@ class SesionTelos:
         self.usuario_id = usuario_id
         self.idioma = idioma
         self.nombre = leer_nombre_usuario(usuario_id)
-        self._pidiendo_nombre = not bool(self.nombre)
+        # No confundir con la propiedad `_pidiendo_nombre` de más abajo
+        # (que además exige fase_actual == 1) -- este flag crudo es solo
+        # "todavía no hay nombre guardado", se actualiza en
+        # _capturar_nombre.
+        self._nombre_pendiente = not bool(self.nombre)
         # Instantánea de las opciones (botones) que dejó el subagente que
         # respondió el último turno -- ver agents._modelo.
         # crear_tool_presentar_opciones. Se actualiza en cada invocación
@@ -487,6 +491,40 @@ class SesionTelos:
         self.ultima_fase_respondio: int | None = None
         self.ultimo_cerrado_declarado: bool | None = None
         self.fase_actual = self._determinar_fase_inicial()
+
+    @property
+    def _pidiendo_nombre(self) -> bool:
+        """True solo cuando de verdad hace falta pedir el nombre: no hay
+        uno guardado TODAVÍA Y la persona sigue en Fase 1. La segunda
+        condición es la que faltaba (bug real, 13/09/2026): Fases 1 y 4
+        ya no piden el nombre por texto libre desde que existen los
+        selectores visuales (ArbolSelector/SistemaSelector nunca llaman a
+        enviar_mensaje) -- así que para cualquier persona que solo usó
+        esos selectores, `self.nombre` se queda vacío para siempre, sin
+        que eso sea un problema real (ver regla_nombre en
+        agents/_modelo.py, tolera nombre=None en cualquier fase).
+
+        Antes de esta propiedad, `_pidiendo_nombre` era un simple booleano
+        fijado una sola vez en __init__ ("no hay nombre guardado") y
+        listo -- correcto mientras el Explorador conversacional existía,
+        pero ahora activa dos bugs reales una vez que la sesión en
+        memoria expira (TTL de 10 min en api/main.py::_obtener_sesion) y
+        se reconstruye para alguien que YA avanzó de Fase 1 sin nunca
+        haber tenido oportunidad de dejar su nombre:
+        1. `abrir_conversacion` reportaba fase=0 sin importar la fase
+           real -- la persona volvía a ver el selector de Fase 1 desde
+           cero (progreso real intacto en la ficha, pero invisible),
+           aunque ya estuviera en Fase 2, 3, 4 o 5.
+        2. Si en cambio mandaba un mensaje de texto normal en una fase de
+           chat (Fase 2/3-refinado/5), `enviar_mensaje` lo interceptaba
+           como si fuera la respuesta a "¿cómo te llamas?" -- el mensaje
+           real de la persona se perdía, tratado como nombre en vez de
+           pasarle a `_invocar_fase_directo` un kickoff genérico en su
+           lugar.
+        Exigir fase_actual == 1 acá resuelve ambos: nunca vuelve a pedirse
+        el nombre (ni a interceptar un mensaje) una vez que la persona ya
+        salió de Fase 1 por cualquier camino, visual o no."""
+        return self._nombre_pendiente and self.fase_actual == 1
 
     def _invocar_una_vez(self, texto: str, turn_id: str | None = None) -> tuple[int, str, bool]:
         """Invoca directo a la fase actual (`self.fase_actual`), sin pasar
@@ -1102,7 +1140,7 @@ class SesionTelos:
         nombre = _extraer_nombre(texto, self.idioma, self.usuario_id)
         guardar_nombre_usuario(self.usuario_id, nombre)
         self.nombre = nombre
-        self._pidiendo_nombre = False
+        self._nombre_pendiente = False
 
         kickoff = _KICKOFF[self.idioma]
         total_versiones_antes = self._contar_versiones()

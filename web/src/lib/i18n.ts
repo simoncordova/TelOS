@@ -44,6 +44,9 @@ export type Textos = {
   bienvenida_titulo: string;
   bienvenida_texto: string;
   error_generico: string;
+  error_estado_titulo: string;
+  error_estado_texto: string;
+  error_estado_boton: string;
   push_titulo: string;
   push_no_soportado: string;
   push_activar: string;
@@ -92,6 +95,9 @@ export const TEXTOS: Record<Idioma, Textos> = {
       "5. 🔁 **Seguimiento** — check-ins breves cada vez que vuelvas\n\n" +
       "No es una meta con fecha límite — es un horizonte. Para arrancar, contame cómo te llamas 👇",
     error_generico: "Uy, algo falló de nuestro lado. Probá de nuevo en un momento.",
+    error_estado_titulo: "Falló la solución",
+    error_estado_texto: "Algo se rompió del lado de la app y no sabemos en qué paso estás. Tu progreso no se perdió -- recargá la página para retomarlo.",
+    error_estado_boton: "Recargar",
     push_titulo: "Notificaciones",
     push_no_soportado: "Tu navegador no soporta notificaciones push.",
     push_activar: "🔔 Activar notificaciones",
@@ -138,6 +144,9 @@ export const TEXTOS: Record<Idioma, Textos> = {
       "5. 🔁 **Follow-up** — brief check-ins every time you come back\n\n" +
       "It's not a goal with a deadline — it's a horizon. To get started, tell me your name 👇",
     error_generico: "Oops, something failed on our end. Try again in a moment.",
+    error_estado_titulo: "The setup failed",
+    error_estado_texto: "Something broke on the app's side and we can't tell what step you're on. Your progress wasn't lost -- reload the page to pick it back up.",
+    error_estado_boton: "Reload",
     push_titulo: "Notifications",
     push_no_soportado: "Your browser doesn't support push notifications.",
     push_activar: "🔔 Enable notifications",

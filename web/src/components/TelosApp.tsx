@@ -9,6 +9,7 @@ import type { FichaSnapshot, Idioma, Mensaje } from "@/lib/types";
 import { ChatInput } from "./Chat/ChatInput";
 import { ChatWindow } from "./Chat/ChatWindow";
 import { OpcionesForm } from "./Chat/OpcionesForm";
+import { EstadoError } from "./EstadoError";
 import { ResumenCard } from "./Fase5Summary/ResumenCard";
 import { JourneyMap } from "./JourneyMap/JourneyMap";
 import type { Festejo } from "./Notifications/Celebracion";
@@ -235,22 +236,30 @@ function Conversacion({
   const datos = (ficha?.actual?.datos ?? {}) as { proposito?: string; sistema?: string };
   const nombre = ficha?.nombre ?? null;
 
-  // Fases con selector visual propio (1, 3 sin refinado, 4): la sidebar
-  // se oculta y el selector ocupa todo el viewport -- su propio fondo y
-  // tipografía warm reemplazan el chrome de la app. En fases de chat
-  // (2, 3 refinado, 5) la sidebar vuelve a mostrarse.
+  // Fases con selector visual propio (0, 1, 3 sin refinado, 4): la
+  // sidebar se oculta y el selector ocupa todo el viewport -- su propio
+  // fondo y tipografía warm reemplazan el chrome de la app. En fases de
+  // chat (2, 3 refinado, 5) la sidebar vuelve a mostrarse.
   // Nota: nombre puede ser null en el primer login (se obtiene dentro del
   // flujo de Fase 1) -- no lo usamos como prerequisito para mostrar los
   // selectores visuales.
-  const esFaseSelector =
-    faseActual === 0 ||
-    faseActual === 1 ||
-    (faseActual === 3 && !fase3EnRefinado) ||
-    faseActual === 4;
+  //
+  // `esFaseChat` es la única condición que decide la sidebar y la rama
+  // de chat/dashboard -- a propósito NO es "cualquier fase que no sea
+  // selector" (`!esSelector`): esa forma de escribirlo fue justo el bug
+  // real (13/09/2026) que hizo que fase 0 cayera en el dashboard de chat
+  // con "Propósito"/"Sistema" vacíos, porque un valor de fase no
+  // contemplado en el chequeo de selector caía por descarte en la rama
+  // de chat en vez de marcarse como el error que era. Listando ambas
+  // condiciones en positivo, cualquier fase que no matchee ninguna de
+  // las dos (no debería pasar nunca en uso normal) cae explícitamente en
+  // EstadoError más abajo, nunca en un dashboard vacío que se ve
+  // legítimo sin serlo.
+  const esFaseChat = faseActual === 2 || (faseActual === 3 && fase3EnRefinado) || faseActual === 5;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden md:flex-row">
-      {!esFaseSelector && (
+      {esFaseChat && (
         <Sidebar
           idioma={idioma}
           onCambiarIdioma={onCambiarIdioma}
@@ -267,7 +276,9 @@ function Conversacion({
           relegado a apoyo opcional (Fase 1) o directamente ausente hasta
           que la propia fase lo active (Fase 3, ver ValidacionSelector).
           El resto de las fases (2, 3 ya en "refinando", 5) sigue 100%
-          igual que siempre. */}
+          igual que siempre. Cualquier otro valor de fase (no debería
+          pasar nunca en un uso normal) cae en EstadoError, no en el
+          chat -- ver comentario de esFaseChat arriba. */}
       {(faseActual === 0 || faseActual === 1) ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ArbolSelector idioma={idioma} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
@@ -287,7 +298,7 @@ function Conversacion({
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <SistemaSelector idioma={idioma} proposito={datos.proposito} onCerrado={iniciarFaseSiguiente} />
         </main>
-      ) : (
+      ) : esFaseChat ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {ficha && !nombre && <BienvenidaCard t={t} />}
 
@@ -313,6 +324,8 @@ function Conversacion({
 
           <ChatInput placeholder={t.chat_placeholder} deshabilitado={cargando} onEnviar={procesarTurno} />
         </main>
+      ) : (
+        <EstadoError t={t} />
       )}
 
       <Celebracion festejo={festejo} onFin={() => setFestejo(null)} />

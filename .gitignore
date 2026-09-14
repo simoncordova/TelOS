@@ -22,6 +22,8 @@ CLAUDE.md
 PLAN.md
 UPDATES.md
 .claude/
+TelosStartPD.md
+builder-aws-telos-post.md
 
 # Maquetas de diseño — solo referencia visual local, no se necesitan en deploy
 maqueta/

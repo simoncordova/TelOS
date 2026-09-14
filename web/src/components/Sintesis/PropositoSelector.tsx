@@ -156,7 +156,7 @@ export function PropositoSelector({
           padding: "clamp(24px,5vh,60px) clamp(18px,5vw,56px) 48px",
           display: "flex",
           flexDirection: "column",
-          gap: "clamp(16px,2.6vh,26px)",
+          gap: "clamp(12px,2vh,20px)",
         }}
       >
         {/* ── title ── */}
@@ -222,8 +222,9 @@ export function PropositoSelector({
 
         {/* ── model intro paragraph (shown only with candidates) ── */}
         {!procesando && candidatos.length > 0 && pregunta && (
-          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: "#5d564d", maxWidth: "52ch" }}>
-            {pregunta}
+          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: "#6b6459", maxWidth: "60ch" }}>
+            {pregunta.split("\n")[0].substring(0, 200)}
+            {pregunta.length > 200 ? "…" : ""}
           </p>
         )}
 
@@ -246,13 +247,13 @@ export function PropositoSelector({
                 textAlign: "left",
                 background: "#fcfaf7",
                 border: "1.5px solid #d8d0c4",
-                borderRadius: 16,
-                padding: "18px 22px",
+                borderRadius: 14,
+                padding: "14px 18px",
                 cursor: procesando ? "default" : "pointer",
                 opacity: procesando ? 0.55 : 1,
                 display: "flex",
                 flexDirection: "column",
-                gap: 6,
+                gap: 4,
                 transition: "border-color .15s, box-shadow .15s",
               }}
               onMouseEnter={(e) => {
@@ -269,16 +270,18 @@ export function PropositoSelector({
               <span
                 style={{
                   fontFamily: "var(--font-instrument-serif), Georgia, serif",
-                  fontSize: "clamp(17px,2vw,22px)",
-                  lineHeight: 1.25,
+                  fontSize: "clamp(15px,1.8vw,20px)",
+                  lineHeight: 1.3,
                   color: "#1b1917",
+                  fontWeight: 500,
                 }}
               >
                 {candidato.frase}
               </span>
               {candidato.explicacion && (
-                <span style={{ fontSize: 13.5, lineHeight: 1.55, color: "#5d564d" }}>
-                  {candidato.explicacion}
+                <span style={{ fontSize: 12, lineHeight: 1.4, color: "#6b6459" }}>
+                  {candidato.explicacion.substring(0, 100)}
+                  {candidato.explicacion.length > 100 ? "…" : ""}
                 </span>
               )}
             </button>
@@ -288,21 +291,23 @@ export function PropositoSelector({
               <div
                 style={{
                   display: "flex",
-                  gap: 8,
+                  gap: 6,
                   alignItems: "flex-start",
-                  marginTop: 6,
-                  paddingLeft: 14,
+                  marginTop: 3,
+                  paddingLeft: 12,
+                  fontSize: "11px",
                 }}
               >
                 <span
                   style={{
                     fontFamily: "var(--font-ibm-plex-mono), monospace",
-                    fontSize: 9,
-                    letterSpacing: ".18em",
+                    fontSize: 8,
+                    letterSpacing: ".16em",
                     textTransform: "uppercase",
                     color: ACENTO,
-                    paddingTop: 2,
+                    paddingTop: 1,
                     flexShrink: 0,
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {t.ejemploLabel}
@@ -310,13 +315,14 @@ export function PropositoSelector({
                 <p
                   style={{
                     margin: 0,
-                    fontSize: 12.5,
-                    lineHeight: 1.5,
-                    color: "#6b6459",
+                    fontSize: 11,
+                    lineHeight: 1.35,
+                    color: "#7a726a",
                     fontStyle: "italic",
                   }}
                 >
-                  {candidato.ejemplo}
+                  {candidato.ejemplo.substring(0, 120)}
+                  {candidato.ejemplo.length > 120 ? "…" : ""}
                 </p>
               </div>
             )}

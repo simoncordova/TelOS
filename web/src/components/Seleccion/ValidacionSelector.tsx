@@ -218,20 +218,36 @@ export function ValidacionSelector({
   const esEvidencia = etapa === "evidencia_pasada";
   const hasPicks = picks.size > 0;
 
+  // Selección única por etapa -- bug real reportado (14/09/2026):
+  // togglePick agregaba/quitaba de `picks` sin límite (un Map que se
+  // comportaba como checkboxes), pero la tarjeta se dibuja con un
+  // "Radio circular" (ver el render más abajo, un solo círculo con
+  // check, no una casilla) -- la persona podía elegir más de un área
+  // por etapa creyendo que eran radio buttons, y `siguiente()` manda un
+  // POST /api/seleccion/confirmar por cada pick elegido. El backend
+  // (agents/orquestador.py::SesionTelos.confirmar_seleccion_validacion)
+  // avanza de etapa en CADA llamada -- nunca esperó más de una por
+  // etapa -- así que la 2da llamada de la misma etapa se interpretaba
+  // como la respuesta de la etapa SIGUIENTE, y una eventual 3ra llamada
+  // caía en un estado ("refinando") que ya no acepta selecciones,
+  // devolviendo 400 ("no acepta más selecciones de área") -- el "error
+  // de guardado" que no importaba cuántas veces se reintentara, porque
+  // el estado ya estaba corrido. Elegir una tarjeta nueva ahora
+  // reemplaza cualquier elección anterior de esta etapa, en vez de
+  // sumarse a ella.
   function togglePick(id: string) {
     if (guardando) return;
-    setPicks((prev) => {
-      const next = new Map(prev);
-      if (next.has(id)) {
-        next.delete(id);
-        setAbiertos((ab) => { const s = new Set(ab); s.delete(id); return s; });
-      } else {
-        next.set(id, "");
-        // auto-expand el campo de detalle al seleccionar
-        setAbiertos((ab) => new Set(ab).add(id));
-      }
-      return next;
-    });
+    if (picks.has(id)) {
+      const next = new Map(picks);
+      next.delete(id);
+      setPicks(next);
+      setAbiertos((ab) => { const s = new Set(ab); s.delete(id); return s; });
+      return;
+    }
+    setPicks(new Map([[id, ""]]));
+    // auto-expand el campo de detalle al elegir -- reemplaza cualquier
+    // otra tarjeta que hubiera quedado expandida de la elección anterior.
+    setAbiertos(new Set([id]));
   }
 
   function setDetalle(id: string, valor: string) {

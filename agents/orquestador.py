@@ -712,6 +712,7 @@ class SesionTelos:
         # siempre que fase==2 y candidatos estén vacíos, sin importar el
         # estado de contenedor_informe.
         if fase == 2 and not self._contenedor_candidatos:
+            logger.info("Fase 2: guard disparado — no hay candidatos, reintentando con structured_output_model")
             _NUDGE_CANDIDATOS = {
                 "es": (
                     "IMPORTANTE: no llamaste a la tool "
@@ -749,6 +750,7 @@ class SesionTelos:
                 if contenedor_candidatos:
                     # Tool real fue llamada, contenedor ya tiene los datos
                     self._contenedor_candidatos = list(contenedor_candidatos)
+                    logger.info("Fase 2: reintento exitoso — tool real fue llamada (%d candidatos)", len(self._contenedor_candidatos))
                 elif (
                     resultado_nudge is not None
                     and hasattr(resultado_nudge, "structured_output")
@@ -759,12 +761,13 @@ class SesionTelos:
                     if hasattr(lista, "candidatos") and lista.candidatos:
                         self._contenedor_candidatos = [c.model_dump() for c in lista.candidatos]
                         contenedor_candidatos.extend(self._contenedor_candidatos)
+                        logger.info("Fase 2: reintento exitoso — structured_output capturado (%d candidatos)", len(self._contenedor_candidatos))
                 # Capturar informe si el nudge lo generó por primera vez
                 if not contenedor_informe:
                     texto_nudge = _texto_ultimo_mensaje_asistente(agente)
                     contenedor_informe.append({"texto": texto_nudge, "cerrado": False, "dato_nuevo": None})
-            except Exception:  # noqa: BLE001
-                logger.warning("Fase 2: reintento forzado de presentar_candidatos_proposito falló")
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Fase 2: reintento forzado de presentar_candidatos_proposito falló: %s", e)
 
         # Persistido (no solo en memoria) para que confirmar_proposito_elegido
         # pueda validar el click de la persona contra lo que de verdad se

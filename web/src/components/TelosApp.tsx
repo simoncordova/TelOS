@@ -201,6 +201,7 @@ function Conversacion({
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
+          console.log("[Telos] SSE mensaje (procesarTurno) fase:", d.fase, "candidatos:", d.candidatos?.length ?? 0, d.candidatos);
           if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           faseFinal = d.fase;
           setFaseActual(d.fase);
@@ -275,6 +276,7 @@ function Conversacion({
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
+          console.log("[Telos] SSE mensaje fase:", d.fase, "candidatos:", d.candidatos?.length ?? 0, d.candidatos);
           if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);

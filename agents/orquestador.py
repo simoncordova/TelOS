@@ -75,7 +75,7 @@ from agents.evaluador_confirmacion import evaluar_confirmacion
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
 from tools.categorias_ikigai import DIMENSIONES_IKIGAI, MAX_VALORES, VALORES_DISPONIBLES, buscar_hoja
-from tools.categorias_sistema import PREGUNTAS_SISTEMA_IDS, buscar_nodo_sistema_con_ruta
+from tools.categorias_sistema import PREGUNTAS_SISTEMA_IDS, buscar_nodo_sistema_con_ruta, plan_por_defecto_obstaculo
 from tools.categorias_validacion import buscar_area_vida
 from tools.contexto_usuario import agregar_insight
 from tools.conversacion import guardar_intercambio, leer_turnos
@@ -848,14 +848,25 @@ class SesionTelos:
         """Arma el texto de "sistema" que pide el spec (sección 5): 4
         líneas, una por pregunta, con salto de línea real entre cada
         una. Determinístico -- sin esto, el spec original dependía de
-        que el modelo copiara el formato exacto cada vez."""
+        que el modelo copiara el formato exacto cada vez.
+
+        Pregunta "obstaculo" únicamente: si la persona no escribió un
+        plan propio (`detalle_libre` vacío), se completa con el plan
+        mínimo por defecto de esa categoría de obstáculo
+        (tools/categorias_sistema.py::FALLBACK_PLAN_OBSTACULO) en vez de
+        dejar la línea sin plan -- portado del prototipo real de Claude
+        Design de Fase 4 (13/09/2026), nunca decidido por el modelo."""
         etiquetas = _ETIQUETAS_SISTEMA[self.idioma]
+        idioma_arbol = "en" if self.idioma == "en" else "es"
         lineas = []
         for pregunta_id in PREGUNTAS_SISTEMA_IDS:
             respuesta = respuestas.get(pregunta_id) or {}
             texto = respuesta.get("label", "")
-            if respuesta.get("detalle_libre"):
-                texto = f"{texto} -- {respuesta['detalle_libre']}"
+            detalle = respuesta.get("detalle_libre")
+            if not detalle and pregunta_id == "obstaculo" and respuesta.get("ruta"):
+                detalle = plan_por_defecto_obstaculo(idioma_arbol, respuesta["ruta"][0])
+            if detalle:
+                texto = f"{texto} -- {detalle}"
             lineas.append(f"{etiquetas[pregunta_id]}: {texto}")
         return "\n".join(lineas)
 

@@ -16,6 +16,7 @@ import time
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
+from agents.asistente_categorias import sugerir_categoria
 from agents.orquestador import SesionTelos
 from agents.seguimiento import calcular_racha, construir_vista_resumen
 from api import push
@@ -29,6 +30,8 @@ from api.esquemas import (
     EnviarMensajeRequest,
     EnviarPruebaPushRequest,
     SeleccionConfirmadaResponse,
+    SugerenciaCategoriaResponse,
+    SugerirCategoriaRequest,
     SuscripcionPushRequest,
 )
 from api.sse import stream_eventos
@@ -247,6 +250,26 @@ def obtener_categorias(fase: int, idioma: str = "en") -> dict:
     if fase == 4:
         return {"preguntas": list(PREGUNTAS_SISTEMA_IDS), "categorias": CATEGORIAS_SISTEMA[idioma_arbol]}
     raise HTTPException(status_code=404, detail=f"No hay taxonomía para la fase {fase} todavía.")
+
+
+@app.post("/api/categorias/sugerir")
+def sugerir_categoria_endpoint(
+    body: SugerirCategoriaRequest, usuario_id: str = Depends(obtener_usuario_actual)
+) -> SugerenciaCategoriaResponse:
+    """Chat de apoyo de Fase 1 (ArbolSelector.tsx): busca, entre las
+    categorías fijas que ya existen, la que mejor encaje con lo que la
+    persona describió en texto libre -- nunca crea categorías nuevas (ver
+    agents/asistente_categorias.py, decisión explícita del dueño del
+    producto). Requiere login como el resto de la API porque dispara una
+    invocación real a Bedrock."""
+    resultado = sugerir_categoria(body.descripcion, body.idioma)
+    return SugerenciaCategoriaResponse(
+        encontrada=resultado.encontrada,
+        verbo_id=resultado.verbo_id,
+        dominio_id=resultado.dominio_id,
+        hoja_id=resultado.hoja_id,
+        explicacion=resultado.explicacion,
+    )
 
 
 @app.post("/api/seleccion/confirmar")

@@ -76,6 +76,29 @@ class CerrarFase1Request(BaseModel):
     idioma: str = "en"
 
 
+class SugerirCategoriaRequest(BaseModel):
+    """Chat de apoyo de Fase 1 (ver ArbolSelector.tsx): la persona
+    describe en texto libre qué quiere expresar y el backend busca, ENTRE
+    LAS CATEGORÍAS QUE YA EXISTEN, la que mejor encaje -- ver
+    agents/asistente_categorias.py. Nunca crea categorías nuevas."""
+
+    descripcion: str
+    idioma: str = "en"
+
+
+class SugerenciaCategoriaResponse(BaseModel):
+    """`verbo_id`/`dominio_id`/`hoja_id` solo vienen presentes cuando
+    `encontrada=True`, y ya fueron re-validados contra la taxonomía real
+    (ver agents/asistente_categorias.py::sugerir_categoria) -- el
+    frontend puede usarlos directo para resaltar/navegar el árbol."""
+
+    encontrada: bool
+    verbo_id: str | None = None
+    dominio_id: str | None = None
+    hoja_id: str | None = None
+    explicacion: str
+
+
 class FichaVersion(BaseModel):
     fase: int
     datos: dict

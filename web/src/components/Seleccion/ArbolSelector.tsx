@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { cerrarFase1, confirmarSeleccion, confirmarValores, obtenerCategoriasFase1 } from "@/lib/apiCliente";
+import { cerrarFase1, confirmarSeleccion, confirmarValores, obtenerCategoriasFase1, sugerirCategoria } from "@/lib/apiCliente";
 import type { CategoriasFase1, HojaIkigai, Idioma, VerboIkigai } from "@/lib/types";
 
 // Selector visual Ikigai -- Fase 1. Interfaz principal (no un chatbot):
@@ -21,13 +21,12 @@ import type { CategoriasFase1, HojaIkigai, Idioma, VerboIkigai } from "@/lib/typ
 // (el Sintetizador, vía onCerrado) para que presente los candidatos de
 // verdad. El propósito final nunca lo inventa este componente.
 //
-// El chat de apoyo de acá es autocontenido con respuestas guiadas fijas
-// (mismo criterio que el prototipo original) -- todavía NO habla con el
-// backend real. Fase 1 ya no acepta texto libre como mecanismo principal
-// (ver agents/orquestador.py, _PLACEHOLDER_FASE_1), así que conectar este
-// chat al pipeline de conversación real necesita un endpoint de soporte
-// dedicado que no se construyó en esta pasada -- pendiente, documentado
-// acá a propósito para no perderlo de vista.
+// El chat de apoyo mezcla dos cosas: preguntas sobre la MECÁNICA del
+// selector siguen respondiéndose con reglas fijas (no gastan una
+// invocación a Bedrock), pero cualquier otra cosa se manda a
+// POST /api/categorias/sugerir (agents/asistente_categorias.py), que
+// busca la categoría existente más parecida a lo que la persona describe
+// -- nunca inventa una categoría nueva, ver docstring de ese módulo.
 
 type Etapa = "l1" | "l2" | "l3" | "detail" | "values";
 
@@ -87,7 +86,10 @@ const TEXTOS = {
     apoyoSub: "Pregunta lo que necesites aclarar",
     chatPlaceholder: "Escribe tu duda…",
     sugerencias: ["¿Qué significa esta categoría?", "No sé cuál me representa", "¿En qué se diferencian?"],
-    mensajeInicialChat: "Estoy acá si algo no te queda claro. No hace falta escribir nada para avanzar: podés hacer toda la exploración eligiendo.",
+    mensajeInicialChat: "Contame con tus palabras qué querés expresar y te ayudo a encontrar la categoría que más se le parezca. No hace falta escribir nada para avanzar: podés hacer toda la exploración eligiendo.",
+    buscandoCategoria: "Buscando la categoría más parecida…",
+    irAEstaCategoria: (label: string) => `Ir a "${label}"`,
+    errorSugerencia: "No pude buscar una sugerencia justo ahora. Probá describirlo de otra forma, o elegí directamente del árbol.",
     cerrandoFase: "Armando tu reflejo…",
     kickerVacio: "",
     kickerEspacio: "Espacio abierto",
@@ -147,7 +149,10 @@ const TEXTOS = {
     apoyoSub: "Ask whatever you need clarified",
     chatPlaceholder: "Type your question…",
     sugerencias: ["What does this category mean?", "I don't know which fits me", "How are these different?"],
-    mensajeInicialChat: "I'm here if anything's unclear. You don't need to type anything to move forward: you can do the whole exploration by choosing.",
+    mensajeInicialChat: "Tell me in your own words what you want to express, and I'll help you find the closest existing category. You don't need to type anything to move forward: you can do the whole exploration by choosing.",
+    buscandoCategoria: "Looking for the closest category…",
+    irAEstaCategoria: (label: string) => `Go to "${label}"`,
+    errorSugerencia: "I couldn't look up a suggestion right now. Try describing it differently, or pick straight from the tree.",
     cerrandoFase: "Putting together your reflection…",
     kickerVacio: "",
     kickerEspacio: "Open space",
@@ -218,9 +223,14 @@ export function ArbolSelector({
   const [tourStep, setTourStep] = useState<number | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<{ who: "me" | "bot"; text: string }[]>([
-    { who: "bot", text: t.mensajeInicialChat },
-  ]);
+  const [enviandoChat, setEnviandoChat] = useState(false);
+  const [messages, setMessages] = useState<
+    {
+      who: "me" | "bot";
+      text: string;
+      sugerencia?: { verboId: string; dominioId: string; hojaId: string; label: string; descripcion: string };
+    }[]
+  >([{ who: "bot", text: t.mensajeInicialChat }]);
 
   const [nodes, setNodes] = useState<NodoElegido[]>([]);
   const [cobertura, setCobertura] = useState<Record<string, number>>({ L: 0, G: 0, V: 0, N: 0 });
@@ -410,37 +420,67 @@ export function ArbolSelector({
     }
   }
 
-  function enviarChat(texto: string) {
-    const limpio = texto.trim();
-    if (!limpio) return;
-    const bajo = limpio.toLowerCase();
-    let respuesta =
-      idioma === "es"
-        ? "Buena duda. Elige la opción que te resulte más viva hoy: nada queda fijo, puedes quitarla del mapa después y el gráfico se recalcula."
-        : "Good question. Pick whichever option feels most alive today: nothing is fixed, you can remove it from the map later and the chart recalculates.";
-    if (bajo.includes("signif") || bajo.includes("mean")) {
-      respuesta =
-        idioma === "es"
-          ? "Cada tarjeta es una zona de actividad, no una respuesta. Si te cuesta imaginarte ahí dentro, probablemente no sea tuya."
-          : "Each card is a zone of activity, not an answer. If you can't picture yourself in it, it's probably not yours.";
-    } else if (bajo.includes("difer") || bajo.includes("differ")) {
-      respuesta =
-        idioma === "es"
-          ? "La diferencia está en qué dimensiones ilumina cada una: fíjate en la línea inferior de la tarjeta. Las que tocan tres pesan más en el centro."
-          : "The difference is which dimensions each one lights up: check the bottom line of the card. Ones touching three weigh more in the center.";
-    } else if (bajo.includes("no s") || bajo.includes("segur") || bajo.includes("sure") || bajo.includes("don't know")) {
-      respuesta =
-        idioma === "es"
-          ? "Puedes entrar a una rama solo para ver qué hay más adentro y volver con \"Otra rama\". Explorar no compromete nada."
-          : "You can go into a branch just to see what's inside and come back with \"Another branch\". Exploring doesn't commit you to anything.";
-    } else if (bajo.includes("valor") || bajo.includes("value")) {
-      respuesta =
-        idioma === "es"
-          ? "Tus valores no son un área más: son el borde. Filtran todo lo que elijas, por eso aparecen como el anillo que envuelve el mapa."
-          : "Your values aren't one more area: they're the edge. They filter everything you choose, that's why they show up as the ring around the map.";
+  // Preguntas sobre cómo funciona el selector (no sobre qué categoría
+  // elegir) siguen respondiéndose con reglas fijas, sin gastar una
+  // invocación a Bedrock -- solo lo que describe una intención real pasa
+  // a buscarse contra la taxonomía (ver agents/asistente_categorias.py).
+  function respuestaMecanica(bajo: string): string | null {
+    if (bajo.includes("no s") || bajo.includes("segur") || bajo.includes("sure") || bajo.includes("don't know")) {
+      return idioma === "es"
+        ? "Puedes entrar a una rama solo para ver qué hay más adentro y volver con \"Otra rama\". Explorar no compromete nada."
+        : "You can go into a branch just to see what's inside and come back with \"Another branch\". Exploring doesn't commit you to anything.";
     }
-    setMessages((prev) => [...prev, { who: "me", text: limpio }, { who: "bot", text: respuesta }]);
+    if (bajo.includes("valor") || bajo.includes("value")) {
+      return idioma === "es"
+        ? "Tus valores no son un área más: son el borde. Filtran todo lo que elijas, por eso aparecen como el anillo que envuelve el mapa."
+        : "Your values aren't one more area: they're the edge. They filter everything you choose, that's why they show up as the ring around the map.";
+    }
+    return null;
+  }
+
+  async function enviarChat(texto: string) {
+    const limpio = texto.trim();
+    if (!limpio || enviandoChat) return;
     setDraft("");
+    setMessages((prev) => [...prev, { who: "me", text: limpio }]);
+
+    const fija = respuestaMecanica(limpio.toLowerCase());
+    if (fija) {
+      setMessages((prev) => [...prev, { who: "bot", text: fija }]);
+      return;
+    }
+
+    setEnviandoChat(true);
+    try {
+      const resultado = await sugerirCategoria(limpio, idioma);
+      if (resultado.encontrada && resultado.verbo_id && resultado.dominio_id && resultado.hoja_id) {
+        const verbo = verbos.find((v) => v.id === resultado.verbo_id);
+        const hoja = (hojas[resultado.dominio_id] ?? []).find((h) => h.id === resultado.hoja_id);
+        const label = hoja && verbo ? `${verbo.label} → ${hoja.label}` : resultado.explicacion;
+        setMessages((prev) => [
+          ...prev,
+          {
+            who: "bot",
+            text: resultado.explicacion,
+            sugerencia: { verboId: resultado.verbo_id!, dominioId: resultado.dominio_id!, hojaId: resultado.hoja_id!, label, descripcion: limpio },
+          },
+        ]);
+      } else {
+        setMessages((prev) => [...prev, { who: "bot", text: resultado.explicacion }]);
+      }
+    } catch {
+      setMessages((prev) => [...prev, { who: "bot", text: t.errorSugerencia }]);
+    } finally {
+      setEnviandoChat(false);
+    }
+  }
+
+  function irASugerencia(s: { verboId: string; dominioId: string; hojaId: string; descripcion: string }) {
+    setStarted(true);
+    setPath([s.verboId, s.dominioId, s.hojaId]);
+    setStage("detail");
+    setDetalle(s.descripcion);
+    setChatOpen(false);
   }
 
   // ---------- visualización ----------
@@ -1073,31 +1113,45 @@ export function ArbolSelector({
           </div>
           <div style={{ flex: 1, overflow: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
             {messages.map((m, i) => (
-              <div
-                key={i}
-                style={{
-                  maxWidth: "88%",
-                  alignSelf: m.who === "me" ? "flex-end" : "flex-start",
-                  background: m.who === "me" ? "#1b1917" : "#f4f1ec",
-                  color: m.who === "me" ? "#f7f4ef" : "#3b3630",
-                  border: `1px solid ${m.who === "me" ? "#1b1917" : "#e8e1d7"}`,
-                  borderRadius: 14,
-                  padding: "11px 14px",
-                  fontSize: 13.5,
-                  lineHeight: 1.5,
-                }}
-              >
-                {m.text}
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: m.who === "me" ? "flex-end" : "flex-start" }}>
+                <div
+                  style={{
+                    maxWidth: "88%",
+                    background: m.who === "me" ? "#1b1917" : "#f4f1ec",
+                    color: m.who === "me" ? "#f7f4ef" : "#3b3630",
+                    border: `1px solid ${m.who === "me" ? "#1b1917" : "#e8e1d7"}`,
+                    borderRadius: 14,
+                    padding: "11px 14px",
+                    fontSize: 13.5,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {m.text}
+                </div>
+                {m.sugerencia && (
+                  <button
+                    onClick={() => irASugerencia(m.sugerencia!)}
+                    style={{ border: `1px solid ${ACENTO}`, background: "transparent", color: ACENTO, borderRadius: 999, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}
+                  >
+                    {t.irAEstaCategoria(m.sugerencia.label)}
+                  </button>
+                )}
               </div>
             ))}
+            {enviandoChat && (
+              <div style={{ alignSelf: "flex-start", maxWidth: "88%", background: "#f4f1ec", color: "#8a8377", border: "1px solid #e8e1d7", borderRadius: 14, padding: "11px 14px", fontSize: 13.5, fontStyle: "italic" }}>
+                {t.buscandoCategoria}
+              </div>
+            )}
           </div>
           <div style={{ padding: "12px 20px 16px", borderTop: "1px solid #ece6dc", display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
               {t.sugerencias.map((s) => (
                 <button
                   key={s}
+                  disabled={enviandoChat}
                   onClick={() => enviarChat(s)}
-                  style={{ border: "1px solid #e2dbd0", background: "transparent", color: "#6b6459", borderRadius: 999, padding: "6px 12px", fontSize: 11.5, cursor: "pointer" }}
+                  style={{ border: "1px solid #e2dbd0", background: "transparent", color: "#6b6459", borderRadius: 999, padding: "6px 12px", fontSize: 11.5, cursor: "pointer", opacity: enviandoChat ? 0.5 : 1 }}
                 >
                   {s}
                 </button>
@@ -1106,6 +1160,7 @@ export function ArbolSelector({
             <div style={{ display: "flex", gap: 8, alignItems: "center", border: "1px solid #e2dbd0", borderRadius: 999, padding: "6px 6px 6px 14px" }}>
               <input
                 value={draft}
+                disabled={enviandoChat}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") enviarChat(draft);
@@ -1113,7 +1168,11 @@ export function ArbolSelector({
                 placeholder={t.chatPlaceholder}
                 style={{ flex: 1, border: "none", background: "transparent", outline: "none", fontSize: 13.5, color: "#1b1917" }}
               />
-              <button onClick={() => enviarChat(draft)} style={{ border: "none", background: "#1b1917", color: "#f7f4ef", borderRadius: 999, width: 32, height: 32, cursor: "pointer", fontSize: 13 }}>
+              <button
+                onClick={() => enviarChat(draft)}
+                disabled={enviandoChat}
+                style={{ border: "none", background: "#1b1917", color: "#f7f4ef", borderRadius: 999, width: 32, height: 32, cursor: "pointer", fontSize: 13, opacity: enviandoChat ? 0.5 : 1 }}
+              >
                 →
               </button>
             </div>

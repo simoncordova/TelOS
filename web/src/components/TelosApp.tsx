@@ -273,8 +273,12 @@ function Conversacion({
           />
         </main>
       ) : ficha && nombre && faseActual === 4 ? (
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <SistemaSelector idioma={idioma} onCerrado={iniciarFaseSiguiente} />
+        // Sin overflow-hidden acá por el mismo motivo que Fase 1: el
+        // selector tiene su propio scroll interno (overflowY:auto) para
+        // que la pantalla de cierre con el diagrama del sistema no quede
+        // recortada en pantallas angostas o bajas.
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <SistemaSelector idioma={idioma} proposito={datos.proposito} onCerrado={iniciarFaseSiguiente} />
         </main>
       ) : (
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">

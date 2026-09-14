@@ -36,10 +36,10 @@ def test_confirmar_las_4_cierra_sin_invocar_bedrock():
     usuario_id = "test_seleccion_sistema_u2"
     sesion = _sesion_fase_4(usuario_id)
     sesion.confirmar_seleccion_sistema("accion", "ejercicio_cardio")
-    sesion.confirmar_seleccion_sistema("cuando_donde", "manana_temprano_todos_dias_casa")
+    sesion.confirmar_seleccion_sistema("cuando_donde", "manana_temprano_ctx1")
     sesion.confirmar_seleccion_sistema("metrica", "binario_si_no")
     resultado = sesion.confirmar_seleccion_sistema(
-        "obstaculo", "cansancio_fisico", detalle_libre="Salgo a caminar 5 minutos igual"
+        "obstaculo", "llego_sin_energia", detalle_libre="Salgo a caminar 5 minutos igual"
     )
     assert resultado["cerrado"] is True
     assert resultado["mensaje_cierre"]
@@ -49,8 +49,23 @@ def test_confirmar_las_4_cierra_sin_invocar_bedrock():
     sistema = ficha["actual"]["datos"]["sistema"]
     assert "Acción: Ejercicio cardiovascular" in sistema
     assert "Cuándo/dónde: Todos los días, en casa" in sistema
-    assert "Métrica: Sí o no -- lo hice o no lo hice" in sistema
-    assert "Obstáculo: Cansancio físico al final del día -- Salgo a caminar 5 minutos igual" in sistema
+    assert "Métrica: Sí o no" in sistema
+    assert "Obstáculo: Llego sin energía -- Salgo a caminar 5 minutos igual" in sistema
+
+
+def test_obstaculo_sin_detalle_libre_usa_plan_por_defecto():
+    # Si la persona deja el campo de plan vacío, se completa por código
+    # con FALLBACK_PLAN_OBSTACULO -- nunca queda la línea sin plan.
+    usuario_id = "test_seleccion_sistema_u7"
+    sesion = _sesion_fase_4(usuario_id)
+    sesion.confirmar_seleccion_sistema("accion", "ejercicio_cardio")
+    sesion.confirmar_seleccion_sistema("cuando_donde", "manana_temprano_ctx1")
+    sesion.confirmar_seleccion_sistema("metrica", "binario_si_no")
+    sesion.confirmar_seleccion_sistema("obstaculo", "llego_sin_energia")
+
+    ficha = leer_ficha_usuario(usuario_id)
+    sistema = ficha["actual"]["datos"]["sistema"]
+    assert "Obstáculo: Llego sin energía -- hacer solo los primeros quince minutos" in sistema
 
 
 def test_confirmar_seleccion_sistema_fuera_de_fase_4_lanza():
@@ -80,9 +95,9 @@ def test_proposito_se_hereda_de_version_anterior():
     sesion = SesionTelos(usuario_id, idioma="es")
     sesion.fase_actual = 4
     sesion.confirmar_seleccion_sistema("accion", "ejercicio_cardio")
-    sesion.confirmar_seleccion_sistema("cuando_donde", "manana_temprano_todos_dias_casa")
+    sesion.confirmar_seleccion_sistema("cuando_donde", "manana_temprano_ctx1")
     sesion.confirmar_seleccion_sistema("metrica", "binario_si_no")
-    sesion.confirmar_seleccion_sistema("obstaculo", "cansancio_fisico")
+    sesion.confirmar_seleccion_sistema("obstaculo", "llego_sin_energia")
     ficha = leer_ficha_usuario(usuario_id)
     assert ficha["actual"]["datos"]["proposito"] == "Ayudar a otros a crecer"
     assert "sistema" in ficha["actual"]["datos"]

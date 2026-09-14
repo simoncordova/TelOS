@@ -2,7 +2,13 @@
 independientes de Fase 4. Sin AWS, sin Bedrock: dato puro + búsqueda
 determinística."""
 
-from tools.categorias_sistema import CATEGORIAS_SISTEMA, PREGUNTAS_SISTEMA_IDS, buscar_nodo_sistema_con_ruta
+from tools.categorias_sistema import (
+    CATEGORIAS_SISTEMA,
+    FALLBACK_PLAN_OBSTACULO,
+    PREGUNTAS_SISTEMA_IDS,
+    buscar_nodo_sistema_con_ruta,
+    plan_por_defecto_obstaculo,
+)
 
 
 def test_preguntas_son_las_4_del_spec():
@@ -50,3 +56,18 @@ def test_es_y_en_tienen_las_mismas_preguntas_y_los_mismos_ids():
 def test_cada_pregunta_tiene_al_menos_una_categoria():
     for pregunta_id in PREGUNTAS_SISTEMA_IDS:
         assert len(CATEGORIAS_SISTEMA["es"][pregunta_id]) > 0
+
+
+def test_toda_categoria_de_nivel_1_de_obstaculo_tiene_plan_por_defecto():
+    for idioma in ("es", "en"):
+        for categoria in CATEGORIAS_SISTEMA[idioma]["obstaculo"]:
+            assert plan_por_defecto_obstaculo(idioma, categoria["id"]) == FALLBACK_PLAN_OBSTACULO[idioma][categoria["id"]]
+
+
+def test_plan_por_defecto_categoria_desconocida_devuelve_none():
+    assert plan_por_defecto_obstaculo("es", "no_existe") is None
+
+
+def test_nodos_con_desc_lo_incluyen_en_el_dict():
+    nodo = buscar_nodo_sistema_con_ruta("es", "accion", "ejercicio_cardio")[0]
+    assert nodo["desc"] == "Correr, caminar fuerte, bicicleta, nadar."

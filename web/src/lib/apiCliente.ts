@@ -6,7 +6,7 @@
 // telos_stack.py, DistribucionWeb), así que nunca hace falta CORS ni
 // conocer una URL absoluta acá. `credentials: "include"` manda la
 // cookie de sesión (HttpOnly, api/auth.py) en cada request.
-import type { CategoriasFase1, CategoriasFase3, CategoriasFase4, FichaSnapshot, Idioma, SeleccionConfirmada } from "./types";
+import type { CategoriasFase1, CategoriasFase3, CategoriasFase4, FichaSnapshot, Idioma, SeleccionConfirmada, SugerenciaCategoria } from "./types";
 
 async function streamPost(ruta: string, cuerpo: unknown): Promise<Response> {
   const respuesta = await fetch(ruta, {
@@ -116,6 +116,18 @@ export function cerrarFase1(idioma: Idioma): Promise<SeleccionConfirmada> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ idioma }),
+  });
+}
+
+// Chat de apoyo de Fase 1 (ver ArbolSelector.tsx): busca, entre las
+// categorías fijas que ya existen, la que mejor encaje con lo que la
+// persona describió -- ver api/main.py::sugerir_categoria_endpoint /
+// agents/asistente_categorias.py. Nunca crea categorías nuevas.
+export function sugerirCategoria(descripcion: string, idioma: Idioma): Promise<SugerenciaCategoria> {
+  return jsonFetch("/api/categorias/sugerir", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ descripcion, idioma }),
   });
 }
 

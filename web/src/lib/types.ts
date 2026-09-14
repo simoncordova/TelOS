@@ -64,6 +64,7 @@ export type CategoriasFase1 = {
 export type NodoCategoriaSistema = {
   id: string;
   label: string;
+  desc?: string;
   hijos?: NodoCategoriaSistema[];
 };
 
@@ -89,4 +90,17 @@ export type SeleccionConfirmada = {
   cerrado: boolean;
   mensaje_cierre: string | null;
   fase_actual: number;
+};
+
+// Chat de apoyo de Fase 1 (ver ArbolSelector.tsx): búsqueda sobre la
+// taxonomía fija, nunca crea categorías -- ver
+// agents/asistente_categorias.py. Los tres ids solo vienen presentes
+// cuando encontrada=true, y ya fueron re-validados por el backend contra
+// la taxonomía real.
+export type SugerenciaCategoria = {
+  encontrada: boolean;
+  verbo_id: string | null;
+  dominio_id: string | null;
+  hoja_id: string | null;
+  explicacion: string;
 };

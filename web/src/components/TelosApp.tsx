@@ -6,9 +6,11 @@ import { abrirSesion, continuarSesion, enviarMensaje } from "@/lib/apiCliente";
 import { TEXTOS } from "@/lib/i18n";
 import { leerEventosSSE } from "@/lib/sse";
 import type { FichaSnapshot, Idioma, Mensaje } from "@/lib/types";
+import { CabeceraFase } from "./Chat/CabeceraFase";
 import { ChatInput } from "./Chat/ChatInput";
 import { ChatWindow } from "./Chat/ChatWindow";
 import { OpcionesForm } from "./Chat/OpcionesForm";
+import { PanelDetalles } from "./Chat/PanelDetalles";
 import { EstadoError } from "./EstadoError";
 import { ResumenCard } from "./Fase5Summary/ResumenCard";
 import { JourneyMap } from "./JourneyMap/JourneyMap";
@@ -18,7 +20,6 @@ import { BienvenidaCard } from "./Onboarding/BienvenidaCard";
 import { ArbolSelector } from "./Seleccion/ArbolSelector";
 import { SistemaSelector } from "./Seleccion/SistemaSelector";
 import { ValidacionSelector } from "./Seleccion/ValidacionSelector";
-import { Sidebar } from "./Sidebar/Sidebar";
 
 // Dueño solo del idioma elegido -- todo lo demás (mensajes, ficha,
 // festejos) vive en <Conversacion>, remontada con key={idioma}. Cambiar
@@ -73,6 +74,11 @@ function Conversacion({
   // apertura de sesión" son lo mismo.
   const [cargando, setCargando] = useState(true);
   const [festejo, setFestejo] = useState<Festejo | null>(null);
+  // Panel de "Detalles" (fase/racha, resultados, evolución, exportar,
+  // notificaciones) -- ver Chat/PanelDetalles.tsx. Antes vivía siempre
+  // visible en Sidebar.tsx; ahora es a pedido, así el chat no compite
+  // por espacio con un panel de resultados todo el tiempo.
+  const [detallesAbierto, setDetallesAbierto] = useState(false);
   // Fase 3 es híbrida (ver ValidacionSelector.tsx): mientras esto es
   // false, la vista principal es el selector de áreas; en cuanto el
   // backend confirma la 2da elección y devuelve la primera propuesta del
@@ -258,27 +264,19 @@ function Conversacion({
   const esFaseChat = faseActual === 2 || (faseActual === 3 && fase3EnRefinado) || faseActual === 5;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden md:flex-row">
-      {esFaseChat && (
-        <Sidebar
-          idioma={idioma}
-          onCambiarIdioma={onCambiarIdioma}
-          t={t}
-          usuarioId={usuarioId}
-          requiereLogin={requiereLogin}
-          fase={faseActual}
-          ficha={ficha}
-        />
-      )}
-
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* Fases 1, 3 (mientras dura la selección de áreas) y 4: la interfaz
           principal deja de ser el chat -- selector visual, con el chat
           relegado a apoyo opcional (Fase 1) o directamente ausente hasta
           que la propia fase lo active (Fase 3, ver ValidacionSelector).
-          El resto de las fases (2, 3 ya en "refinando", 5) sigue 100%
-          igual que siempre. Cualquier otro valor de fase (no debería
-          pasar nunca en un uso normal) cae en EstadoError, no en el
-          chat -- ver comentario de esFaseChat arriba. */}
+          El resto de las fases (2, 3 ya en "refinando", 5) es chat, pero
+          con la MISMA cabecera visual que estos tres selectores (ver
+          CabeceraFase) en vez del panel de resultados que antes ocupaba
+          toda la altura -- pedido explícito del dueño del producto:
+          las fases de chat tienen que sentirse la misma aplicación, no
+          una pantalla intermedia aparte. Cualquier otro valor de fase
+          (no debería pasar nunca en uso normal) cae en EstadoError, no
+          en el chat -- ver comentario de esFaseChat arriba. */}
       {(faseActual === 0 || faseActual === 1) ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ArbolSelector idioma={idioma} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
@@ -299,31 +297,47 @@ function Conversacion({
           <SistemaSelector idioma={idioma} proposito={datos.proposito} onCerrado={iniciarFaseSiguiente} />
         </main>
       ) : esFaseChat ? (
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {ficha && !nombre && <BienvenidaCard t={t} />}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <CabeceraFase
+            idioma={idioma}
+            onCambiarIdioma={onCambiarIdioma}
+            t={t}
+            usuarioId={usuarioId}
+            requiereLogin={requiereLogin}
+            proposito={datos.proposito}
+            onAbrirDetalles={() => setDetallesAbierto(true)}
+          />
 
-          {ficha && (
-            <JourneyMap idioma={idioma} t={t} faseActual={faseActual} proposito={datos.proposito} sistema={datos.sistema} />
+          <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {ficha && !nombre && <BienvenidaCard t={t} />}
+
+            {ficha && (
+              <JourneyMap idioma={idioma} t={t} faseActual={faseActual} proposito={datos.proposito} sistema={datos.sistema} />
+            )}
+
+            {ficha && faseActual === 5 && <ResumenCard t={t} vistaResumen={ficha.vista_resumen} />}
+
+            {nombre && <p className="px-4 pt-2 text-xs text-foreground/60">{t.saludo_nombre.replace("{nombre}", nombre)}</p>}
+
+            <ChatWindow mensajes={mensajes} cargando={cargando} />
+
+            {opcionesPendientes.length > 0 && (
+              <OpcionesForm
+                titulo={t.opciones_titulo}
+                submitLabel={t.opciones_submit}
+                opciones={opcionesPendientes}
+                deshabilitado={cargando}
+                onElegir={procesarTurno}
+              />
+            )}
+
+            <ChatInput placeholder={t.chat_placeholder} deshabilitado={cargando} onEnviar={procesarTurno} />
+          </main>
+
+          {detallesAbierto && (
+            <PanelDetalles idioma={idioma} t={t} fase={faseActual} ficha={ficha} onCerrar={() => setDetallesAbierto(false)} />
           )}
-
-          {ficha && faseActual === 5 && <ResumenCard t={t} vistaResumen={ficha.vista_resumen} />}
-
-          {nombre && <p className="px-4 pt-2 text-xs text-foreground/60">{t.saludo_nombre.replace("{nombre}", nombre)}</p>}
-
-          <ChatWindow mensajes={mensajes} cargando={cargando} />
-
-          {opcionesPendientes.length > 0 && (
-            <OpcionesForm
-              titulo={t.opciones_titulo}
-              submitLabel={t.opciones_submit}
-              opciones={opcionesPendientes}
-              deshabilitado={cargando}
-              onElegir={procesarTurno}
-            />
-          )}
-
-          <ChatInput placeholder={t.chat_placeholder} deshabilitado={cargando} onEnviar={procesarTurno} />
-        </main>
+        </div>
       ) : (
         <EstadoError t={t} />
       )}

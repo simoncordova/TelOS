@@ -47,6 +47,9 @@ export type Textos = {
   error_estado_titulo: string;
   error_estado_texto: string;
   error_estado_boton: string;
+  tu_proposito_label: string;
+  detalles_boton: string;
+  cerrar_boton: string;
   push_titulo: string;
   push_no_soportado: string;
   push_activar: string;
@@ -98,6 +101,9 @@ export const TEXTOS: Record<Idioma, Textos> = {
     error_estado_titulo: "Falló la solución",
     error_estado_texto: "Algo se rompió del lado de la app y no sabemos en qué paso estás. Tu progreso no se perdió -- recargá la página para retomarlo.",
     error_estado_boton: "Recargar",
+    tu_proposito_label: "Tu propósito",
+    detalles_boton: "Detalles",
+    cerrar_boton: "Cerrar",
     push_titulo: "Notificaciones",
     push_no_soportado: "Tu navegador no soporta notificaciones push.",
     push_activar: "🔔 Activar notificaciones",
@@ -147,6 +153,9 @@ export const TEXTOS: Record<Idioma, Textos> = {
     error_estado_titulo: "The setup failed",
     error_estado_texto: "Something broke on the app's side and we can't tell what step you're on. Your progress wasn't lost -- reload the page to pick it back up.",
     error_estado_boton: "Reload",
+    tu_proposito_label: "Your purpose",
+    detalles_boton: "Details",
+    cerrar_boton: "Close",
     push_titulo: "Notifications",
     push_no_soportado: "Your browser doesn't support push notifications.",
     push_activar: "🔔 Enable notifications",

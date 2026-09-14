@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { cerrarFase1, confirmarSeleccion, confirmarValores, obtenerCategoriasFase1, sugerirCategoria } from "@/lib/apiCliente";
 import type { CategoriasFase1, HojaIkigai, Idioma, VerboIkigai } from "@/lib/types";
+import { AccionesCuenta } from "../AccionesCuenta";
 
 // Selector visual Ikigai -- Fase 1. Interfaz principal (no un chatbot):
 // contenido y mecánica portados del prototipo interactivo real hecho en
@@ -49,6 +50,7 @@ const ACENTO = "#a4552f";
 const TEXTOS = {
   es: {
     tituloApp: "Telos",
+    cerrarSesion: "Cerrar sesión",
     fraseInicial: "Descubramos qué te mueve.",
     subInicial: "No hay respuestas correctas. Cada elección nos ayudará a encontrar patrones únicos en ti.",
     comenzar: "Comenzar exploración",
@@ -112,6 +114,7 @@ const TEXTOS = {
   },
   en: {
     tituloApp: "Telos",
+    cerrarSesion: "Sign out",
     fraseInicial: "Let's find what moves you.",
     subInicial: "There are no right answers. Every choice helps us find patterns unique to you.",
     comenzar: "Start exploring",
@@ -202,10 +205,14 @@ function arcPath(r: number, a0: number, a1: number): string {
 
 export function ArbolSelector({
   idioma,
+  onCambiarIdioma,
+  requiereLogin,
   nombre,
   onCerrado,
 }: {
   idioma: Idioma;
+  onCambiarIdioma: (idioma: Idioma) => void;
+  requiereLogin: boolean;
   nombre: string | null;
   onCerrado: (mensajeCierre?: string) => void;
 }) {
@@ -805,6 +812,7 @@ export function ArbolSelector({
             <span style={{ color: "#8c8478" }}>{idioma === "es" ? "Tus valores" : "Your values"}</span>
             <span style={{ color: "#5d564d", letterSpacing: ".06em", textTransform: "none" }}>{valoresElegidos.length ? valoresElegidos.join(" · ") : t.aunSinTocar}</span>
           </div>
+          <AccionesCuenta idioma={idioma} onCambiarIdioma={onCambiarIdioma} requiereLogin={requiereLogin} logoutLabel={t.cerrarSesion} />
         </div>
       </header>
 

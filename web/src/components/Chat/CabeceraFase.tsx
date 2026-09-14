@@ -1,7 +1,7 @@
 import type { Textos } from "@/lib/i18n";
 import { formatear } from "@/lib/formato";
-import { urlLogout } from "@/lib/apiCliente";
 import type { Idioma } from "@/lib/types";
+import { AccionesCuenta } from "../AccionesCuenta";
 
 // Cabecera de las fases de chat (2, 3 ya refinando, 5) -- reemplaza a
 // Sidebar.tsx, que ocupaba toda la altura como una columna fija al
@@ -71,32 +71,6 @@ export function CabeceraFase({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "clamp(8px,1.6vw,18px)", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 6 }}>
-            {(["en", "es"] as const).map((opcion) => {
-              const activo = idioma === opcion;
-              return (
-                <button
-                  key={opcion}
-                  onClick={() => onCambiarIdioma(opcion)}
-                  style={{
-                    border: `1px solid ${activo ? "#a4552f" : "#e2dbd0"}`,
-                    background: activo ? "rgba(164,85,47,.08)" : "transparent",
-                    color: activo ? "#a4552f" : "#5d564d",
-                    borderRadius: 999,
-                    padding: "4px 12px",
-                    fontSize: 11,
-                    cursor: "pointer",
-                    fontFamily: "var(--font-ibm-plex-mono), monospace",
-                    letterSpacing: ".08em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {opcion === "es" ? "Español" : "English"}
-                </button>
-              );
-            })}
-          </div>
-
           {usuarioId && (
             <span style={{ fontSize: 11.5, color: "#8c8478" }}>{formatear(t.connected_as, { usuario_id: usuarioId })}</span>
           )}
@@ -108,11 +82,7 @@ export function CabeceraFase({
             {t.detalles_boton}
           </button>
 
-          {requiereLogin && (
-            <a href={urlLogout()} style={{ color: "#a4552f", textDecoration: "underline", fontSize: 11.5 }}>
-              {t.logout_button}
-            </a>
-          )}
+          <AccionesCuenta idioma={idioma} onCambiarIdioma={onCambiarIdioma} requiereLogin={requiereLogin} logoutLabel={t.logout_button} />
         </div>
       </div>
 

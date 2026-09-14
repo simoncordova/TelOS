@@ -279,12 +279,14 @@ function Conversacion({
           en el chat -- ver comentario de esFaseChat arriba. */}
       {(faseActual === 0 || faseActual === 1) ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <ArbolSelector idioma={idioma} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
+          <ArbolSelector idioma={idioma} onCambiarIdioma={onCambiarIdioma} requiereLogin={requiereLogin} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
         </main>
       ) : faseActual === 3 && !fase3EnRefinado ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ValidacionSelector
             idioma={idioma}
+            onCambiarIdioma={onCambiarIdioma}
+            requiereLogin={requiereLogin}
             proposito={datos.proposito}
             onEntrarRefinado={(primerMensaje) => {
               setMensajes((prev) => [...prev, { rol: "assistant", texto: primerMensaje }]);
@@ -294,7 +296,7 @@ function Conversacion({
         </main>
       ) : faseActual === 4 ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <SistemaSelector idioma={idioma} proposito={datos.proposito} onCerrado={iniciarFaseSiguiente} />
+          <SistemaSelector idioma={idioma} onCambiarIdioma={onCambiarIdioma} requiereLogin={requiereLogin} proposito={datos.proposito} onCerrado={iniciarFaseSiguiente} />
         </main>
       ) : esFaseChat ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

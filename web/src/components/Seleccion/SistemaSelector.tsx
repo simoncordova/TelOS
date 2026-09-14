@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { confirmarSeleccion, continuarSesion, obtenerCategoriasFase4 } from "@/lib/apiCliente";
 import type { CategoriasFase4, Idioma, NodoCategoriaSistema } from "@/lib/types";
+import { AccionesCuenta } from "../AccionesCuenta";
 
 // Selector visual de Fase 4 (Estratega de Sistemas) -- porte fiel del
 // prototipo interactivo real hecho en Claude Design (13/09/2026, mismo
@@ -40,6 +41,7 @@ const PASOS = ["accion", "cuando_donde", "metrica", "obstaculo"] as const;
 const TEXTOS = {
   es: {
     faseLabel: "Fase 4 · Estratega de sistemas",
+    cerrarSesion: "Cerrar sesión",
     ayudaChat: "¿Necesitas aclarar algo?",
     cerrarApoyo: "Cerrar apoyo",
     apoyoTitulo: "Apoyo",
@@ -87,6 +89,7 @@ const TEXTOS = {
   },
   en: {
     faseLabel: "Phase 4 · Systems strategist",
+    cerrarSesion: "Sign out",
     ayudaChat: "Need something clarified?",
     cerrarApoyo: "Close support",
     apoyoTitulo: "Support",
@@ -160,7 +163,19 @@ function labelDeNodo(arbol: NodoCategoriaSistema[], id: string): string {
   return "";
 }
 
-export function SistemaSelector({ idioma, proposito, onCerrado }: { idioma: Idioma; proposito?: string; onCerrado: (mensajeCierre?: string) => void }) {
+export function SistemaSelector({
+  idioma,
+  onCambiarIdioma,
+  requiereLogin,
+  proposito,
+  onCerrado,
+}: {
+  idioma: Idioma;
+  onCambiarIdioma: (idioma: Idioma) => void;
+  requiereLogin: boolean;
+  proposito?: string;
+  onCerrado: (mensajeCierre?: string) => void;
+}) {
   const t = TEXTOS[idioma];
 
   const [taxonomia, setTaxonomia] = useState<CategoriasFase4 | null>(null);
@@ -383,13 +398,17 @@ export function SistemaSelector({ idioma, proposito, onCerrado }: { idioma: Idio
             <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase", color: "#6b6459" }}>{t.faseLabel}</span>
           </div>
         </div>
-        <button
-          onClick={() => setChatOpen((v) => !v)}
-          style={{ display: "flex", alignItems: "center", gap: 9, border: "1px solid #ded7cc", background: "rgba(252,250,247,.8)", color: "#5d564d", borderRadius: 999, padding: "8px 15px", fontSize: 12.5, cursor: "pointer" }}
-        >
-          <span style={{ width: 7, height: 7, borderRadius: 999, background: ACENTO, animation: "telos-breathe 3.4s ease-in-out infinite" }} />
-          <span>{chatOpen ? t.cerrarApoyo : t.ayudaChat}</span>
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "clamp(10px,2vw,20px)", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setChatOpen((v) => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 9, border: "1px solid #ded7cc", background: "rgba(252,250,247,.8)", color: "#5d564d", borderRadius: 999, padding: "8px 15px", fontSize: 12.5, cursor: "pointer" }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: 999, background: ACENTO, animation: "telos-breathe 3.4s ease-in-out infinite" }} />
+            <span>{chatOpen ? t.cerrarApoyo : t.ayudaChat}</span>
+          </button>
+
+          <AccionesCuenta idioma={idioma} onCambiarIdioma={onCambiarIdioma} requiereLogin={requiereLogin} logoutLabel={t.cerrarSesion} />
+        </div>
       </header>
 
       {started && !done && (

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { confirmarSeleccion, obtenerCategoriasFase3 } from "@/lib/apiCliente";
 import type { AreaVida, Idioma, SeleccionConfirmada } from "@/lib/types";
+import { AccionesCuenta } from "../AccionesCuenta";
 
 // Fase 3 -- Coach de Validación. Port fiel de maqueta/fase3/TELOS Fase 3.dc.html.
 // Layout: header con logo + stepper de dos pasos como botones de texto,
@@ -29,6 +30,7 @@ const MARKS: [string, string][] = [
 const TEXTOS = {
   es: {
     faseLabel: "Fase 3 · Coach de validación",
+    cerrarSesion: "Cerrar sesión",
     propositoLabel: "El propósito que vamos a validar",
     kickerEvidencia: "01 · Evidencia pasada",
     kickerFriccion: "02 · Fricción futura",
@@ -57,6 +59,7 @@ const TEXTOS = {
   },
   en: {
     faseLabel: "Phase 3 · Validation coach",
+    cerrarSesion: "Sign out",
     propositoLabel: "The purpose we're going to validate",
     kickerEvidencia: "01 · Past evidence",
     kickerFriccion: "02 · Future friction",
@@ -171,10 +174,14 @@ function ConstellationViz({ picks, acento }: { picks: string[]; acento: string }
 
 export function ValidacionSelector({
   idioma,
+  onCambiarIdioma,
+  requiereLogin,
   proposito,
   onEntrarRefinado,
 }: {
   idioma: Idioma;
+  onCambiarIdioma: (idioma: Idioma) => void;
+  requiereLogin: boolean;
   proposito?: string;
   onEntrarRefinado: (primerMensaje: string) => void;
 }) {
@@ -295,34 +302,38 @@ export function ValidacionSelector({
           </div>
         </div>
 
-        {/* Stepper en header — botones de texto con subrayado */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase" }}>
-          {([
-            { n: "01", label: idioma === "es" ? "Evidencia pasada" : "Past evidence", etapaKey: "evidencia_pasada" },
-            { n: "02", label: idioma === "es" ? "Fricción futura" : "Future friction", etapaKey: "friccion_futura" },
-          ] as const).map((st) => {
-            const activo = etapa === st.etapaKey;
-            const completado = st.etapaKey === "evidencia_pasada" && !esEvidencia;
-            return (
-              <button
-                key={st.n}
-                onClick={() => { if (completado) setEtapa(st.etapaKey); }}
-                style={{
-                  display: "flex", alignItems: "baseline", gap: 6,
-                  border: "none", background: "transparent", padding: 0,
-                  cursor: completado ? "pointer" : "default",
-                  color: activo ? "#1b1917" : completado ? "#8c8478" : "#b7afa4",
-                  fontFamily: "var(--font-ibm-plex-mono), monospace",
-                  fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase",
-                }}
-              >
-                <span>{st.n}</span>
-                <span style={{ whiteSpace: "nowrap", borderBottom: `1px solid ${activo ? ACENTO : completado ? "#c9bfb0" : "transparent"}`, paddingBottom: 2 }}>
-                  {st.label}
-                </span>
-              </button>
-            );
-          })}
+        <div style={{ display: "flex", alignItems: "center", gap: "clamp(14px,2.4vw,28px)", flexWrap: "wrap" }}>
+          {/* Stepper en header — botones de texto con subrayado */}
+          <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase" }}>
+            {([
+              { n: "01", label: idioma === "es" ? "Evidencia pasada" : "Past evidence", etapaKey: "evidencia_pasada" },
+              { n: "02", label: idioma === "es" ? "Fricción futura" : "Future friction", etapaKey: "friccion_futura" },
+            ] as const).map((st) => {
+              const activo = etapa === st.etapaKey;
+              const completado = st.etapaKey === "evidencia_pasada" && !esEvidencia;
+              return (
+                <button
+                  key={st.n}
+                  onClick={() => { if (completado) setEtapa(st.etapaKey); }}
+                  style={{
+                    display: "flex", alignItems: "baseline", gap: 6,
+                    border: "none", background: "transparent", padding: 0,
+                    cursor: completado ? "pointer" : "default",
+                    color: activo ? "#1b1917" : completado ? "#8c8478" : "#b7afa4",
+                    fontFamily: "var(--font-ibm-plex-mono), monospace",
+                    fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase",
+                  }}
+                >
+                  <span>{st.n}</span>
+                  <span style={{ whiteSpace: "nowrap", borderBottom: `1px solid ${activo ? ACENTO : completado ? "#c9bfb0" : "transparent"}`, paddingBottom: 2 }}>
+                    {st.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <AccionesCuenta idioma={idioma} onCambiarIdioma={onCambiarIdioma} requiereLogin={requiereLogin} logoutLabel={t.cerrarSesion} />
         </div>
       </header>
 

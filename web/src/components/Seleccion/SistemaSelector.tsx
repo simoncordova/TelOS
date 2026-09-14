@@ -375,9 +375,13 @@ export function SistemaSelector({ idioma, proposito, onCerrado }: { idioma: Idio
       `}</style>
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, padding: "16px clamp(18px,5vw,56px) 8px", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 12.5, letterSpacing: ".34em", textTransform: "uppercase" }}>Telos</span>
-          <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase", color: "#6b6459" }}>{t.faseLabel}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/telos-brand.png" alt="TelOS" style={{ width: 32, height: 32, borderRadius: 9, objectFit: "cover", objectPosition: "50% 34%", background: "#1d1b33", flexShrink: 0 }} />
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 12.5, letterSpacing: ".34em", textTransform: "uppercase" }}>Telos</span>
+            <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase", color: "#6b6459" }}>{t.faseLabel}</span>
+          </div>
         </div>
         <button
           onClick={() => setChatOpen((v) => !v)}

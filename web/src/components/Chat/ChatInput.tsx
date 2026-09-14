@@ -23,21 +23,54 @@ export function ChatInput({
   }
 
   return (
-    <form onSubmit={manejarEnvio} className="flex gap-2 border-t border-surface p-3">
+    <form
+      onSubmit={manejarEnvio}
+      style={{
+        display: "flex",
+        gap: 9,
+        alignItems: "center",
+        borderTop: "1px solid #e6ddd0",
+        padding: "10px 20px 14px",
+        background: "rgba(252,250,247,.8)",
+      }}
+    >
       <input
         type="text"
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
         placeholder={placeholder}
         disabled={deshabilitado}
-        className="flex-1 rounded-full bg-surface px-4 py-2 text-sm outline-none disabled:opacity-50"
+        style={{
+          flex: 1,
+          border: "1px solid #e2dbd0",
+          borderRadius: 999,
+          background: "#fcfaf7",
+          padding: "10px 18px",
+          fontSize: 14,
+          color: "#1b1917",
+          outline: "none",
+          opacity: deshabilitado ? 0.5 : 1,
+          fontFamily: "var(--font-instrument-sans), system-ui, sans-serif",
+        }}
       />
       <button
         type="submit"
         disabled={deshabilitado || !texto.trim()}
-        className="rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
+        style={{
+          border: "none",
+          borderRadius: 999,
+          background: "#1b1917",
+          color: "#f7f4ef",
+          width: 36,
+          height: 36,
+          flexShrink: 0,
+          cursor: "pointer",
+          fontSize: 14,
+          opacity: deshabilitado || !texto.trim() ? 0.4 : 1,
+          transition: "opacity .2s ease",
+        }}
       >
-        ➤
+        →
       </button>
     </form>
   );

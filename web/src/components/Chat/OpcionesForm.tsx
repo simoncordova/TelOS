@@ -5,8 +5,9 @@ import { useState } from "react";
 // Port de la sección "opciones_pendientes" de ui/app.py: cuando el
 // agente de la fase actual ofreció opciones cerradas (ver
 // agents/_modelo.py::crear_tool_presentar_opciones), se muestran como
-// radio en vez de obligar a escribir la elección -- el chat de abajo
-// sigue disponible para quien prefiera escribir su propia respuesta.
+// botones pill en vez de obligar a escribir la elección -- el chat de
+// abajo sigue disponible para quien prefiera escribir su propia respuesta.
+// Estilo consistente con el sistema visual warm de la maqueta.
 export function OpcionesForm({
   titulo,
   submitLabel,
@@ -28,27 +29,67 @@ export function OpcionesForm({
         e.preventDefault();
         if (elegida) onElegir(elegida);
       }}
-      className="flex flex-col gap-2 border-t border-surface bg-surface/60 p-3"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        borderTop: "1px solid #e6ddd0",
+        background: "rgba(240,236,228,.55)",
+        padding: "12px 20px",
+      }}
     >
-      <p className="text-xs text-foreground/70">{titulo}</p>
-      <div className="flex flex-col gap-1">
-        {opciones.map((opcion) => (
-          <label key={opcion} className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="opcion"
-              value={opcion}
-              checked={elegida === opcion}
-              onChange={() => setElegida(opcion)}
-            />
-            {opcion}
-          </label>
-        ))}
+      <p
+        style={{
+          margin: 0,
+          fontFamily: "var(--font-ibm-plex-mono), monospace",
+          fontSize: 9.5,
+          letterSpacing: ".16em",
+          textTransform: "uppercase",
+          color: "#6b6459",
+        }}
+      >
+        {titulo}
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {opciones.map((opcion) => {
+          const on = elegida === opcion;
+          return (
+            <button
+              key={opcion}
+              type="button"
+              onClick={() => setElegida(opcion)}
+              style={{
+                border: `1px solid ${on ? "#a4552f" : "#e2dbd0"}`,
+                background: on ? "rgba(164,85,47,.08)" : "transparent",
+                color: on ? "#1b1917" : "#5d564d",
+                borderRadius: 999,
+                padding: "9px 16px",
+                fontSize: 13.5,
+                cursor: "pointer",
+                transition: "all .25s ease",
+                fontFamily: "var(--font-instrument-sans), system-ui, sans-serif",
+              }}
+            >
+              {opcion}
+            </button>
+          );
+        })}
       </div>
       <button
         type="submit"
         disabled={deshabilitado}
-        className="self-start rounded-full bg-primary px-4 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+        style={{
+          alignSelf: "flex-start",
+          border: "1px solid #1b1917",
+          background: "#1b1917",
+          color: "#f7f4ef",
+          borderRadius: 999,
+          padding: "10px 22px",
+          fontSize: 13,
+          cursor: "pointer",
+          opacity: deshabilitado ? 0.5 : 1,
+          fontFamily: "var(--font-instrument-sans), system-ui, sans-serif",
+        }}
       >
         {submitLabel}
       </button>

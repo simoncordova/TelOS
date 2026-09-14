@@ -750,9 +750,13 @@ export function ArbolSelector({
       `}</style>
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, padding: "12px clamp(18px,4vw,46px) 6px", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 13, letterSpacing: ".34em", textTransform: "uppercase" }}>{t.tituloApp}</div>
-          {nombre && <div style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".14em", textTransform: "uppercase", color: "#9c948a" }}>{nombre}</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/telos-brand.png" alt="TelOS" style={{ width: 32, height: 32, borderRadius: 9, objectFit: "cover", objectPosition: "50% 34%", background: "#1d1b33", flexShrink: 0 }} />
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 13, letterSpacing: ".34em", textTransform: "uppercase" }}>{t.tituloApp}</div>
+            {nombre && <div style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".14em", textTransform: "uppercase", color: "#9c948a" }}>{nombre}</div>}
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: "clamp(10px,2vw,26px)", flexWrap: "wrap", alignItems: "flex-start" }}>

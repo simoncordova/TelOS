@@ -13,13 +13,36 @@ export function ChatWindow({ mensajes, cargando }: { mensajes: Mensaje[]; cargan
   }, [mensajes.length, cargando]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+    <div
+      style={{
+        display: "flex",
+        flex: 1,
+        flexDirection: "column",
+        gap: 12,
+        overflowY: "auto",
+        minHeight: 0,
+        padding: "16px 20px",
+      }}
+    >
       {mensajes.map((mensaje, i) => (
         <ChatMessage key={i} mensaje={mensaje} />
       ))}
       {cargando && (
-        <div className="flex justify-start">
-          <div className="rounded-2xl bg-surface px-4 py-2 text-sm text-foreground/60">...</div>
+        <div style={{ display: "flex", justifyContent: "flex-start" }}>
+          <div
+            style={{
+              borderRadius: 18,
+              padding: "10px 16px",
+              fontSize: 14,
+              background: "#f0ece4",
+              color: "#6b6459",
+              border: "1px solid #e2dbd0",
+              fontFamily: "var(--font-ibm-plex-mono), monospace",
+              letterSpacing: "0.08em",
+            }}
+          >
+            …
+          </div>
         </div>
       )}
       <div ref={finRef} />

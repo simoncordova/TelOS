@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#f4f1ec; color:#1b1917; font-family:'Instrument Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; }
+  a { color:#a4552f; text-decoration:none; }
+  a:hover { color:#1b1917; }
+  input, textarea, button { font-family:inherit; }
+  @keyframes telos-rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+  @keyframes telos-fade { from { opacity:0; } to { opacity:1; } }
+  @keyframes telos-breathe { 0%,100% { opacity:.55; transform:scale(1); } 50% { opacity:.85; transform:scale(1.035); } }
+</style>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#1d1b33"></rect><circle cx="50" cy="50" r="22" fill="none" stroke="#c8801f" stroke-width="2"></circle><circle cx="50" cy="50" r="7" fill="#e2a44a"></circle><text x="50" y="86" text-anchor="middle" font-family="monospace" font-size="11" fill="#f5e3b8" letter-spacing="3">TELOS</text></svg></template>
+</helmet>
+<div style="height:100vh; min-height:520px; overflow:hidden; display:flex; flex-direction:column; background:radial-gradient(80% 55% at 50% 62%, rgba(226,164,74,.20) 0%, rgba(226,164,74,0) 62%), radial-gradient(70% 60% at 8% 4%, rgba(78,77,134,.16) 0%, rgba(78,77,134,0) 70%), radial-gradient(70% 60% at 95% 6%, rgba(58,109,99,.12) 0%, rgba(58,109,99,0) 70%), linear-gradient(#fcfaf7 0%, #f5f1ea 60%, #efe8dd 100%);">
+
+  <header style="display:flex; align-items:center; justify-content:space-between; gap:20px; padding:12px clamp(18px,4vw,46px) 6px; flex-wrap:wrap;">
+    <div style="display:flex; align-items:center; gap:11px;">
+      <img src="assets/telos-brand.png" alt="TelOS" style="width:34px; height:34px; border-radius:11px; object-fit:cover; object-position:50% 34%; background:#1d1b33; flex:none;">
+      <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:13px; letter-spacing:.34em; text-transform:uppercase; color:#1b1917;">Telos</div>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#9c948a;">{{ phaseLabel }}</div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:clamp(10px,2vw,26px); flex-wrap:wrap; align-items:flex-start;">
+      <sc-for list="{{ coverage }}" as="dim" hint-placeholder-count="4">
+        <button onClick="{{ dim.onFocus }}" style="text-align:left; display:flex; flex-direction:column; gap:4px; min-width:104px; background:transparent; border:none; border-bottom:1px solid {{ dim.border }}; padding:2px 0 4px; cursor:pointer; transition:all .3s ease;">
+          <div style="display:flex; align-items:baseline; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;">
+            <span style="color:{{ dim.labelColor }};">{{ dim.label }}</span>
+            <span style="color:#b0a79a; font-size:8.5px;">{{ dim.pct }}</span>
+          </div>
+          <div style="height:2px; width:100%; background:#ded7cc; position:relative; overflow:hidden;">
+            <div style="position:absolute; inset:0 auto 0 0; background:{{ dim.color }}; transition:width .7s cubic-bezier(.22,.9,.25,1); width:{{ dim.pct }};"></div>
+          </div>
+        </button>
+      </sc-for>
+      <div style="display:flex; align-items:baseline; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;">
+        <span style="color:#8c8478;">Tus valores</span>
+        <span style="color:#5d564d; letter-spacing:.06em; text-transform:none;">{{ valuesSummary }}</span>
+      </div>
+    </div>
+  </header>
+
+  <sc-if value="{{ hasChoices }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex; gap:8px; flex-wrap:wrap; padding:2px clamp(18px,4vw,46px) 0; align-items:center;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.15em; text-transform:uppercase; color:#9c948a; margin-right:2px;">Tu mapa</span>
+      <sc-for list="{{ chips }}" as="chip" hint-placeholder-count="2">
+        <button onClick="{{ chip.onRemove }}" title="Quitar del mapa" style="display:flex; align-items:center; gap:8px; border:1px solid #ded7cc; background:#fbf9f6; border-radius:999px; padding:5px 11px 5px 9px; cursor:pointer; color:#3b3630; font-size:12.5px; animation:telos-fade .5s ease both;" style-hover="border-color:#a4552f; color:#1b1917;">
+          <span style="width:7px; height:7px; border-radius:999px; background:{{ chip.dotColor }}; opacity:{{ chip.weightOpacity }};"></span>
+          <span>{{ chip.label }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#a09689;">×{{ chip.weight }}</span>
+        </button>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <main style="flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; gap:clamp(10px,2vw,34px); position:relative; padding:4px 12px;">
+    <div style="position:relative; height:min(100%, 58vw, 560px); aspect-ratio:1/1; flex:none; display:flex; align-items:center; justify-content:center;">
+      {{ viz }}
+      <div style="position:absolute; left:24%; top:29%; width:52%; height:42%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:6px; pointer-events:none; overflow:hidden;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:#a4552f;">{{ centerKicker }}</div>
+        <div style="font-family:'Instrument Serif',Georgia,serif; font-size:clamp(16px,2vw,27px); line-height:1.1; color:#1b1917; text-wrap:pretty;">{{ centerTitle }}</div>
+        <div style="font-size:11.5px; line-height:1.35; color:#6b6459; text-wrap:pretty;">{{ centerSub }}</div>
+      </div>
+    </div>
+  </main>
+
+  <sc-if value="{{ isWelcome }}" hint-placeholder-val="{{ true }}">
+    <section style="flex:none; display:flex; flex-direction:column; align-items:center; gap:13px; padding:0 24px clamp(14px,2.5vh,40px); animation:telos-rise .8s ease both;">
+      <div style="width:100%; max-width:1040px; height:clamp(54px,7vh,104px); border-radius:18px; overflow:hidden; position:relative; border:1px solid #e2dbd0;">
+        <img src="assets/telos-brand.png" alt="Camino TelOS" style="width:100%; height:100%; object-fit:cover; object-position:50% 86%; display:block;">
+        <div style="position:absolute; inset:0; background:linear-gradient(to top, rgba(244,241,236,.55) 0%, rgba(244,241,236,0) 55%);"></div>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center;">
+        <button onClick="{{ onStart }}" style="border:1px solid #1b1917; background:#1b1917; color:#f7f4ef; border-radius:999px; padding:14px 30px; font-size:14.5px; letter-spacing:.02em; cursor:pointer; transition:transform .3s ease, background .3s ease;" style-hover="background:#a4552f; border-color:#a4552f; transform:translateY(-1px);">Comenzar exploración</button>
+        <button onClick="{{ onTourOpen }}" style="border:1px solid #ded7cc; background:transparent; color:#5d564d; border-radius:999px; padding:14px 22px; font-size:13.5px; cursor:pointer;" style-hover="border-color:#1b1917; color:#1b1917;">Ver cómo funciona</button>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#a8a096;">Sin preguntas. Solo elecciones.</div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{ isExploring }}" hint-placeholder-val="{{ false }}">
+    <section style="flex:none; padding:0 clamp(16px,4vw,46px) 4px; animation:telos-rise .6s ease both;">
+      <div style="max-width:1120px; margin:0 auto; display:flex; flex-direction:column; gap:9px;">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:#a4552f;">{{ breadcrumb }}</div>
+              <sc-if value="{{ hasFocus }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ onClearFocus }}" style="display:flex; align-items:center; gap:8px; border:1px solid {{ focusColor }}; background:transparent; border-radius:999px; padding:3px 10px; cursor:pointer; font-size:11.5px; color:#3b3630;" style-hover="background:rgba(27,25,23,.05);">
+                  <span style="width:6px; height:6px; border-radius:999px; background:{{ focusColor }};"></span>
+                  <span>{{ focusLabel }} · {{ focusMissing }}</span>
+                  <span style="color:#a09689;">×</span>
+                </button>
+              </sc-if>
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:#b0a79a;">{{ vizHint }}</span>
+              <sc-if value="{{ hasPager }}" hint-placeholder-val="{{ false }}">
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.16em; color:#b0a79a;">· {{ pageLabel }}</span>
+              </sc-if>
+            </div>
+            <h2 style="margin:0; font-family:'Instrument Serif',Georgia,serif; font-size:clamp(17px,1.9vw,23px); font-weight:400; color:#1b1917;">{{ question }}</h2>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button onClick="{{ onToggleChat }}" style="display:flex; align-items:center; gap:8px; border:1px solid #ded7cc; background:transparent; color:#5d564d; border-radius:999px; padding:8px 16px; font-size:12.5px; cursor:pointer;" style-hover="border-color:#c8801f; color:#1b1917;">
+              <span style="width:7px; height:7px; border-radius:999px; background:#c8801f; animation:telos-breathe 3.4s ease-in-out infinite;"></span>
+              <span>{{ chatCta }}</span>
+            </button>
+            <sc-if value="{{ canBack }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ onBack }}" style="border:1px solid #ded7cc; background:transparent; color:#5d564d; border-radius:999px; padding:8px 16px; font-size:12.5px; cursor:pointer;" style-hover="border-color:#1b1917; color:#1b1917;">← Volver</button>
+            </sc-if>
+            <sc-if value="{{ canRestartBranch }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ onRestartBranch }}" style="border:1px solid #ded7cc; background:transparent; color:#5d564d; border-radius:999px; padding:8px 16px; font-size:12.5px; cursor:pointer;" style-hover="border-color:#1b1917; color:#1b1917;">Otra rama</button>
+            </sc-if>
+            <sc-if value="{{ canSeeResult }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ onOpenResult }}" style="border:1px solid #a4552f; background:#a4552f; color:#fbf9f6; border-radius:999px; padding:8px 18px; font-size:12.5px; cursor:pointer;" style-hover="background:#1b1917; border-color:#1b1917;">Ver mi propósito</button>
+            </sc-if>
+          </div>
+        </div>
+
+        <sc-if value="{{ isDetailStep }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; border:1px solid #e2dbd0; background:#fbf9f6; border-radius:16px; padding:16px 18px;">
+            <input value="{{ detailText }}" onChange="{{ onDetailChange }}" placeholder="¿algo más puntual dentro de esto?" style="flex:1; min-width:220px; border:none; background:transparent; outline:none; font-size:15px; color:#1b1917;">
+            <button onClick="{{ onConfirmDetail }}" style="border:1px solid #1b1917; background:#1b1917; color:#f7f4ef; border-radius:999px; padding:10px 20px; font-size:13px; cursor:pointer;" style-hover="background:#a4552f; border-color:#a4552f;">Agregar al mapa</button>
+            <button onClick="{{ onSkipDetail }}" style="border:none; background:transparent; color:#8c8478; font-size:12.5px; cursor:pointer; text-decoration:underline;">Confirmar sin detalle</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isValuesStep }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; flex-direction:column; gap:14px;">
+            <div style="display:flex; gap:9px; flex-wrap:wrap;">
+              <sc-for list="{{ valueOptions }}" as="v" hint-placeholder-count="8">
+                <button onClick="{{ v.onToggle }}" style="border:1px solid {{ v.border }}; background:{{ v.bg }}; color:{{ v.fg }}; border-radius:999px; padding:10px 18px; font-size:13.5px; cursor:pointer; transition:all .28s ease;" style-hover="border-color:#a4552f;">{{ v.name }}</button>
+              </sc-for>
+            </div>
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+              <button onClick="{{ onConfirmValues }}" style="border:1px solid #1b1917; background:#1b1917; color:#f7f4ef; border-radius:999px; padding:10px 22px; font-size:13px; cursor:pointer;" style-hover="background:#a4552f; border-color:#a4552f;">Trazar el límite</button>
+              <span style="font-size:12.5px; color:#8c8478;">Esto no es otra área: envuelve todo lo demás. Elige hasta tres.</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showCards }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:stretch; gap:10px;">
+          <sc-if value="{{ hasPager }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ onPrevPage }}" title="Anteriores" style="flex:none; width:34px; border:1px solid #e2dbd0; background:transparent; border-radius:11px; cursor:pointer; color:#5d564d; font-size:14px; opacity:{{ prevOpacity }}; transition:all .3s ease;" style-hover="border-color:#c8801f; color:#1b1917;">‹</button>
+          </sc-if>
+          <div style="flex:1; display:grid; grid-template-columns:repeat({{ cols }}, minmax(0, 1fr)); gap:clamp(6px,.8vw,11px);">
+            <sc-for list="{{ options }}" as="opt" hint-placeholder-count="8">
+              <button onClick="{{ opt.onPick }}" onMouseEnter="{{ opt.onEnter }}" onMouseLeave="{{ opt.onLeave }}" onFocus="{{ opt.onEnter }}" onBlur="{{ opt.onLeave }}" style="position:relative; text-align:left; display:flex; flex-direction:column; gap:7px; border:1px solid #e6ddd0; background:{{ opt.tint }}; border-radius:14px; padding:13px 14px 15px; cursor:pointer; scroll-snap-align:start; opacity:{{ opt.opacity }}; transition:transform .3s cubic-bezier(.22,.9,.25,1), border-color .3s ease, box-shadow .3s ease, opacity .3s ease; animation:telos-rise .5s ease both; animation-delay:{{ opt.delay }};" style-hover="transform:translateY(-3px); border-color:#c8801f; box-shadow:0 14px 30px -20px rgba(78,77,134,.55);">
+                <span style="font-size:14.5px; line-height:1.2; color:#1b1917; letter-spacing:-.005em;">{{ opt.name }}</span>
+                <span style="position:absolute; left:0; right:0; bottom:calc(100% + 6px); background:#fbf9f6; border:1px solid #e6ddd0; border-radius:11px; padding:8px 10px; font-size:12px; line-height:1.4; color:#5d564d; text-wrap:pretty; pointer-events:none; box-shadow:0 14px 30px -22px rgba(27,25,23,.6); opacity:{{ opt.descOpacity }}; transition:opacity .24s ease;">{{ opt.desc }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:#b0a79a;">{{ opt.meta }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <sc-if value="{{ hasPager }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ onNextPage }}" title="Siguientes" style="flex:none; width:34px; border:1px solid #e2dbd0; background:transparent; border-radius:11px; cursor:pointer; color:#5d564d; font-size:14px; opacity:{{ nextOpacity }}; transition:all .3s ease;" style-hover="border-color:#c8801f; color:#1b1917;">›</button>
+          </sc-if>
+          </div>
+        </sc-if>
+      </div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{ tourOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; inset:0; background:rgba(28,25,22,.3); backdrop-filter:blur(5px); display:flex; align-items:center; justify-content:center; padding:24px; z-index:60; animation:telos-fade .35s ease both;">
+      <div style="width:100%; max-width:470px; background:#fbf9f6; border:1px solid #e2dbd0; border-radius:20px; padding:26px 26px 20px; display:flex; flex-direction:column; gap:14px; animation:telos-rise .45s ease both;">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.2em; text-transform:uppercase;">
+          <span style="color:#c8801f;">{{ tourZone }}</span>
+          <span style="color:#b0a79a;">{{ tourIndex }}</span>
+        </div>
+        <h3 style="margin:0; font-family:'Instrument Serif',Georgia,serif; font-weight:400; font-size:clamp(22px,2.6vw,30px); line-height:1.14; color:#1b1917;">{{ tourTitle }}</h3>
+        <p style="margin:0; font-size:14.5px; line-height:1.55; color:#5d564d; text-wrap:pretty;">{{ tourBody }}</p>
+        <div style="display:flex; gap:7px; padding:2px 0 4px;">
+          <sc-for list="{{ tourDots }}" as="dot" hint-placeholder-count="4">
+            <button onClick="{{ dot.onGo }}" style="width:22px; height:3px; border:none; border-radius:999px; cursor:pointer; padding:0; background:{{ dot.bg }}; transition:background .3s ease;"></button>
+          </sc-for>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+          <button onClick="{{ onTourSkip }}" style="border:none; background:transparent; color:#8c8478; font-size:12.5px; cursor:pointer; text-decoration:underline;">Saltar guía</button>
+          <div style="display:flex; gap:8px;">
+            <sc-if value="{{ tourCanPrev }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ onTourPrev }}" style="border:1px solid #ded7cc; background:transparent; color:#5d564d; border-radius:999px; padding:10px 18px; font-size:13px; cursor:pointer;" style-hover="border-color:#1b1917; color:#1b1917;">Atrás</button>
+            </sc-if>
+            <sc-if value="{{ tourIsLast }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ onTourFinish }}" style="border:1px solid #1b1917; background:#1b1917; color:#f7f4ef; border-radius:999px; padding:10px 22px; font-size:13px; cursor:pointer;" style-hover="background:#c8801f; border-color:#c8801f;">Comenzar exploración</button>
+            </sc-if>
+            <sc-if value="{{ tourCanNext }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ onTourNext }}" style="border:1px solid #1b1917; background:#1b1917; color:#f7f4ef; border-radius:999px; padding:10px 22px; font-size:13px; cursor:pointer;" style-hover="background:#c8801f; border-color:#c8801f;">Siguiente</button>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ resultOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; inset:0; background:rgba(28,25,22,.28); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:clamp(12px,3vw,40px); z-index:40; animation:telos-fade .4s ease both;">
+      <div style="width:100%; max-width:1060px; max-height:92vh; overflow:auto; background:#fbf9f6; border:1px solid #e2dbd0; border-radius:22px; padding:clamp(20px,3vw,40px); display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:clamp(16px,3vw,38px); align-items:center; animation:telos-rise .5s ease both;">
+        <div style="position:relative; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center;">
+          {{ bigViz }}
+          <div style="position:absolute; inset:32% 30%; display:flex; align-items:center; justify-content:center; text-align:center; font-family:'Instrument Serif',Georgia,serif; font-size:clamp(16px,1.8vw,22px); color:#1b1917; pointer-events:none;">Tu Ikigai</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:18px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <img src="assets/telos-brand.png" alt="TelOS" style="width:30px; height:30px; border-radius:8px; object-fit:cover; object-position:50% 34%; background:#1d1b33; flex:none;">
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.2em; text-transform:uppercase; color:#a4552f;">Tu propósito</div>
+          </div>
+          <p style="margin:0; font-family:'Instrument Serif',Georgia,serif; font-size:clamp(24px,3.1vw,38px); line-height:1.18; color:#1b1917; text-wrap:pretty;">{{ purpose }}</p>
+          <div style="height:1px; background:#e2dbd0;"></div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.2em; text-transform:uppercase; color:#8c8478;">Lo que encontramos</div>
+          <div style="display:flex; flex-direction:column; gap:11px;">
+            <sc-for list="{{ findings }}" as="f" hint-placeholder-count="4">
+              <div style="display:flex; gap:12px; align-items:baseline;">
+                <span style="width:7px; height:7px; border-radius:999px; background:#a4552f; flex:none; opacity:{{ f.opacity }};"></span>
+                <div style="display:flex; flex-direction:column; gap:2px;">
+                  <span style="font-size:14.5px; color:#2c2823; line-height:1.4;">{{ f.text }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.13em; text-transform:uppercase; color:#b0a79a;">{{ f.meta }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; padding-top:4px;">
+            <button onClick="{{ onCloseResult }}" style="border:1px solid #1b1917; background:#1b1917; color:#f7f4ef; border-radius:999px; padding:11px 22px; font-size:13px; cursor:pointer;" style-hover="background:#a4552f; border-color:#a4552f;">Seguir explorando</button>
+            <button onClick="{{ onReset }}" style="border:1px solid #ded7cc; background:transparent; color:#5d564d; border-radius:999px; padding:11px 20px; font-size:13px; cursor:pointer;" style-hover="border-color:#1b1917; color:#1b1917;">Empezar de nuevo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isWelcome }}" hint-placeholder-val="{{ true }}">
+  <button onClick="{{ onToggleChat }}" style="position:fixed; right:clamp(14px,2.4vw,28px); bottom:clamp(14px,2.4vw,28px); z-index:30; display:flex; align-items:center; gap:10px; border:1px solid #ded7cc; background:rgba(251,249,246,.92); backdrop-filter:blur(8px); color:#3b3630; border-radius:999px; padding:11px 18px; font-size:13px; cursor:pointer; box-shadow:0 14px 34px -22px rgba(27,25,23,.6); transition:all .3s ease;" style-hover="border-color:#a4552f; color:#1b1917;">
+    <span style="width:8px; height:8px; border-radius:999px; background:#c8801f; box-shadow:0 0 0 4px rgba(200,128,31,.18); animation:telos-breathe 3.4s ease-in-out infinite;"></span>
+    <span>{{ chatCta }}</span>
+  </button>
+  </sc-if>
+
+  <sc-if value="{{ chatOpen }}" hint-placeholder-val="{{ false }}">
+    <aside style="position:fixed; top:0; right:0; bottom:0; width:min(384px,100%); z-index:50; background:#fbf9f6; border-left:1px solid #e2dbd0; display:flex; flex-direction:column; box-shadow:-30px 0 60px -50px rgba(27,25,23,.7); animation:telos-fade .3s ease both;">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:18px 20px; border-bottom:1px solid #ece6dc;">
+        <div style="display:flex; flex-direction:column; gap:3px;">
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; color:#a4552f;">Apoyo</span>
+          <span style="font-size:14.5px; color:#1b1917;">Pregunta lo que necesites aclarar</span>
+        </div>
+        <button onClick="{{ onToggleChat }}" style="border:1px solid #ded7cc; background:transparent; color:#5d564d; width:30px; height:30px; border-radius:999px; cursor:pointer; font-size:14px; line-height:1;" style-hover="border-color:#1b1917; color:#1b1917;">×</button>
+      </div>
+      <div style="flex:1; overflow:auto; padding:18px 20px; display:flex; flex-direction:column; gap:14px;">
+        <sc-for list="{{ messages }}" as="m" hint-placeholder-count="2">
+          <div style="max-width:88%; align-self:{{ m.align }}; background:{{ m.bg }}; color:{{ m.fg }}; border:1px solid {{ m.border }}; border-radius:14px; padding:11px 14px; font-size:13.5px; line-height:1.5; animation:telos-rise .35s ease both;">{{ m.text }}</div>
+        </sc-for>
+      </div>
+      <div style="padding:12px 20px 16px; border-top:1px solid #ece6dc; display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; gap:7px; flex-wrap:wrap;">
+          <sc-for list="{{ suggestions }}" as="s" hint-placeholder-count="3">
+            <button onClick="{{ s.onAsk }}" style="border:1px solid #e2dbd0; background:transparent; color:#6b6459; border-radius:999px; padding:6px 12px; font-size:11.5px; cursor:pointer;" style-hover="border-color:#a4552f; color:#1b1917;">{{ s.text }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; border:1px solid #e2dbd0; border-radius:999px; padding:6px 6px 6px 14px;">
+          <input value="{{ draft }}" onChange="{{ onDraftChange }}" onKeyDown="{{ onDraftKey }}" placeholder="Escribe tu duda…" style="flex:1; border:none; background:transparent; outline:none; font-size:13.5px; color:#1b1917;">
+          <button onClick="{{ onSend }}" style="border:none; background:#1b1917; color:#f7f4ef; border-radius:999px; width:32px; height:32px; cursor:pointer; font-size:13px;" style-hover="background:#a4552f;">→</button>
+        </div>
+      </div>
+    </aside>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:960},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#c8801f&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#c8801f&quot;,&quot;#a4552f&quot;,&quot;#4e4d86&quot;,&quot;#3a6d63&quot;],&quot;section&quot;:&quot;Sistema visual&quot;},&quot;demoStage&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;welcome&quot;,&quot;options&quot;:[&quot;welcome&quot;,&quot;exploring&quot;,&quot;pattern&quot;,&quot;emerging&quot;,&quot;result&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Estado a revisar&quot;},&quot;chatLabel&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;¿Necesitas aclarar algo?&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Apoyo&quot;}}">
+const DIMS = [
+  { k: 'L', label: 'Lo que amas', short: 'AMAS', a: -135, c: '#c8801f' },
+  { k: 'G', label: 'En lo que destacas', short: 'DESTACAS', a: -45, c: '#4e4d86' },
+  { k: 'V', label: 'Lo que aporta valor', short: 'APORTA VALOR', a: 45, c: '#a8532c' },
+  { k: 'N', label: 'Lo que el mundo necesita', short: 'EL MUNDO NECESITA', a: 135, c: '#3a6d63' },
+];
+const INDIGO = '#4e4d86';
+
+const L1 = [
+  { id: 'crear', name: 'Crear', desc: 'Dar forma a algo que antes no existía.', dims: 'LG', doms: ['tech', 'arte', 'producto', 'palabra', 'sistemas', 'naturaleza'] },
+  { id: 'ayudar', name: 'Ayudar', desc: 'Estar del lado de alguien que lo necesita.', dims: 'LN', doms: ['personas', 'salud', 'comunidad', 'aprendizaje', 'palabra', 'naturaleza'] },
+  { id: 'resolver', name: 'Resolver', desc: 'Desarmar un problema hasta que ceda.', dims: 'GV', doms: ['sistemas', 'tech', 'datos', 'producto', 'naturaleza', 'salud'] },
+  { id: 'ensenar', name: 'Enseñar', desc: 'Que otro pueda hacer lo que tú sabes.', dims: 'LN', doms: ['aprendizaje', 'tech', 'arte', 'palabra', 'personas', 'ciencia'] },
+  { id: 'liderar', name: 'Liderar', desc: 'Llevar a un grupo a un lugar mejor.', dims: 'GV', doms: ['producto', 'personas', 'comunidad', 'sistemas', 'tech', 'aprendizaje'] },
+  { id: 'investigar', name: 'Investigar', desc: 'Perseguir una pregunta hasta el fondo.', dims: 'LG', doms: ['ciencia', 'datos', 'naturaleza', 'personas', 'tech', 'palabra'] },
+  { id: 'construir', name: 'Construir', desc: 'Hacer que algo se sostenga en el tiempo.', dims: 'GV', doms: ['tech', 'sistemas', 'producto', 'naturaleza', 'arte', 'comunidad'] },
+  { id: 'transformar', name: 'Transformar', desc: 'Cambiar cómo funcionan las cosas.', dims: 'NV', doms: ['sistemas', 'comunidad', 'personas', 'naturaleza', 'producto', 'aprendizaje'] },
+];
+
+const DOMS = {
+  tech: ['Tecnología', 'Software, IA, datos y herramientas.'],
+  arte: ['Arte y estética', 'Forma, imagen, sonido, materia.'],
+  producto: ['Productos y negocios', 'Soluciones que alguien usa de verdad.'],
+  palabra: ['Palabra e historias', 'Escribir, narrar, comunicar.'],
+  personas: ['Personas', 'Vínculos, acompañamiento, desarrollo.'],
+  comunidad: ['Comunidad', 'Grupos, territorio, lo colectivo.'],
+  salud: ['Cuerpo y salud', 'Bienestar físico y mental.'],
+  aprendizaje: ['Aprendizaje', 'Cómo aprendemos y enseñamos.'],
+  sistemas: ['Sistemas y procesos', 'Cómo funcionan las cosas por dentro.'],
+  datos: ['Datos y evidencia', 'Medir, entender, anticipar.'],
+  naturaleza: ['Naturaleza y entorno', 'Territorio, clima, ciudad.'],
+  ciencia: ['Ciencia', 'Preguntas, método, descubrimiento.'],
+};
+
+const L3 = {
+  tech: [['IA', 'Tecnología que aprende y crea.', 'LG'], ['Apps', 'Productos digitales cotidianos.', 'LV'], ['Software', 'Sistemas que otros usan a diario.', 'GV'], ['Automatización', 'Quitar del medio el trabajo repetitivo.', 'GV'], ['Hardware', 'Objetos que piensan.', 'GL'], ['Infraestructura', 'Lo invisible que sostiene todo.', 'GN']],
+  arte: [['Imagen', 'Fotografía, ilustración, visual.', 'L'], ['Sonido', 'Música y paisaje sonoro.', 'L'], ['Espacio', 'Objetos, interiores, materia.', 'LG'], ['Movimiento', 'Video, animación, cuerpo.', 'LG'], ['Dirección', 'Dar coherencia estética a algo.', 'GV'], ['Artesanía', 'Hacer con las manos.', 'LN']],
+  producto: [['Producto digital', 'Construir soluciones útiles para otros.', 'LV'], ['Emprender', 'Llevar una idea al mundo real.', 'LV'], ['Estrategia', 'Decidir dónde jugar.', 'GV'], ['Ventas', 'Conectar valor con quien lo necesita.', 'VN'], ['Operaciones', 'Que funcione todos los días.', 'GV'], ['Impacto social', 'Negocio con propósito.', 'NV']],
+  palabra: [['Escritura', 'Ordenar ideas en palabras.', 'LG'], ['Narrativa', 'Contar lo que importa.', 'LN'], ['Divulgación', 'Hacer entendible lo complejo.', 'GN'], ['Marca', 'Dar voz a algo.', 'GV'], ['Periodismo', 'Sacar cosas a la luz.', 'NV'], ['Conversación', 'Facilitar el diálogo.', 'LN']],
+  personas: [['Mentoría', 'Ayudar a otros a crecer.', 'LN'], ['Acompañar', 'Estar al lado en lo difícil.', 'LN'], ['Equipos', 'Que trabajar juntos funcione.', 'GV'], ['Talento', 'Encontrar a la persona correcta.', 'GV'], ['Mundo interior', 'Trabajar lo que no se ve.', 'LN'], ['Cuidado', 'Sostener a quien no puede solo.', 'LN']],
+  comunidad: [['Territorio', 'Lo que pasa cerca.', 'LN'], ['Organizar', 'Mover a un grupo hacia algo.', 'GN'], ['Cultura local', 'Lo que nos identifica.', 'LN'], ['Inclusión', 'Que nadie quede afuera.', 'NV'], ['Redes', 'Conectar personas entre sí.', 'GV'], ['Voluntariado', 'Entregar tiempo propio.', 'LN']],
+  salud: [['Movimiento', 'Entrenar el cuerpo.', 'LG'], ['Salud mental', 'Sostener la mente.', 'LN'], ['Nutrición', 'Lo que comemos.', 'GN'], ['Prevención', 'Actuar antes de que duela.', 'GN'], ['Rehabilitación', 'Volver a funcionar.', 'GN'], ['Longevidad', 'Vivir mejor más tiempo.', 'LN']],
+  aprendizaje: [['Diseño de aprendizaje', 'Cómo se enseña algo.', 'GV'], ['Contenido educativo', 'Ayudar a otros a desarrollar conocimiento.', 'LV'], ['Aula', 'Enseñar cara a cara.', 'LN'], ['Habilidades', 'Entrenar para hacer.', 'GV'], ['Infancia', 'Los primeros años.', 'LN'], ['Reconversión', 'Aprender otro oficio.', 'NV']],
+  sistemas: [['Procesos', 'Ordenar cómo se hace.', 'GV'], ['Diagnóstico', 'Encontrar la falla.', 'GN'], ['Rediseño', 'Cambiar la forma del sistema.', 'GV'], ['Política pública', 'Reglas que afectan a muchos.', 'NV'], ['Logística', 'Mover cosas y tiempo.', 'GV'], ['Calidad', 'Que salga bien siempre.', 'GV']],
+  datos: [['Análisis', 'Entender lo que pasó.', 'GV'], ['Predicción', 'Anticipar lo que viene.', 'LG'], ['Visualización', 'Hacer ver el patrón.', 'LG'], ['Medición de impacto', 'Saber si sirvió.', 'NV'], ['Investigación', 'Preguntar con números.', 'GN'], ['Modelos', 'Simular la realidad.', 'LG']],
+  naturaleza: [['Clima', 'El problema grande.', 'NV'], ['Paisaje', 'Habitar el lugar.', 'LN'], ['Alimentos', 'De dónde viene la comida.', 'GN'], ['Energía', 'Cómo movemos el mundo.', 'NV'], ['Conservación', 'Proteger lo que queda.', 'LN'], ['Ciudad', 'Vivir juntos mejor.', 'GN']],
+  ciencia: [['Preguntas abiertas', 'Lo que nadie sabe aún.', 'LG'], ['Método', 'Cómo se prueba una idea.', 'GV'], ['Biología', 'La vida por dentro.', 'GN'], ['Materia', 'Las reglas del mundo.', 'LG'], ['Cognición', 'Cómo pensamos.', 'LN'], ['Transferencia', 'Del laboratorio a la calle.', 'VN']],
+};
+
+const VALUES = ['Autonomía', 'Honestidad', 'Tiempo con los míos', 'Aprender siempre', 'Justicia', 'Calma', 'Excelencia', 'Libertad creativa', 'Pertenencia', 'Coherencia'];
+
+const TOUR = [
+  { zone: 'El centro', title: 'Tu mapa Ikigai', body: 'El gráfico del medio es tu Ikigai: cuatro áreas de exploración y un anillo de valores que las envuelve. Empieza casi vacío y se define con cada elección.' },
+  { zone: 'Abajo', title: 'Elige para cada área', body: 'Abajo aparecen pocas opciones por vez. Entras a una, bajas hasta lo más específico, confirmas y vuelves para explorar otra rama distinta.' },
+  { zone: 'Arriba y en el gráfico', title: 'Cada área se completa', body: 'Verás el porcentaje de cada dimensión. Toca un área del gráfico y las opciones se reordenan para completar justo esa.' },
+  { zone: 'Esquina', title: 'Si dudas, pregunta', body: 'El asistente es solo de apoyo: puedes recorrer toda la experiencia sin escribir una sola frase.' },
+];
+
+const VERB_PHRASE = { crear: 'Crear', ayudar: 'Acompañar a otros con', resolver: 'Resolver problemas de', ensenar: 'Enseñar', liderar: 'Guiar equipos en', investigar: 'Investigar', construir: 'Construir', transformar: 'Transformar' };
+const BENEFIT = {
+  tech: 'para que la tecnología se sienta humana', arte: 'para que otros vean el mundo distinto',
+  producto: 'para que algo útil llegue a quien lo necesita', palabra: 'para que lo complejo se entienda',
+  personas: 'para que otras personas crezcan con más autonomía', comunidad: 'para que un grupo se sostenga solo',
+  salud: 'para que la gente viva mejor', aprendizaje: 'para que aprender sea posible para más gente',
+  sistemas: 'para que las cosas dejen de funcionar mal', datos: 'para que las decisiones dejen de ser a ciegas',
+  naturaleza: 'para que el entorno aguante lo que viene', ciencia: 'para que sepamos algo que antes no sabíamos',
+};
+
+class Component extends DCLogic {
+  state = {
+    started: false, stage: 'l1', path: [], nodes: [], values: [], valuesDone: false, focusDim: null,
+    detail: '', chatOpen: false, draft: '', resultOpen: false, page: 0, tourStep: null,
+    messages: [{ who: 'bot', text: 'Estoy acá si algo no te queda claro. No hace falta escribir nada para avanzar: podés hacer toda la exploración eligiendo.' }],
+  };
+
+  componentDidMount() {
+    const d = this.props.demoStage;
+    if (d && d !== 'welcome') return this.seed(d);
+    let seen = false;
+    try { seen = window.localStorage.getItem('telos-tour-seen') === '1'; } catch (e) { seen = false; }
+    if (!seen) this.setState({ tourStep: 0 });
+  }
+
+  tourGo(n) {
+    if (n === null) {
+      try { window.localStorage.setItem('telos-tour-seen', '1'); } catch (e) { }
+      return this.setState({ tourStep: null });
+    }
+    this.setState({ tourStep: n });
+  }
+
+  seed(stage) {
+    const mk = (l1, dom, leafName) => {
+      const v = L1.find(x => x.id === l1);
+      const leaf = L3[dom].find(l => l[0] === leafName);
+      return { id: l1 + '/' + dom + '/' + leafName, verb: v.name, verbId: l1, dom, name: leafName, desc: leaf[1], detail: '', dims: this.union(v.dims, leaf[2]) };
+    };
+    const a = mk('crear', 'tech', 'IA'), b = mk('ensenar', 'aprendizaje', 'Contenido educativo'),
+      c = mk('construir', 'producto', 'Producto digital'), d = mk('transformar', 'sistemas', 'Rediseño');
+    if (stage === 'exploring') this.setState({ started: true, stage: 'l2', path: ['crear'], nodes: [a] });
+    if (stage === 'pattern') this.setState({ started: true, nodes: [a, b], values: ['Autonomía', 'Coherencia'], valuesDone: true });
+    if (stage === 'emerging') this.setState({ started: true, nodes: [a, b, c], values: ['Autonomía', 'Coherencia'], valuesDone: true });
+    if (stage === 'result') this.setState({ started: true, nodes: [a, b, c, d], values: ['Autonomía', 'Coherencia', 'Aprender siempre'], valuesDone: true, resultOpen: true });
+  }
+
+  focus(k) {
+    this.setState(st => ({
+      focusDim: st.focusDim === k ? null : k, started: true,
+      stage: st.stage === 'values' ? 'values' : 'l1', path: [], detail: '',
+    }));
+  }
+
+  union(x, y) { const s = []; (x + y).split('').forEach(c => { if (s.indexOf(c) < 0) s.push(c); }); return s; }
+
+  accent() { return this.props.accent ?? '#a4552f'; }
+
+  counts() {
+    const c = { L: 0, G: 0, V: 0, N: 0 };
+    this.state.nodes.forEach(n => n.dims.forEach(d => { c[d] += 1; }));
+    return c;
+  }
+
+  // ---------- visualization ----------
+  layoutNodes() {
+    const rad = a => (a * Math.PI) / 180;
+    return this.state.nodes.map((n, i) => {
+      let x = 0, y = 0;
+      n.dims.forEach(k => { const a = rad(DIMS.find(d => d.k === k).a); x += Math.cos(a); y += Math.sin(a); });
+      let ang = Math.atan2(y, x);
+      ang += ((i % 3) - 1) * 0.3;
+      const w = n.dims.length;
+      const ca = Math.abs(Math.cos(ang)), sa = Math.abs(Math.sin(ang));
+      // keep every node outside the centered copy block (52% × 42% of the square)
+      const clear = Math.min(232, Math.max(148 / Math.max(ca, .001), 126 / Math.max(sa, .001)));
+      const r = Math.min(232, Math.max(clear + 14, 210 - w * 10 + (i % 2) * 10));
+      return { n, w, x: Math.cos(ang) * r, y: Math.sin(ang) * r };
+    });
+  }
+
+  polar(r, a) { const t = (a * Math.PI) / 180; return [Math.cos(t) * r, Math.sin(t) * r]; }
+
+  sectorPath(ri, ro, a0, a1) {
+    const [x0, y0] = this.polar(ro, a0), [x1, y1] = this.polar(ro, a1);
+    const [x2, y2] = this.polar(ri, a1), [x3, y3] = this.polar(ri, a0);
+    return 'M' + x0 + ' ' + y0 + ' A' + ro + ' ' + ro + ' 0 0 1 ' + x1 + ' ' + y1 +
+      ' L' + x2 + ' ' + y2 + ' A' + ri + ' ' + ri + ' 0 0 0 ' + x3 + ' ' + y3 + ' Z';
+  }
+
+  arcPath(r, a0, a1) {
+    const [x0, y0] = this.polar(r, a0), [x1, y1] = this.polar(r, a1);
+    return 'M' + x0 + ' ' + y0 + ' A' + r + ' ' + r + ' 0 0 1 ' + x1 + ' ' + y1;
+  }
+
+  buildViz(scale) {
+    const e = React.createElement, ac = this.accent(), nodes = this.layoutNodes(), counts = this.counts();
+    const kids = [];
+    const rad = a => (a * Math.PI) / 180;
+
+    [230, 176, 120, 66].forEach((r, i) => kids.push(e('circle', { key: 'f' + i, r, fill: 'none', stroke: '#1b1917', strokeWidth: .5, opacity: .09 })));
+
+    // each dimension is a field that fills in and intensifies with its own coverage
+    DIMS.forEach((d, i) => {
+      const cov = Math.min(1, counts[d.k] / 3), a0 = d.a - 43, a1 = d.a + 43;
+      const done = cov >= 1, foc = this.state.focusDim === d.k;
+      if (foc) kids.push(e('path', { key: 'fc' + i, d: this.sectorPath(46, 238, a0 - 2, a1 + 2), fill: 'none', stroke: d.c, strokeWidth: 1.2, opacity: .5, strokeDasharray: '6 6' }));
+      kids.push(e('path', {
+        key: 'sec' + i, d: this.sectorPath(48, 96 + cov * 122, a0, a1), fill: d.c,
+        opacity: .035 + cov * .17, style: { transition: 'opacity .9s ease' },
+      }));
+      if (cov > 0) kids.push(e('path', {
+        key: 'seci' + i, d: this.sectorPath(48, 96 + cov * 60, a0 + 10, a1 - 10), fill: d.c, opacity: .05 + cov * .12,
+      }));
+      kids.push(e('path', {
+        key: 'arcb' + i, d: this.arcPath(226, a0, a1), fill: 'none', stroke: d.c,
+        strokeWidth: 1, opacity: .12, strokeLinecap: 'round',
+      }));
+      kids.push(e('path', {
+        key: 'arcf' + i, d: this.arcPath(226, a0, a0 + (a1 - a0) * cov), fill: 'none', stroke: d.c,
+        strokeWidth: done ? 3 : 1.9, opacity: done ? .95 : .55, strokeLinecap: 'round',
+        style: { transition: 'all .9s cubic-bezier(.22,.9,.25,1)' },
+      }));
+      if (done) {
+        const [dx, dy] = this.polar(226, d.a);
+        kids.push(e('circle', { key: 'arcd' + i, cx: dx, cy: dy, r: 5.5, fill: d.c, opacity: .2 }));
+      }
+      const [px, py] = this.polar(126 + cov * 54, d.a);
+      kids.push(e('text', {
+        key: 'pct' + i, x: px, y: py + 4, textAnchor: 'middle', fill: d.c, opacity: done ? .9 : .62,
+        fontSize: done ? 12 : 11, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: 1.2, pointerEvents: 'none',
+      }, Math.round(cov * 100) + '%'));
+      kids.push(e('path', {
+        key: 'hit' + i, d: this.sectorPath(46, 240, a0, a1), fill: '#fff', opacity: 0,
+        onClick: () => this.focus(d.k), style: { cursor: 'pointer' },
+      }));
+    });
+
+    // values ring: envelops everything, crossing the four areas
+    const vc = this.state.values.length;
+    kids.push(e('circle', { key: 'ring', r: 246, fill: 'none', stroke: vc ? INDIGO : '#1b1917', strokeWidth: vc ? 1.2 : .7, opacity: vc ? .24 + vc * .14 : .14, strokeDasharray: vc >= 3 ? 'none' : vc ? '26 9' : '2 11' }));
+    if (vc) DIMS.forEach((d, i) => {
+      const a = rad(d.a + 45);
+      kids.push(e('line', { key: 'vr' + i, x1: Math.cos(a) * 60, y1: Math.sin(a) * 60, x2: Math.cos(a) * 246, y2: Math.sin(a) * 246, stroke: INDIGO, strokeWidth: .6, opacity: .2 }));
+    });
+    this.state.values.slice(0, 3).forEach((v, i) => {
+      const a = rad(-90 + i * 120);
+      kids.push(e('text', {
+        key: 'vt' + i, x: Math.cos(a) * 246, y: Math.sin(a) * 246 + 4, textAnchor: 'middle',
+        fill: INDIGO, fontSize: 11, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: 1.4, opacity: .9,
+      }, v.toUpperCase()));
+    });
+
+    // dimension anchors — each dimension carries its own hue
+    DIMS.forEach((d, i) => {
+      const a = rad(d.a), ax = Math.cos(a) * 150, ay = Math.sin(a) * 150;
+      const cov = Math.min(1, counts[d.k] / 3);
+      kids.push(e('circle', { key: 'dg' + i, cx: ax, cy: ay, r: 40 + cov * 26, fill: d.c, opacity: .05 + cov * .14 }));
+      kids.push(e('circle', { key: 'dg2' + i, cx: ax, cy: ay, r: (40 + cov * 26) * .58, fill: d.c, opacity: .04 + cov * .12 }));
+      kids.push(e('circle', { key: 'dd' + i, cx: ax, cy: ay, r: 3.4, fill: cov ? d.c : '#c3bab0', opacity: cov ? 1 : .6 }));
+      const lx = Math.cos(a) * 252, ly = Math.sin(a) * 252;
+      kids.push(e('text', {
+        key: 'dl' + i, x: lx, y: ly + (ay < 0 ? -8 : 16), textAnchor: 'middle',
+        fill: cov ? d.c : '#a8a096', fontSize: 11.5, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: 1.6,
+      }, d.short));
+    });
+
+    // links category -> dimensions it touches
+    nodes.forEach((p, i) => p.n.dims.forEach((k, j) => {
+      const dd = DIMS.find(d => d.k === k), a = rad(dd.a);
+      kids.push(e('line', {
+        key: 'ln' + i + j, x1: p.x, y1: p.y, x2: Math.cos(a) * 150, y2: Math.sin(a) * 150,
+        stroke: dd.c, strokeWidth: .9, opacity: .18 + p.w * .07, strokeLinecap: 'round',
+      }));
+      kids.push(e('line', { key: 'lc' + i + j, x1: p.x, y1: p.y, x2: 0, y2: 0, stroke: '#1b1917', strokeWidth: .5, opacity: .07 }));
+    }));
+
+    // category nodes
+    nodes.forEach((p, i) => {
+      const nc = p.w >= 3 ? ac : (DIMS.find(d => d.k === p.n.dims[0]) || { c: ac }).c;
+      kids.push(e('circle', { key: 'nh' + i, cx: p.x, cy: p.y, r: 8 + p.w * 4, fill: nc, opacity: .14 }));
+      kids.push(e('circle', { key: 'nd' + i, cx: p.x, cy: p.y, r: 3 + p.w * 1.5, fill: nc, opacity: .95, style: { animation: 'telos-fade .9s ease both' } }));
+      kids.push(e('text', {
+        key: 'nl' + i, x: p.x, y: p.y - (10 + p.w * 4), textAnchor: 'middle', fill: '#2c2823',
+        fontSize: p.w >= 3 ? 13 : 12, fontFamily: 'Instrument Sans, sans-serif', opacity: p.w >= 3 ? .95 : .7,
+      }, p.n.name));
+    });
+
+    // center convergence
+    const conv = DIMS.reduce((t, d) => t + Math.min(1, counts[d.k] / 3), 0) / 4;
+    kids.push(e('circle', { key: 'c0', r: 74, fill: ac, opacity: .02 + conv * .06 }));
+    kids.push(e('circle', { key: 'c1', r: 52, fill: ac, opacity: .04 + conv * .22, style: { transition: 'opacity 1s ease' } }));
+    kids.push(e('circle', { key: 'c2', r: 58 * (0.45 + conv * 0.55), fill: 'none', stroke: ac, strokeWidth: conv > .7 ? 1.4 : .7, opacity: .18 + conv * .5, strokeDasharray: conv >= 1 ? 'none' : '18 8', style: { animation: 'telos-breathe 6s ease-in-out infinite', transition: 'all .9s ease' } }));
+    if (conv >= 1) kids.push(e('circle', { key: 'c3', r: 26, fill: ac, opacity: .3 }));
+
+    return e('svg', {
+      viewBox: '-270 -270 540 540', width: '100%', height: '100%',
+      preserveAspectRatio: 'xMidYMid meet',
+      style: { position: 'absolute', inset: 0, overflow: 'visible' },
+    }, kids);
+  }
+
+  // ---------- flow ----------
+  currentOptions() {
+    const { stage, path, focusDim } = this.state;
+    const fd = focusDim ? DIMS.find(d => d.k === focusDim) : null;
+    const rank = items => {
+      if (!fd) return items;
+      const hit = items.filter(i => i.dims.indexOf(fd.k) >= 0);
+      return hit.length >= 3 ? hit.concat(items.filter(i => i.dims.indexOf(fd.k) < 0).map(i => Object.assign({}, i, { dim: true }))) : items;
+    };
+    if (stage === 'l1') return {
+      q: fd ? 'Para nutrir “' + fd.label.toLowerCase() + '”, ¿por dónde entras?' : '¿Dónde te atrae más explorar?',
+      crumb: fd ? 'Completando · ' + fd.short.toLowerCase() : 'Nivel 1 · amplio',
+      items: rank(L1.map(v => ({ id: v.id, name: v.name, desc: v.desc, dims: v.dims.split('') }))),
+    };
+    if (stage === 'l2') {
+      const v = L1.find(x => x.id === path[0]);
+      const doms = fd ? v.doms.slice().sort((a, b) => this.domScore(b, v, fd.k) - this.domScore(a, v, fd.k)) : v.doms;
+      return {
+        q: '¿Hacia dónde, dentro de ' + v.name.toLowerCase() + '?', crumb: v.name + ' · nivel 2 · intermedio',
+        items: doms.map(d => ({
+          id: d, name: DOMS[d][0],
+          desc: fd && this.domScore(d, v, fd.k) ? DOMS[d][1] + ' · ' + this.domScore(d, v, fd.k) + ' caminos hacia ' + fd.short.toLowerCase() : DOMS[d][1],
+          dims: v.dims.split(''),
+        })),
+      };
+    }
+    if (stage === 'l3') {
+      const v = L1.find(x => x.id === path[0]);
+      return {
+        q: 'Más preciso: ¿qué parte de esto es tuya?', crumb: v.name + ' → ' + DOMS[path[1]][0] + ' · nivel 3 · específico',
+        items: rank(L3[path[1]].map(l => ({ id: l[0], name: l[0], desc: l[1], dims: this.union(v.dims, l[2]) }))),
+      };
+    }
+    return { q: '', crumb: '', items: [] };
+  }
+
+  domScore(dom, verb, k) {
+    return L3[dom].filter(l => this.union(verb.dims, l[2]).indexOf(k) >= 0).length;
+  }
+
+  pick(id) {
+    const { stage, path } = this.state;
+    if (stage === 'l1') return this.setState({ stage: 'l2', path: [id], page: 0 });
+    if (stage === 'l2') return this.setState({ stage: 'l3', path: [path[0], id], page: 0 });
+    if (stage === 'l3') return this.setState({ stage: 'detail', path: [path[0], path[1], id], detail: '', page: 0 });
+  }
+
+  commit(withDetail) {
+    const { path, nodes, valuesDone } = this.state;
+    const v = L1.find(x => x.id === path[0]);
+    const leaf = L3[path[1]].find(l => l[0] === path[2]);
+    const node = {
+      id: path.join('/'), verb: v.name, verbId: v.id, dom: path[1], name: path[2], desc: leaf[1],
+      detail: withDetail ? this.state.detail.trim() : '', dims: this.union(v.dims, leaf[2]),
+    };
+    const next = nodes.filter(n => n.id !== node.id).concat([node]);
+    const goValues = !valuesDone && next.length >= 2;
+    const fd = this.state.focusDim;
+    const covered = fd ? next.filter(n => n.dims.indexOf(fd) >= 0).length >= 3 : false;
+    this.setState({ nodes: next, path: [], detail: '', stage: goValues ? 'values' : 'l1', focusDim: covered ? null : fd });
+  }
+
+  signals() {
+    const tally = {};
+    const add = (key, label, kind, dims) => {
+      const t = tally[kind + ':' + key] || (tally[kind + ':' + key] = { label, kind, n: 0, dims: {} });
+      t.n += 1;
+      dims.forEach(d => { t.dims[d] = (t.dims[d] || 0) + 1; });
+    };
+    this.state.nodes.forEach(n => {
+      add(n.dom, DOMS[n.dom][0], 'campo', n.dims);
+      add(n.verbId, n.verb, 'impulso', n.dims);
+      add(n.name, n.name, 'categoría', n.dims);
+      (n.detail || '').split(/[\s,]+/).filter(w => w.length > 3).slice(0, 3)
+        .forEach(w => add(w.toLowerCase(), w.toLowerCase(), 'tuyo', n.dims));
+    });
+    const all = Object.keys(tally).map(k => tally[k]);
+    const max = all.reduce((m, t) => Math.max(m, t.n), 1);
+    return all.sort((a, b) => b.n - a.n || b.label.length - a.label.length).slice(0, 14).map((t, i) => {
+      const top = Object.keys(t.dims).sort((a, b) => t.dims[b] - t.dims[a])[0];
+      const rel = t.n / max;
+      return {
+        label: t.label, kind: t.kind, n: t.n,
+        size: Math.round(12 + rel * 15) + 'px',
+        color: (DIMS.find(d => d.k === top) || { c: this.accent() }).c,
+        weight: t.n > 1 ? '500' : '400',
+        opacity: String(0.45 + rel * 0.55),
+        rot: (i % 3 === 1 ? -2 : i % 3 === 2 ? 2 : 0) + 'deg',
+        title: t.kind + ' · ×' + t.n,
+      };
+    });
+  }
+
+  renderVals() {
+    const s = this.state, ac = this.accent(), counts = this.counts(), opts = this.currentOptions();
+    const nodeCount = s.nodes.length;
+    const covered = Object.keys(counts).filter(k => counts[k] > 0).length;
+
+    const center = (() => {
+      if (!s.started) return ['', 'Descubramos qué te mueve.', 'No hay respuestas correctas.'];
+      if (nodeCount === 0) return ['Espacio abierto', 'Elige por dónde empezar.', ''];
+      if (nodeCount === 1) return ['Señal', 'Estamos detectando un patrón…', 'Explora otra rama.'];
+      if (nodeCount === 2) return ['Patrón', 'Conexión entre ' + s.nodes[0].name.toLowerCase() + ' y ' + s.nodes[1].name.toLowerCase() + '.', ''];
+      if (nodeCount === 3) return ['Convergencia', 'Tu propósito comienza a tomar forma.', ''];
+      return ['Tu propósito', this.purpose(), ''];
+    })();
+
+    const chips = s.nodes.map(n => ({
+      label: n.name + (n.detail ? ' · ' + n.detail : ''), weight: n.dims.length,
+      dotColor: n.dims.length >= 3 ? ac : (DIMS.find(d => d.k === n.dims[0]) || { c: ac }).c,
+      weightOpacity: String(0.45 + n.dims.length * 0.14),
+      onRemove: () => this.setState({ nodes: s.nodes.filter(x => x.id !== n.id) }),
+    }));
+
+    const pageCount = Math.max(1, Math.ceil(opts.items.length / 8));
+    const perPage = Math.max(1, Math.ceil(opts.items.length / pageCount));
+    const page = Math.min(s.page, pageCount - 1);
+    const pageItems = opts.items.slice(page * perPage, page * perPage + perPage);
+    const options = pageItems.map((it, i) => ({
+      name: it.name, desc: it.desc, delay: (i * 45) + 'ms',
+      meta: it.dims.length >= 3 ? 'toca ' + it.dims.length + ' dimensiones' : it.dims.map(k => DIMS.find(d => d.k === k).short.toLowerCase()).join(' · '),
+      markRadius: it.dims.length >= 3 ? '999px' : it.dims.length === 2 ? '4px' : '2px',
+      markRot: it.dims.length === 2 ? '45deg' : '0deg',
+      markColor: (DIMS.find(d => d.k === it.dims[0]) || { c: ac }).c,
+      markFill: it.dims.length >= 3 ? ac : 'transparent',
+      tint: it.dims.length >= 3 ? 'linear-gradient(160deg, rgba(200,128,31,.10), rgba(251,249,246,1) 58%)' : '#fbf9f6',
+      opacity: it.dim ? '.5' : '1',
+      descMax: s.hoverOpt === it.id ? '48px' : '0px',
+      descOpacity: s.hoverOpt === it.id ? '1' : '0',
+      onEnter: () => this.setState({ hoverOpt: it.id }),
+      onLeave: () => this.setState({ hoverOpt: null }),
+      onPick: () => this.pick(it.id),
+    }));
+    const fd = s.focusDim ? DIMS.find(d => d.k === s.focusDim) : null;
+
+    return {
+      viz: this.buildViz(1), bigViz: this.buildViz(1),
+      centerKicker: center[0], centerTitle: center[1], centerSub: center[2],
+      phaseLabel: !s.started ? 'Exploración del propósito' : nodeCount >= 4 ? 'Propósito emergente' : 'Explorando · ' + nodeCount + (nodeCount === 1 ? ' elección' : ' elecciones') + ' en el mapa',
+      coverage: DIMS.map(d => {
+        const cov = Math.min(1, counts[d.k] / 3);
+        return {
+          label: d.label, color: d.c, pct: Math.round(cov * 100) + '%',
+          labelColor: cov >= 1 ? d.c : cov > 0 ? '#6b6459' : '#a8a096',
+          note: Math.round(cov * 100) + '% completa',
+          border: s.focusDim === d.k ? d.c : 'transparent',
+          onFocus: () => this.focus(d.k),
+        };
+      }),
+      valuesSummary: s.values.length ? s.values.join(' · ') : 'aún sin trazar',
+      hasChoices: nodeCount > 0, chips, signals: this.signals(),
+      isWelcome: !s.started, isExploring: s.started && !s.resultOpen,
+      tourOpen: s.tourStep !== null,
+      tourZone: TOUR[s.tourStep || 0].zone,
+      tourTitle: TOUR[s.tourStep || 0].title,
+      tourBody: TOUR[s.tourStep || 0].body,
+      tourIndex: ((s.tourStep || 0) + 1) + ' / ' + TOUR.length,
+      tourIsLast: (s.tourStep || 0) === TOUR.length - 1,
+      tourCanPrev: (s.tourStep || 0) > 0,
+      tourCanNext: (s.tourStep || 0) < TOUR.length - 1,
+      onTourOpen: () => this.tourGo(0),
+      onTourPrev: () => this.tourGo(Math.max(0, (s.tourStep || 0) - 1)),
+      onTourNext: () => this.tourGo(Math.min(TOUR.length - 1, (s.tourStep || 0) + 1)),
+      onTourSkip: () => this.tourGo(null),
+      onTourFinish: () => { this.tourGo(null); this.setState({ started: true, stage: 'l1' }); },
+      tourDots: TOUR.map((t, i) => ({
+        bg: i === (s.tourStep || 0) ? '#1b1917' : '#ded7cc',
+        onGo: () => this.tourGo(i),
+      })),
+      hasFocus: !!fd,
+      focusLabel: fd ? fd.label : '',
+      focusColor: fd ? fd.c : ac,
+      focusMissing: fd ? Math.round(Math.min(1, counts[fd.k] / 3) * 100) + '% completa' : '',
+      onClearFocus: () => this.setState({ focusDim: null }),
+      vizHint: fd ? 'toca otra área para cambiar' : 'toca un área del gráfico',
+      breadcrumb: s.stage === 'values' ? 'El límite que atraviesa todo' : s.stage === 'detail' ? 'Nivel 4 · detalle libre' : opts.crumb,
+      question: s.stage === 'values' ? '¿Qué no negociarías, pase lo que pase?' : s.stage === 'detail' ? '¿Qué tipo de ' + s.path[2].toLowerCase() + ', específicamente?' : opts.q,
+      showCards: s.stage === 'l1' || s.stage === 'l2' || s.stage === 'l3',
+      isDetailStep: s.stage === 'detail', isValuesStep: s.stage === 'values',
+      options,
+      hasPager: pageCount > 1, cols: String(perPage),
+      pageLabel: (page + 1) + ' / ' + pageCount,
+      prevOpacity: page === 0 ? '.3' : '1',
+      nextOpacity: page >= pageCount - 1 ? '.3' : '1',
+      onPrevPage: () => this.setState({ page: Math.max(0, page - 1) }),
+      onNextPage: () => this.setState({ page: Math.min(pageCount - 1, page + 1) }),
+      canBack: s.path.length > 0,
+      canRestartBranch: s.path.length > 0 || s.stage === 'detail',
+      canSeeResult: nodeCount >= 4 && s.stage === 'l1',
+      detailText: s.detail,
+      onDetailChange: ev => this.setState({ detail: ev.target.value }),
+      onConfirmDetail: () => this.commit(true),
+      onSkipDetail: () => this.commit(false),
+      onBack: () => this.setState({ stage: s.path.length === 3 ? 'l3' : s.path.length === 2 ? 'l2' : 'l1', path: s.path.slice(0, Math.max(0, s.path.length - 1)) }),
+      onRestartBranch: () => this.setState({ stage: 'l1', path: [], detail: '' }),
+      onStart: () => this.setState({ started: true, stage: 'l1' }),
+      valueOptions: VALUES.map(v => {
+        const on = s.values.indexOf(v) >= 0;
+        return {
+          name: v, border: on ? ac : '#e2dbd0', bg: on ? 'rgba(164,85,47,.08)' : 'transparent', fg: on ? '#1b1917' : '#6b6459',
+          onToggle: () => this.setState({ values: on ? s.values.filter(x => x !== v) : s.values.length >= 3 ? s.values : s.values.concat([v]) }),
+        };
+      }),
+      onConfirmValues: () => this.setState({ valuesDone: true, stage: 'l1' }),
+      purpose: this.purpose(), findings: this.findings(),
+      resultOpen: s.resultOpen,
+      onOpenResult: () => this.setState({ resultOpen: true }),
+      onCloseResult: () => this.setState({ resultOpen: false }),
+      onReset: () => this.setState({ started: false, stage: 'l1', path: [], nodes: [], values: [], valuesDone: false, resultOpen: false }),
+      chatCta: s.chatOpen ? 'Cerrar apoyo' : (this.props.chatLabel ?? '¿Necesitas aclarar algo?'),
+      chatOpen: s.chatOpen,
+      onToggleChat: () => this.setState({ chatOpen: !s.chatOpen }),
+      messages: s.messages.map(m => ({
+        text: m.text, align: m.who === 'me' ? 'flex-end' : 'flex-start',
+        bg: m.who === 'me' ? '#1b1917' : '#f4f1ec', fg: m.who === 'me' ? '#f7f4ef' : '#3b3630',
+        border: m.who === 'me' ? '#1b1917' : '#e8e1d7',
+      })),
+      suggestions: ['¿Qué significa esta categoría?', 'No sé cuál me representa', '¿En qué se diferencian?'].map(t => ({ text: t, onAsk: () => this.send(t) })),
+      draft: s.draft,
+      onDraftChange: ev => this.setState({ draft: ev.target.value }),
+      onDraftKey: ev => { if (ev.key === 'Enter') this.send(this.state.draft); },
+      onSend: () => this.send(this.state.draft),
+    };
+  }
+
+  send(text) {
+    const t = (text || '').trim();
+    if (!t) return;
+    const low = t.toLowerCase();
+    let reply = 'Buena duda. Elige la opción que te resulte más viva hoy: nada queda fijo, puedes quitarla del mapa después y el gráfico se recalcula.';
+    if (low.indexOf('signif') >= 0) reply = 'Cada tarjeta es una zona de actividad, no una respuesta. Si te cuesta imaginarte ahí dentro, probablemente no sea tuya.';
+    if (low.indexOf('difer') >= 0) reply = 'La diferencia está en qué dimensiones ilumina cada una: fíjate en la línea inferior de la tarjeta. Las que tocan tres pesan más en el centro.';
+    if (low.indexOf('no s') >= 0 || low.indexOf('segur') >= 0) reply = 'Puedes entrar a una rama solo para ver qué hay más adentro y volver con “Otra rama”. Explorar no compromete nada.';
+    if (low.indexOf('valor') >= 0) reply = 'Tus valores no son un área más: son el borde. Filtran todo lo que elijas, por eso aparecen como el anillo que envuelve el mapa.';
+    this.setState(st => ({ draft: '', messages: st.messages.concat([{ who: 'me', text: t }, { who: 'bot', text: reply }]) }));
+  }
+
+  purpose() {
+    const ns = this.state.nodes;
+    if (!ns.length) return 'Aún no hay suficientes señales.';
+    const sorted = ns.slice().sort((a, b) => b.dims.length - a.dims.length);
+    const top = sorted[0], second = sorted[1];
+    const verb = VERB_PHRASE[top.verbId] || 'Crear';
+    const what = (top.detail ? top.detail : top.name).toLowerCase();
+    const needNode = ns.filter(n => n.dims.indexOf('N') >= 0)[0] || second || top;
+    const bridge = second && second.id !== top.id ? ' y ' + (second.detail ? second.detail : second.name).toLowerCase() : '';
+    return verb + ' ' + what + bridge + ' ' + (BENEFIT[needNode.dom] || BENEFIT[top.dom]) + '.';
+  }
+
+  findings() {
+    const ns = this.state.nodes.slice().sort((a, b) => b.dims.length - a.dims.length).slice(0, 4);
+    const out = ns.map(n => ({
+      text: n.dims.length >= 3 ? 'Cuando piensas en ' + (n.detail || n.name).toLowerCase() + ', se te activa casi todo a la vez.' : (n.verb + ' ' + (n.detail || n.name).toLowerCase() + ' aparece como algo tuyo.'),
+      meta: n.dims.map(k => DIMS.find(d => d.k === k).short.toLowerCase()).join(' + '),
+      opacity: String(0.35 + n.dims.length * 0.16),
+    }));
+    if (this.state.values.length) out.push({ text: 'Nada de esto te sirve si pierdes ' + this.state.values[0].toLowerCase() + '.', meta: 'tus valores · el límite', opacity: '1' });
+    return out;
+  }
+}
+</script>
+</body>
+</html>

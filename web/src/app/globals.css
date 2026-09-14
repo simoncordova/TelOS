@@ -1,17 +1,16 @@
 @import "tailwindcss";
 
-/* Misma paleta que .streamlit/config.toml (rama gamificacion): navy
-   noche + dorado, derivada del logo real de Telos (cielo nocturno,
-   anillos dorados, un camino hacia el horizonte) -- reemplaza la
-   terracota/beige anterior a pedido explícito del dueño del producto.
-   Mantener ambos en sync si la paleta cambia: son las dos superficies
-   del mismo producto, coexistiendo durante la migración. */
+/* Sistema visual unificado: paleta warm beige/terracota de la maqueta.
+   Reemplaza el navy #14142b anterior -- el diseño final no usa ese tema
+   en ninguna pantalla, ver maqueta/TELOS.dc.html y maqueta/TELOS Fase 3.dc.html.
+   Los selectores visuales (Fases 1, 3, 4) ya usan inline styles con este
+   mismo sistema; las fases de chat (2, 5) heredan ahora el fondo correcto. */
 :root {
-  --background: #14142b;
-  --foreground: #f2e8d5;
-  --surface: #242452;
-  --primary: #d9b26a;
-  --primary-foreground: #14142b;
+  --background: #f4f1ec;
+  --foreground: #1b1917;
+  --surface: #e6ddd0;
+  --primary: #a4552f;
+  --primary-foreground: #fcfaf7;
 }
 
 @theme inline {
@@ -20,20 +19,18 @@
   --color-surface: var(--surface);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-instrument-sans), system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Port de st.balloons() -- Streamlit no tiene equivalente nativo acá,
-   así que esto es código genuinamente nuevo (ver plan de migración,
-   sección B). Sin librería de confetti: unos emoji flotando alcanza
-   para el mismo hito ("sistema completado"), sin una dependencia nueva
-   que justificar. */
+/* Port de st.balloons() */
 @keyframes globo-flotar {
   from {
     transform: translateY(0);

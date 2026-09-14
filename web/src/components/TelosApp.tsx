@@ -235,17 +235,28 @@ function Conversacion({
   const datos = (ficha?.actual?.datos ?? {}) as { proposito?: string; sistema?: string };
   const nombre = ficha?.nombre ?? null;
 
+  // Fases con selector visual propio (1, 3 sin refinado, 4): la sidebar
+  // se oculta y el selector ocupa todo el viewport -- su propio fondo y
+  // tipografía warm reemplazan el chrome de la app. En fases de chat
+  // (2, 3 refinado, 5) la sidebar vuelve a mostrarse.
+  const esFaseSelector =
+    (ficha != null && nombre != null && faseActual === 1) ||
+    (ficha != null && nombre != null && faseActual === 3 && !fase3EnRefinado) ||
+    (ficha != null && nombre != null && faseActual === 4);
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden md:flex-row">
-      <Sidebar
-        idioma={idioma}
-        onCambiarIdioma={onCambiarIdioma}
-        t={t}
-        usuarioId={usuarioId}
-        requiereLogin={requiereLogin}
-        fase={faseActual}
-        ficha={ficha}
-      />
+      {!esFaseSelector && (
+        <Sidebar
+          idioma={idioma}
+          onCambiarIdioma={onCambiarIdioma}
+          t={t}
+          usuarioId={usuarioId}
+          requiereLogin={requiereLogin}
+          fase={faseActual}
+          ficha={ficha}
+        />
+      )}
 
       {/* Fases 1, 3 (mientras dura la selección de áreas) y 4: la interfaz
           principal deja de ser el chat -- selector visual, con el chat

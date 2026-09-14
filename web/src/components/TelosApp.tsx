@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { abrirSesion, continuarSesion, enviarMensaje } from "@/lib/apiCliente";
+import { abrirSesion, confirmarSeleccion, continuarSesion, enviarMensaje } from "@/lib/apiCliente";
 import { TEXTOS } from "@/lib/i18n";
 import { leerEventosSSE } from "@/lib/sse";
 import type { CandidatoProposito, FichaSnapshot, Idioma, Mensaje } from "@/lib/types";
@@ -248,7 +248,8 @@ function Conversacion({
     [idioma, t],
   );
 
-  // Fases 1, 3 y 4 cierran por selección visual (ArbolSelector,
+  // Fases 1, 2 (al elegir un candidato de propósito), 3 y 4 cierran por
+  // selección visual/tarjeta (ArbolSelector, CandidatosProposito,
   // ValidacionSelector, SistemaSelector), fuera del pipeline de texto de
   // procesarTurno -- así que su cascada hacia la fase siguiente nunca se
   // dispara sola. Mismo criterio que agents/orquestador.py::SesionTelos.
@@ -281,6 +282,37 @@ function Conversacion({
       setCargando(false);
     },
     [idioma, t],
+  );
+
+  // Elegir una tarjeta de candidato ES el evento de "Fase 2 completa" --
+  // no hace falta otro turno de chat para que el Sintetizador "confirme"
+  // algo que la interfaz ya sabe con certeza (pedido explícito del dueño
+  // del producto, 14/09/2026: la interfaz ya manda los eventos que
+  // marcan el paso entre fases). Mismo endpoint determinístico que
+  // ArbolSelector/ValidacionSelector/SistemaSelector ya usan
+  // (POST /api/seleccion/confirmar, ver agents/orquestador.py::
+  // SesionTelos.confirmar_proposito_elegido) -- nunca pasa por
+  // enviarMensaje/el Sintetizador de vuelta. "Combinar partes de varios"
+  // sigue siendo texto libre por el ChatInput de siempre, sin pasar por
+  // acá -- esta función es solo para el click directo en una tarjeta.
+  const elegirProposito = useCallback(
+    async (frase: string) => {
+      setCandidatosPendientes([]);
+      setCargando(true);
+      try {
+        const resultado = await confirmarSeleccion({ fase: 2, nodoId: frase, idioma });
+        if (resultado.cerrado) {
+          await iniciarFaseSiguiente(resultado.mensaje_cierre ?? undefined);
+        } else {
+          setCargando(false);
+        }
+      } catch (e) {
+        console.error("No se pudo confirmar el propósito elegido:", e);
+        setMensajes((prev) => [...prev, { rol: "assistant", texto: t.error_generico }]);
+        setCargando(false);
+      }
+    },
+    [idioma, t, iniciarFaseSiguiente],
   );
 
   const datos = (ficha?.actual?.datos ?? {}) as { proposito?: string; sistema?: string };
@@ -371,7 +403,7 @@ function Conversacion({
                 idioma={idioma}
                 candidatos={candidatosPendientes}
                 deshabilitado={cargando}
-                onElegir={procesarTurno}
+                onElegir={elegirProposito}
               />
             ) : (
               opcionesPendientes.length > 0 && (

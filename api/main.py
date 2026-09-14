@@ -287,13 +287,18 @@ def sugerir_categoria_endpoint(
 def confirmar_seleccion(
     body: ConfirmarSeleccionRequest, usuario_id: str = Depends(obtener_usuario_actual)
 ) -> SeleccionConfirmadaResponse:
-    """Fases 1, 3 y 4: confirma una opción de un árbol o selector de
-    categorías -- nunca pasa por el camino de texto libre (ver
-    agents/orquestador.py::SesionTelos.confirmar_seleccion/
+    """Fases 1, 2, 3 y 4: confirma una opción de un árbol, un candidato
+    de propósito o un selector de categorías -- nunca pasa por el
+    camino de texto libre (ver agents/orquestador.py::SesionTelos.
+    confirmar_seleccion/confirmar_proposito_elegido/
     confirmar_seleccion_validacion/confirmar_seleccion_sistema, que
-    derivan `ruta`/`dimensiones` de la taxonomía, nunca del cliente).
-    Fase 3 nunca cierra acá -- ver docstring de
-    SeleccionConfirmadaResponse; su cierre real pasa por
+    derivan `ruta`/`dimensiones`/`frase` de la taxonomía o de lo que de
+    verdad se le presentó a la persona, nunca del cliente sin validar).
+    Fase 2 y Fase 4 SÍ pueden cerrar acá mismo (elegir un candidato o
+    completar las 4 preguntas fijas ya es la fase completa, sin
+    ambigüedad); Fase 1 cierra por un endpoint separado
+    (`POST /api/seleccion/cerrar-fase1`) y Fase 3 nunca cierra acá -- ver
+    docstring de SeleccionConfirmadaResponse; su cierre real pasa por
     `POST /api/sesion/mensaje` una vez en etapa "refinando". Mismo lock
     por (usuario_id, idioma) que _eventos_turno, para serializar
     selecciones concurrentes del mismo usuario contra la misma
@@ -308,6 +313,11 @@ def confirmar_seleccion(
                 resultado = sesion.confirmar_seleccion_sistema(body.pregunta_id, body.nodo_id, body.detalle_libre)
             elif body.fase == 3:
                 resultado = sesion.confirmar_seleccion_validacion(body.nodo_id, body.detalle_libre)
+            elif body.fase == 2:
+                # nodo_id lleva la frase del candidato elegido -- mismo
+                # campo reusado para "qué opción se eligió" en cualquier
+                # forma, ver docstring de ConfirmarSeleccionRequest.
+                resultado = sesion.confirmar_proposito_elegido(body.nodo_id)
             else:
                 resultado = sesion.confirmar_seleccion(body.nodo_id, body.detalle_libre)
         except ValueError as e:

@@ -133,6 +133,20 @@ _MENSAJE_CIERRE_SELECCION = {
     "en": "I've got real material to reflect back to you now. Let's move to the next step.",
 }
 
+# Fase 2: cierre 100% determinístico cuando la persona ELIGE una tarjeta
+# (ver confirmar_proposito_elegido) -- a diferencia de "combinar partes
+# de varios" (que sigue siendo texto libre, necesita al Sintetizador de
+# verdad para redactar la mezcla), clickear una tarjeta ya es un evento
+# inequívoco: no hace falta otra invocación real a Bedrock para que el
+# modelo "confirme" algo que la interfaz ya sabe con certeza. Pedido
+# explícito del dueño del producto (14/09/2026): la propia interfaz ya
+# manda el evento de fase completa, el código no tiene que volver a
+# preguntarle al modelo si está listo.
+_MENSAJE_CIERRE_PROPOSITO = {
+    "es": "Guardado. Ahora vamos a convertir este propósito en un sistema concreto.",
+    "en": "Saved. Now let's turn this purpose into a concrete system.",
+}
+
 # Fase 4: cierre 100% determinístico, sin invocar al modelo -- a
 # diferencia de Fase 1 (que sí necesita UNA síntesis en lenguaje natural
 # de selecciones variadas), acá son exactamente 4 respuestas fijas, así
@@ -649,6 +663,15 @@ class SesionTelos:
         # agente de esta fase no llamó (o no tiene) la tool, nunca
         # arrastra un valor de una fase anterior.
         self._contenedor_candidatos = list(contenedor_candidatos)
+        # Persistido (no solo en memoria) para que confirmar_proposito_elegido
+        # pueda validar el click de la persona contra lo que de verdad se
+        # le presentó, incluso si la sesión en memoria expiró entre medio
+        # (TTL de 10 min, ver api/main.py::_obtener_sesion) -- mismo
+        # backend/criterio que el progreso de Fases 1 y 3 (tools/
+        # selecciones_estructuradas.py, un blob transitorio por
+        # usuario_id, se sobreescribe siempre con lo último).
+        if fase == 2 and self._contenedor_candidatos:
+            guardar_selecciones_estructuradas(self.usuario_id, {"fase": 2, "candidatos": self._contenedor_candidatos})
         if not contenedor_informe:
             # Mismo fallback que _invocar_una_vez -- ver ese comentario.
             texto_fallback = _texto_ultimo_mensaje_asistente(agente)
@@ -833,6 +856,47 @@ class SesionTelos:
         resultado = agente(prompt)
         registrar_invocacion(self.usuario_id)
         return _texto_de_resultado(resultado)
+
+    def confirmar_proposito_elegido(self, frase: str) -> dict:
+        """Fase 2: cierre explícito por click en una tarjeta de candidato
+        (ver Sintesis/CandidatosProposito.tsx) -- mismo criterio que
+        confirmar_seleccion/confirmar_seleccion_sistema en Fases 1/4:
+        la interfaz ya mandó un evento inequívoco ("elegí este propósito"),
+        así que el código cierra directo, sin gastar otra invocación real
+        a Bedrock para que el modelo "confirme" algo que ya es un hecho.
+        Pedido explícito del dueño del producto (14/09/2026): la propia
+        interfaz ya da los eventos que marcan el paso entre fases, no
+        hace falta una capa de orquestación adivinando si un turno de
+        chat "está listo".
+
+        `frase` tiene que coincidir con uno de los candidatos que el
+        Sintetizador presentó de verdad en su última invocación (ver
+        _invocar_fase_directo, que persiste `contenedor_candidatos` acá
+        mismo) -- nunca se confía en lo que mande el cliente sin
+        validar, mismo criterio que el resto del proyecto. "Combinar
+        partes de varios" sigue sin pasar por acá: eso es texto libre
+        real (una redacción nueva, no una de las ya ofrecidas), así que
+        sigue yendo por enviar_mensaje al Sintetizador de verdad.
+
+        Levanta ValueError si la fase actual no es 2, o si `frase` no
+        coincide con ningún candidato presentado."""
+        if self.fase_actual != 2:
+            raise ValueError(f"confirmar_proposito_elegido solo aplica en Fase 2 -- fase actual es {self.fase_actual}")
+        progreso = leer_selecciones_estructuradas(self.usuario_id)
+        candidatos = (progreso or {}).get("candidatos") or []
+        frases_validas = {c.get("frase") for c in candidatos}
+        if frase not in frases_validas:
+            raise ValueError(f"frase no coincide con ningún candidato presentado: {frase!r}")
+        guardar_ficha_usuario_fusionada(
+            self.usuario_id,
+            {"proposito": frase},
+            fase=2,
+            motivo_version="Propósito elegido -- cierre determinado por código",
+            turn_id=str(uuid.uuid4()),
+        )
+        borrar_selecciones_estructuradas(self.usuario_id)
+        self.fase_actual = 3
+        return {"cerrado": True, "mensaje_cierre": _MENSAJE_CIERRE_PROPOSITO[self.idioma]}
 
     def confirmar_seleccion_sistema(self, pregunta_id: str, nodo_id: str, detalle_libre: str | None = None) -> dict:
         """Fase 4: confirma la respuesta a UNA de las 4 preguntas fijas

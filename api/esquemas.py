@@ -16,18 +16,22 @@ class EnviarMensajeRequest(BaseModel):
 
 
 class ConfirmarSeleccionRequest(BaseModel):
-    """Fases 1, 3 y 4: una opción confirmada en un árbol o selector de
-    categorías (tools/categorias_ikigai.py, tools/categorias_validacion.py
-    o tools/categorias_sistema.py -- ver agents/orquestador.py::
-    SesionTelos.confirmar_seleccion/confirmar_seleccion_validacion/
-    confirmar_seleccion_sistema). `ruta`/`dimensiones` NO se mandan desde
-    acá -- el backend las deriva de la taxonomía, nunca confía en lo que
-    mande el cliente. `nodo_id` sirve tanto para un id de nodo de árbol
-    (Fases 1/4) como para un `area_id` del selector plano de Fase 3 --
-    mismo campo, incluso el shape del origen sea distinto, porque
-    conceptualmente es siempre "qué opción se eligió". `pregunta_id` es
-    obligatorio solo cuando `fase=4` (cuál de las 4 preguntas fijas está
-    respondiendo -- ver tools/categorias_sistema.py::PREGUNTAS_SISTEMA_IDS)."""
+    """Fases 1, 2, 3 y 4: una opción confirmada en un árbol, un candidato
+    de propósito o un selector de categorías (tools/categorias_ikigai.py,
+    tools/categorias_validacion.py o tools/categorias_sistema.py -- ver
+    agents/orquestador.py::SesionTelos.confirmar_seleccion/
+    confirmar_proposito_elegido/confirmar_seleccion_validacion/
+    confirmar_seleccion_sistema). `ruta`/`dimensiones`/el contenido real
+    del candidato NO se mandan desde acá -- el backend los deriva de la
+    taxonomía o de lo que de verdad se le presentó a la persona, nunca
+    confía en lo que mande el cliente. `nodo_id` sirve tanto para un id
+    de nodo de árbol (Fase 1) como para un `area_id` del selector plano
+    de Fase 3, la respuesta elegida de Fase 4, o la `frase` de un
+    candidato de propósito de Fase 2 -- mismo campo, incluso el shape
+    del origen sea distinto, porque conceptualmente es siempre "qué
+    opción se eligió". `pregunta_id` es obligatorio solo cuando
+    `fase=4` (cuál de las 4 preguntas fijas está respondiendo -- ver
+    tools/categorias_sistema.py::PREGUNTAS_SISTEMA_IDS)."""
 
     fase: int = 1
     nodo_id: str

@@ -692,28 +692,36 @@ class SesionTelos:
         # pero olvidó llamar a presentar_candidatos_proposito (bug
         # recurrente en producción: la interfaz recibe texto largo pero
         # candidatos=[], y el selector visual queda vacío), forzar un
-        # reintento con un nudge explícito. Una sola vez por invocación,
-        # usando el mismo agente (ya tiene la ficha en contexto) -- no
-        # re-lee la ficha ni reinicia la conversación.
-        if fase == 2 and not self._contenedor_candidatos and contenedor_informe:
+        # reintento con un nudge explícito. La condición original era
+        # `not self._contenedor_candidatos and contenedor_informe`, pero
+        # eso dejaba sin guard el caso donde el modelo tampoco llamó a
+        # informar_al_orquestador (ambas tools omitidas) -- en ese caso
+        # contenedor_informe=[] y el guard nunca disparaba. Ahora dispara
+        # siempre que fase==2 y candidatos estén vacíos, sin importar el
+        # estado de contenedor_informe.
+        if fase == 2 and not self._contenedor_candidatos:
             _NUDGE_CANDIDATOS = {
                 "es": (
-                    "Tu respuesta llegó bien, pero la tool "
-                    "presentar_candidatos_proposito no fue llamada -- "
-                    "sin eso la interfaz no puede mostrar los botones de "
-                    "selección y la persona ve la pantalla vacía. "
-                    "Llamá ahora a presentar_candidatos_proposito con la "
-                    "misma lista de candidatos que acabás de describir, "
-                    "sin cambiar nada más."
+                    "IMPORTANTE: no llamaste a la tool "
+                    "presentar_candidatos_proposito. Sin esa llamada la "
+                    "interfaz no puede mostrar los botones de selección y "
+                    "la persona ve la pantalla completamente vacía. "
+                    "Llamá AHORA a presentar_candidatos_proposito con la "
+                    "lista de candidatos que ya describiste (2 o 3 items, "
+                    "cada uno con 'frase', 'explicacion' y 'ejemplo'). "
+                    "Después llamá a informar_al_orquestador si todavía "
+                    "no lo hiciste."
                 ),
                 "en": (
-                    "Your response came through fine, but the "
-                    "presentar_candidatos_proposito tool was not called -- "
-                    "without it the UI cannot show the selection buttons "
-                    "and the person sees a blank screen. "
-                    "Call presentar_candidatos_proposito now with the same "
-                    "list of candidates you just described, without "
-                    "changing anything else."
+                    "IMPORTANT: you did not call the "
+                    "presentar_candidatos_proposito tool. Without it the "
+                    "UI cannot show the selection buttons and the person "
+                    "sees a completely blank screen. "
+                    "Call presentar_candidatos_proposito NOW with the "
+                    "list of candidates you already described (2 or 3 "
+                    "items, each with 'frase', 'explicacion' and "
+                    "'ejemplo'). Then call informar_al_orquestador if you "
+                    "haven't yet."
                 ),
             }
             nudge = _NUDGE_CANDIDATOS.get(self.idioma, _NUDGE_CANDIDATOS["en"])
@@ -721,6 +729,10 @@ class SesionTelos:
                 agente(nudge)
                 registrar_invocacion(self.usuario_id)
                 self._contenedor_candidatos = list(contenedor_candidatos)
+                # Capturar también el informe si el nudge lo generó por primera vez
+                if not contenedor_informe:
+                    texto_nudge = _texto_ultimo_mensaje_asistente(agente)
+                    contenedor_informe.append({"texto": texto_nudge, "cerrado": False, "dato_nuevo": None})
             except Exception:  # noqa: BLE001
                 logger.warning("Fase 2: reintento de presentar_candidatos_proposito falló")
 
@@ -888,7 +900,25 @@ class SesionTelos:
         material = self._sintetizar_selecciones(selecciones_por_convergencia, progreso.get("valores") or [])
         guardar_ficha_usuario_fusionada(
             self.usuario_id,
-            {"materia_prima": material},
+            {
+                "materia_prima": material,
+                # Guardados junto con la materia prima para que la
+                # interfaz pueda reconstruir el gráfico Ikigai en
+                # Fase 5 (Sostener) sin necesidad de re-leer las
+                # selecciones estructuradas (que se borran justo abajo).
+                # "cobertura": cuántos nodos por dimensión L/G/V/N.
+                # "selecciones_ikigai": los nodos elegidos con su label
+                # y dimensiones. "valores_ikigai": valores elegidos.
+                "cobertura_ikigai": dict(progreso.get("cobertura") or {}),
+                "selecciones_ikigai": [
+                    {
+                        "hojaLabel": s.get("label", ""),
+                        "dims": s.get("dimensiones", []),
+                    }
+                    for s in selecciones_por_convergencia
+                ],
+                "valores_ikigai": list(progreso.get("valores") or []),
+            },
             fase=1,
             motivo_version="Selecciones del árbol Ikigai -- cierre determinado por código",
             turn_id=str(uuid.uuid4()),

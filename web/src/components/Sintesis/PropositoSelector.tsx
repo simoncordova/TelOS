@@ -11,6 +11,7 @@ const TEXTOS = {
     cerrarSesion: "Cerrar sesión",
     titulo: "Elige tu propósito",
     cargando: "Armando tus propósitos candidatos…",
+    procesando: "Procesando tu respuesta…",
     ejemploLabel: "Ejemplo:",
     escribirTuyo: "Escribir el mío",
     combinarPlaceholder: "Escribí tu propia versión…",
@@ -21,6 +22,7 @@ const TEXTOS = {
     cerrarSesion: "Sign out",
     titulo: "Choose your purpose",
     cargando: "Putting together your candidate purposes…",
+    procesando: "Processing your response…",
     ejemploLabel: "Example:",
     escribirTuyo: "Write your own version",
     combinarPlaceholder: "Write your own version…",
@@ -65,7 +67,12 @@ export function PropositoSelector({
     onEscribirLibre(texto);
   }
 
-  const mostrarCargando = cargando && candidatos.length === 0;
+  // Three distinct states:
+  // 1. cargando=true, candidatos=[] → initial fetch or after free-text clears cards
+  // 2. cargando=true, candidatos>0 → user just clicked a card (processing the choice)
+  // 3. cargando=false → idle, show whatever candidatos we have
+  const cargandoInicial = cargando && candidatos.length === 0;
+  const procesando = cargando; // covers both cases — buttons disabled, spinner shown
 
   return (
     <div
@@ -165,13 +172,56 @@ export function PropositoSelector({
           {t.titulo}
         </h1>
 
-        {/* ── loading state ── */}
-        {mostrarCargando && (
-          <p style={{ margin: 0, fontSize: 13, color: "#a8a096" }}>{t.cargando}</p>
+        {/* ── initial loading state (no candidates yet) ── */}
+        {cargandoInicial && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 14,
+                height: 14,
+                borderRadius: "50%",
+                border: `2px solid ${ACENTO}`,
+                borderTopColor: "transparent",
+                animation: "telos-spin .7s linear infinite",
+                flexShrink: 0,
+              }}
+            />
+            <p style={{ margin: 0, fontSize: 13, color: "#a8a096" }}>{t.cargando}</p>
+          </div>
         )}
 
-        {/* ── model intro paragraph (when candidates arrived) ── */}
-        {!mostrarCargando && candidatos.length > 0 && pregunta && (
+        {/* ── processing overlay (user sent text / clicked a card) ── */}
+        {procesando && candidatos.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              background: "rgba(252,250,247,.92)",
+              border: "1px solid #e2dbd0",
+              borderRadius: 12,
+              padding: "10px 16px",
+            }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                width: 13,
+                height: 13,
+                borderRadius: "50%",
+                border: `2px solid ${ACENTO}`,
+                borderTopColor: "transparent",
+                animation: "telos-spin .7s linear infinite",
+                flexShrink: 0,
+              }}
+            />
+            <p style={{ margin: 0, fontSize: 13, color: "#6b6459" }}>{t.procesando}</p>
+          </div>
+        )}
+
+        {/* ── model intro paragraph (shown only with candidates) ── */}
+        {!procesando && candidatos.length > 0 && pregunta && (
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: "#5d564d", maxWidth: "52ch" }}>
             {pregunta}
           </p>
@@ -189,7 +239,7 @@ export function PropositoSelector({
             {/* clickable purpose button */}
             <button
               type="button"
-              disabled={cargando}
+              disabled={procesando}
               onClick={() => onElegir(candidato.frase)}
               style={{
                 width: "100%",
@@ -198,15 +248,15 @@ export function PropositoSelector({
                 border: "1.5px solid #d8d0c4",
                 borderRadius: 16,
                 padding: "18px 22px",
-                cursor: cargando ? "default" : "pointer",
-                opacity: cargando ? 0.55 : 1,
+                cursor: procesando ? "default" : "pointer",
+                opacity: procesando ? 0.55 : 1,
                 display: "flex",
                 flexDirection: "column",
                 gap: 6,
                 transition: "border-color .15s, box-shadow .15s",
               }}
               onMouseEnter={(e) => {
-                if (!cargando) {
+                if (!procesando) {
                   (e.currentTarget as HTMLButtonElement).style.borderColor = "#1b1917";
                   (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 2px 10px rgba(27,25,23,.08)";
                 }
@@ -273,88 +323,87 @@ export function PropositoSelector({
           </div>
         ))}
 
-        {/* ── "write your own" option ── */}
-        {!libreAbierto ? (
-          <button
-            type="button"
-            disabled={cargando}
-            onClick={toggleLibre}
-            style={{
-              width: "100%",
-              textAlign: "left",
-              background: "transparent",
-              border: "1.5px dashed #c8c0b4",
-              borderRadius: 16,
-              padding: "18px 22px",
-              cursor: cargando ? "default" : "pointer",
-              opacity: cargando ? 0.55 : 1,
-              fontFamily: "var(--font-instrument-sans), system-ui, sans-serif",
-              fontSize: "clamp(14px,1.6vw,17px)",
-              color: "#6b6459",
-              transition: "border-color .15s",
-              animation: `telos-rise .45s ease both`,
-              animationDelay: `${candidatos.length * 70}ms`,
-            }}
-            onMouseEnter={(e) => {
-              if (!cargando) (e.currentTarget as HTMLButtonElement).style.borderColor = "#8c7e6e";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "#c8c0b4";
-            }}
-          >
-            {t.escribirTuyo}…
-          </button>
-        ) : (
-          <div
-            style={{
-              border: "1.5px solid #1b1917",
-              borderRadius: 16,
-              background: "#fcfaf7",
-              padding: "14px 16px",
-              display: "flex",
-              gap: 12,
-              flexWrap: "wrap",
-              alignItems: "center",
-              animation: "telos-rise .25s ease both",
-            }}
-          >
-            <input
-              autoFocus
-              value={libre}
-              onChange={(e) => setLibre(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") enviarLibre();
-                if (e.key === "Escape") setLibreAbierto(false);
-              }}
-              disabled={cargando}
-              placeholder={t.combinarPlaceholder}
-              style={{
-                flex: 1,
-                minWidth: 200,
-                border: "none",
-                background: "transparent",
-                outline: "none",
-                fontSize: 14.5,
-                color: "#1b1917",
-              }}
-            />
+        {/* ── "write your own" option — hidden while processing ── */}
+        {!procesando && (
+          !libreAbierto ? (
             <button
-              onClick={enviarLibre}
-              disabled={cargando || !libre.trim()}
+              type="button"
+              onClick={toggleLibre}
               style={{
-                border: "1px solid #1b1917",
-                background: "#1b1917",
-                color: "#f7f4ef",
-                borderRadius: 999,
-                padding: "10px 20px",
-                fontSize: 13,
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "1.5px dashed #c8c0b4",
+                borderRadius: 16,
+                padding: "18px 22px",
                 cursor: "pointer",
-                opacity: cargando || !libre.trim() ? 0.6 : 1,
+                fontFamily: "var(--font-instrument-sans), system-ui, sans-serif",
+                fontSize: "clamp(14px,1.6vw,17px)",
+                color: "#6b6459",
+                transition: "border-color .15s",
+                animation: `telos-rise .45s ease both`,
+                animationDelay: `${candidatos.length * 70}ms`,
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "#8c7e6e";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "#c8c0b4";
               }}
             >
-              {t.combinarBoton}
+              {t.escribirTuyo}…
             </button>
-          </div>
+          ) : (
+            <div
+              style={{
+                border: "1.5px solid #1b1917",
+                borderRadius: 16,
+                background: "#fcfaf7",
+                padding: "14px 16px",
+                display: "flex",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+                animation: "telos-rise .25s ease both",
+              }}
+            >
+              <input
+                autoFocus
+                value={libre}
+                onChange={(e) => setLibre(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") enviarLibre();
+                  if (e.key === "Escape") setLibreAbierto(false);
+                }}
+                placeholder={t.combinarPlaceholder}
+                style={{
+                  flex: 1,
+                  minWidth: 200,
+                  border: "none",
+                  background: "transparent",
+                  outline: "none",
+                  fontSize: 14.5,
+                  color: "#1b1917",
+                }}
+              />
+              <button
+                onClick={enviarLibre}
+                disabled={!libre.trim()}
+                style={{
+                  border: "1px solid #1b1917",
+                  background: "#1b1917",
+                  color: "#f7f4ef",
+                  borderRadius: 999,
+                  padding: "10px 20px",
+                  fontSize: 13,
+                  cursor: "pointer",
+                  opacity: !libre.trim() ? 0.6 : 1,
+                }}
+              >
+                {t.combinarBoton}
+              </button>
+            </div>
+          )
         )}
       </main>
     </div>

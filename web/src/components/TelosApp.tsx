@@ -243,9 +243,9 @@ function Conversacion({
   // flujo de Fase 1) -- no lo usamos como prerequisito para mostrar los
   // selectores visuales.
   const esFaseSelector =
-    (ficha != null && faseActual === 1) ||
-    (ficha != null && faseActual === 3 && !fase3EnRefinado) ||
-    (ficha != null && faseActual === 4);
+    faseActual === 1 ||
+    (faseActual === 3 && !fase3EnRefinado) ||
+    faseActual === 4;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden md:flex-row">
@@ -267,16 +267,11 @@ function Conversacion({
           que la propia fase lo active (Fase 3, ver ValidacionSelector).
           El resto de las fases (2, 3 ya en "refinando", 5) sigue 100%
           igual que siempre. */}
-      {ficha && faseActual === 1 ? (
-        // Sin overflow-hidden acá a propósito: en mobile, ArbolSelector
-        // pasa a permitir scroll vertical interno (ver su propio media
-        // query) porque el diseño de una sola pantalla sin scroll no
-        // entra en una pantalla angosta -- si este contenedor lo
-        // recortara antes, ese scroll interno no serviría de nada.
+      {faseActual === 1 ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ArbolSelector idioma={idioma} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
         </main>
-      ) : ficha && faseActual === 3 && !fase3EnRefinado ? (
+      ) : faseActual === 3 && !fase3EnRefinado ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ValidacionSelector
             idioma={idioma}
@@ -287,8 +282,7 @@ function Conversacion({
             }}
           />
         </main>
-      ) : ficha && faseActual === 4 ? (
-        // Sin overflow-hidden acá por el mismo motivo que Fase 1.
+      ) : faseActual === 4 ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <SistemaSelector idioma={idioma} proposito={datos.proposito} onCerrado={iniciarFaseSiguiente} />
         </main>

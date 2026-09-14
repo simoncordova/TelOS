@@ -16,7 +16,6 @@ import { ResumenCard } from "./Fase5Summary/ResumenCard";
 import { JourneyMap } from "./JourneyMap/JourneyMap";
 import type { Festejo } from "./Notifications/Celebracion";
 import { Celebracion } from "./Notifications/Celebracion";
-import { BienvenidaCard } from "./Onboarding/BienvenidaCard";
 import { ArbolSelector } from "./Seleccion/ArbolSelector";
 import { SistemaSelector } from "./Seleccion/SistemaSelector";
 import { ValidacionSelector } from "./Seleccion/ValidacionSelector";
@@ -40,6 +39,22 @@ export function TelosApp({
   return (
     <Conversacion key={idioma} idioma={idioma} onCambiarIdioma={setIdioma} usuarioId={usuarioId} requiereLogin={requiereLogin} />
   );
+}
+
+// Fases 0, 1 y 4 nunca renderizan el chat (siempre un selector visual,
+// ver esFaseChat más abajo) -- un mensaje de texto que llega para
+// alguna de esas fases no tiene dónde mostrarse en esa vista. Bug real
+// reportado (14/09/2026): el aviso fijo "¿cómo te llamas?" (fase 0, el
+// primer evento de una persona sin nombre guardado) igual se agregaba a
+// `mensajes`, invisible mientras se mostraba ArbolSelector -- pero una
+// vez que la persona avanzaba a una fase de chat de verdad (Fase 2), el
+// historial completo se renderizaba de una, mezclando ese aviso viejo y
+// fuera de contexto con la respuesta real del Sintetizador. No agregar
+// a `mensajes` un texto que llega para una fase que nunca lo muestra,
+// en vez de dejarlo ahí a la espera de una fase de chat futura que lo
+// reviva sin contexto.
+function esFaseSoloSelector(fase: number): boolean {
+  return fase === 0 || fase === 1 || fase === 4;
 }
 
 // Port 1:1 del script principal de ui/app.py -- misma secuencia
@@ -130,7 +145,7 @@ function Conversacion({
         if (cancelado) return;
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[] };
-          setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
         } else if (evento === "ficha") {
@@ -168,7 +183,7 @@ function Conversacion({
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[] };
-          setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           faseFinal = d.fase;
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
@@ -224,7 +239,7 @@ function Conversacion({
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[] };
-          setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
         } else if (evento === "ficha") {
@@ -312,8 +327,6 @@ function Conversacion({
           />
 
           <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {ficha && !nombre && <BienvenidaCard t={t} />}
-
             {ficha && (
               <JourneyMap idioma={idioma} t={t} faseActual={faseActual} proposito={datos.proposito} sistema={datos.sistema} />
             )}

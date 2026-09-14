@@ -1,5 +1,6 @@
 import type { Textos } from "@/lib/i18n";
 import { formatear } from "@/lib/formato";
+import { parsearSistema } from "@/lib/parseSistema";
 import type { Idioma } from "@/lib/types";
 import { AccionesCuenta } from "../AccionesCuenta";
 
@@ -32,6 +33,7 @@ export function CabeceraFase({
   usuarioId,
   requiereLogin,
   proposito,
+  sistema,
   onAbrirDetalles,
 }: {
   idioma: Idioma;
@@ -40,8 +42,10 @@ export function CabeceraFase({
   usuarioId: string | null;
   requiereLogin: boolean;
   proposito: string | null | undefined;
+  sistema: string | null | undefined;
   onAbrirDetalles: () => void;
 }) {
+  const filasSistema = sistema ? parsearSistema(sistema) : [];
   return (
     <header
       style={{
@@ -94,6 +98,38 @@ export function CabeceraFase({
           <p style={{ margin: "2px 0 0", fontFamily: "var(--font-instrument-serif), Georgia, serif", fontSize: "clamp(17px,2.1vw,25px)", lineHeight: 1.2, color: "#1b1917" }}>
             {proposito}
           </p>
+        </div>
+      )}
+
+      {/* "Mi sistema" -- tercer objeto persistente además del propósito
+          (ver docstring del módulo): una vez que existe, la persona lo
+          tiene siempre a la vista en Construir y Sostener, no solo la
+          primera vez que SistemaSelector lo arma. Filas compactas
+          (chips), no la lista completa que ya vive en PanelDetalles --
+          acá es una referencia rápida, no el detalle. */}
+      {filasSistema.length > 0 && (
+        <div>
+          <div style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".2em", textTransform: "uppercase", color: "#6b6459" }}>
+            {t.tu_sistema_label}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+            {filasSistema.map(([etiqueta, valor], i) => (
+              <span
+                key={i}
+                style={{
+                  border: "1px solid #e2dbd0",
+                  background: "#fcfaf7",
+                  borderRadius: 999,
+                  padding: "4px 11px",
+                  fontSize: 12,
+                  color: "#3b3630",
+                }}
+              >
+                {etiqueta ? <strong style={{ fontWeight: 600 }}>{etiqueta}: </strong> : null}
+                {valor}
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </header>

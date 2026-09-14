@@ -6,9 +6,25 @@ import type { Textos } from "@/lib/i18n";
 import { NOMBRES_FASE } from "@/lib/i18n";
 import type { Idioma } from "@/lib/types";
 
-// Port del "mapa del camino" de ui/app.py: las 5 fases como paradas,
-// cada una clickeable para ver lo que ya se definió ahí.
-// Estilo actualizado al sistema visual warm de la maqueta.
+// Port del "mapa del camino" de ui/app.py -- ya NO son 5 paradas (una
+// por fase interna), son los 4 MOMENTOS del viaje que ve la persona
+// (Descubrir/Entender/Construir/Sostener, ver NOMBRES_FASE en
+// web/src/lib/i18n.ts). Pedido explícito del dueño del producto
+// (14/09/2026): "la experiencia no debe sentirse como cuatro fases" --
+// Fase 2 (Sintetizador) y Fase 3 (Coach de Validación) son, para la
+// persona, un solo momento ("Entender" tu propósito: primero se arma,
+// después se pone a prueba), así que comparten un mismo segmento acá en
+// vez de dos paradas separadas. La fase interna (1-5) sigue siendo la
+// fuente de verdad en `faseActual` -- este componente solo agrupa cómo
+// se muestra, nunca cambia qué fase es.
+type Momento = { id: string; fases: number[] };
+const MOMENTOS: Momento[] = [
+  { id: "descubrir", fases: [1] },
+  { id: "entender", fases: [2, 3] },
+  { id: "construir", fases: [4] },
+  { id: "sostener", fases: [5] },
+];
+
 export function JourneyMap({
   idioma,
   t,
@@ -22,15 +38,7 @@ export function JourneyMap({
   proposito: string | null | undefined;
   sistema: string | null | undefined;
 }) {
-  const [abierta, setAbierta] = useState<number | null>(null);
-
-  const FASE_LABELS: Record<number, string> = {
-    1: "Explorar",
-    2: "Síntesis",
-    3: "Validar",
-    4: "Sistema",
-    5: "Check-in",
-  };
+  const [abierto, setAbierto] = useState<string | null>(null);
 
   return (
     <div
@@ -42,11 +50,13 @@ export function JourneyMap({
         alignItems: "center",
       }}
     >
-      {[1, 2, 3, 4, 5].map((numeroFase, idx) => {
-        const completada = numeroFase < faseActual;
-        const activa = numeroFase === faseActual;
+      {MOMENTOS.map((momento, idx) => {
+        const primeraFase = momento.fases[0];
+        const ultimaFase = momento.fases[momento.fases.length - 1];
+        const completado = faseActual > ultimaFase;
+        const activo = faseActual >= primeraFase && faseActual <= ultimaFase;
         return (
-          <div key={numeroFase} style={{ position: "relative", flex: 1 }}>
+          <div key={momento.id} style={{ position: "relative", flex: 1 }}>
             {/* Línea conectora */}
             {idx > 0 && (
               <div
@@ -56,22 +66,22 @@ export function JourneyMap({
                   top: "50%",
                   width: 4,
                   height: 1,
-                  background: completada ? "#a4552f" : "#e2dbd0",
+                  background: completado ? "#a4552f" : "#e2dbd0",
                   transform: "translateY(-50%)",
                 }}
               />
             )}
             <button
               type="button"
-              onClick={() => setAbierta((v) => (v === numeroFase ? null : numeroFase))}
+              onClick={() => setAbierto((v) => (v === momento.id ? null : momento.id))}
               style={{
                 width: "100%",
-                border: `1px solid ${activa ? "#a4552f" : completada ? "#c9bfb0" : "#e2dbd0"}`,
-                background: activa ? "rgba(164,85,47,.08)" : completada ? "#f5f1ea" : "transparent",
+                border: `1px solid ${activo ? "#a4552f" : completado ? "#c9bfb0" : "#e2dbd0"}`,
+                background: activo ? "rgba(164,85,47,.08)" : completado ? "#f5f1ea" : "transparent",
                 borderRadius: 999,
                 padding: "6px 8px",
                 fontSize: 11,
-                color: activa ? "#a4552f" : completada ? "#5d564d" : "#a8a096",
+                color: activo ? "#a4552f" : completado ? "#5d564d" : "#a8a096",
                 cursor: "pointer",
                 fontFamily: "var(--font-ibm-plex-mono), monospace",
                 letterSpacing: ".1em",
@@ -82,9 +92,9 @@ export function JourneyMap({
                 transition: "all .25s ease",
               }}
             >
-              {completada ? "✓ " : activa ? "· " : ""}{FASE_LABELS[numeroFase]}
+              {completado ? "✓ " : activo ? "· " : ""}{NOMBRES_FASE[idioma][primeraFase]}
             </button>
-            {abierta === numeroFase && (
+            {abierto === momento.id && (
               <div
                 style={{
                   position: "absolute",
@@ -112,12 +122,12 @@ export function JourneyMap({
                     color: "#a4552f",
                   }}
                 >
-                  {NOMBRES_FASE[idioma][numeroFase]}
+                  {NOMBRES_FASE[idioma][primeraFase]}
                 </p>
                 <p style={{ margin: 0, lineHeight: 1.5, color: "#5d564d" }}>
-                  {numeroFase === 1
+                  {momento.id === "descubrir"
                     ? t.camino_peek_fase1
-                    : numeroFase === 2 || numeroFase === 3
+                    : momento.id === "entender"
                       ? proposito || t.camino_peek_vacio
                       : sistema || t.camino_peek_vacio}
                 </p>

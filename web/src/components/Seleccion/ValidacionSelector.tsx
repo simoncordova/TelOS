@@ -29,7 +29,7 @@ const MARKS: [string, string][] = [
 
 const TEXTOS = {
   es: {
-    faseLabel: "Fase 3 · Coach de validación",
+    faseLabel: "Entender · pon a prueba tu propósito",
     cerrarSesion: "Cerrar sesión",
     propositoLabel: "El propósito que vamos a validar",
     kickerEvidencia: "01 · Evidencia pasada",
@@ -58,7 +58,7 @@ const TEXTOS = {
     error: "No se pudo guardar. Probá de nuevo.",
   },
   en: {
-    faseLabel: "Phase 3 · Validation coach",
+    faseLabel: "Understand · put your purpose to the test",
     cerrarSesion: "Sign out",
     propositoLabel: "The purpose we're going to validate",
     kickerEvidencia: "01 · Past evidence",

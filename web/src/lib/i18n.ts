@@ -1,12 +1,20 @@
-// Port 1:1 de _TEXTOS / _NOMBRES_FASE / _ICONOS_FASE en ui/app.py -- las
-// claves y el copy no cambian, esto es solo el mismo vocabulario en un
-// objeto TS en vez de un dict Python. Si el spec cambia el copy, este
-// archivo cambia junto con ui/app.py, no por separado.
 import type { Idioma } from "./types";
 
+// Vocabulario de "momento del viaje" que ve la persona -- NO el nombre
+// interno de cada fase/agente (Explorador, Sintetizador, Coach de
+// Validación, Estratega de Sistemas, Seguimiento; esos siguen existiendo
+// tal cual en agents/orquestador.py, solo dejan de mostrarse en la UI).
+// Pedido explícito del dueño del producto (14/09/2026): "la experiencia
+// no debe sentirse como cuatro fases" -- Fase 2 (Sintetizador, arma el
+// propósito) y Fase 3 (Coach de Validación, lo pone a prueba contra
+// evidencia real antes de refinarlo) son, para la persona, un solo
+// momento: "Entender" tu propósito. Por eso comparten la misma etiqueta
+// acá -- la fase interna sigue siendo 2 o 3 en el backend y en
+// "Tu evolución" (dos entradas de "Entender" en el historial, una por
+// cada cierre real), pero la persona nunca ve el número.
 export const NOMBRES_FASE: Record<Idioma, Record<number, string>> = {
-  es: { 0: "Bienvenida", 1: "Explorador", 2: "Sintetizador", 3: "Coach de Validación", 4: "Estratega de Sistemas", 5: "Seguimiento" },
-  en: { 0: "Welcome", 1: "Explorer", 2: "Synthesizer", 3: "Validation Coach", 4: "Systems Strategist", 5: "Follow-up" },
+  es: { 0: "Bienvenida", 1: "Descubrir", 2: "Entender", 3: "Entender", 4: "Construir", 5: "Sostener" },
+  en: { 0: "Welcome", 1: "Discover", 2: "Understand", 3: "Understand", 4: "Build", 5: "Sustain" },
 };
 
 export const ICONOS_FASE: Record<number, string> = {
@@ -48,6 +56,7 @@ export type Textos = {
   error_estado_texto: string;
   error_estado_boton: string;
   tu_proposito_label: string;
+  tu_sistema_label: string;
   detalles_boton: string;
   cerrar_boton: string;
   push_titulo: string;
@@ -70,7 +79,7 @@ export const TEXTOS: Record<Idioma, Textos> = {
     logout_button: "Cerrar sesión",
     connected_as: "Conectado como {usuario_id}",
     saludo_nombre: "Hola, {nombre}",
-    fase_label: "Fase actual",
+    fase_label: "Tu momento",
     racha_label: "🔥 Racha",
     checkin_toast: "🔥 ¡Racha de {racha}! Seguís sosteniendo tu sistema.",
     chat_placeholder: "Escribe aquí...",
@@ -102,6 +111,7 @@ export const TEXTOS: Record<Idioma, Textos> = {
     error_estado_texto: "Algo se rompió del lado de la app y no sabemos en qué paso estás. Tu progreso no se perdió -- recargá la página para retomarlo.",
     error_estado_boton: "Recargar",
     tu_proposito_label: "Tu propósito",
+    tu_sistema_label: "Tu sistema",
     detalles_boton: "Detalles",
     cerrar_boton: "Cerrar",
     push_titulo: "Notificaciones",
@@ -122,7 +132,7 @@ export const TEXTOS: Record<Idioma, Textos> = {
     logout_button: "Sign out",
     connected_as: "Signed in as {usuario_id}",
     saludo_nombre: "Hi, {nombre}",
-    fase_label: "Current phase",
+    fase_label: "Your stage",
     racha_label: "🔥 Streak",
     checkin_toast: "🔥 {racha}-streak! You're keeping up your system.",
     chat_placeholder: "Type here...",
@@ -154,6 +164,7 @@ export const TEXTOS: Record<Idioma, Textos> = {
     error_estado_texto: "Something broke on the app's side and we can't tell what step you're on. Your progress wasn't lost -- reload the page to pick it back up.",
     error_estado_boton: "Reload",
     tu_proposito_label: "Your purpose",
+    tu_sistema_label: "Your system",
     detalles_boton: "Details",
     cerrar_boton: "Close",
     push_titulo: "Notifications",

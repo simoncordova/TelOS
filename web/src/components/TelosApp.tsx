@@ -307,6 +307,7 @@ function Conversacion({
             usuarioId={usuarioId}
             requiereLogin={requiereLogin}
             proposito={datos.proposito}
+            sistema={datos.sistema}
             onAbrirDetalles={() => setDetallesAbierto(true)}
           />
 

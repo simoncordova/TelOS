@@ -40,7 +40,7 @@ const PASOS = ["accion", "cuando_donde", "metrica", "obstaculo"] as const;
 
 const TEXTOS = {
   es: {
-    faseLabel: "Fase 4 · Estratega de sistemas",
+    faseLabel: "Construir · tu sistema",
     cerrarSesion: "Cerrar sesión",
     ayudaChat: "¿Necesitas aclarar algo?",
     cerrarApoyo: "Cerrar apoyo",
@@ -88,7 +88,7 @@ const TEXTOS = {
     errorCarga: "No se pudo cargar. Recargá la página.",
   },
   en: {
-    faseLabel: "Phase 4 · Systems strategist",
+    faseLabel: "Build · your system",
     cerrarSesion: "Sign out",
     ayudaChat: "Need something clarified?",
     cerrarApoyo: "Close support",

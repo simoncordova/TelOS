@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { abrirSesion, continuarSesion, enviarMensaje } from "@/lib/apiCliente";
 import { TEXTOS } from "@/lib/i18n";
 import { leerEventosSSE } from "@/lib/sse";
-import type { FichaSnapshot, Idioma, Mensaje } from "@/lib/types";
+import type { CandidatoProposito, FichaSnapshot, Idioma, Mensaje } from "@/lib/types";
 import { CabeceraFase } from "./Chat/CabeceraFase";
 import { ChatInput } from "./Chat/ChatInput";
 import { ChatWindow } from "./Chat/ChatWindow";
@@ -19,6 +19,7 @@ import { Celebracion } from "./Notifications/Celebracion";
 import { ArbolSelector } from "./Seleccion/ArbolSelector";
 import { SistemaSelector } from "./Seleccion/SistemaSelector";
 import { ValidacionSelector } from "./Seleccion/ValidacionSelector";
+import { CandidatosProposito } from "./Sintesis/CandidatosProposito";
 
 // Dueño solo del idioma elegido -- todo lo demás (mensajes, ficha,
 // festejos) vive en <Conversacion>, remontada con key={idioma}. Cambiar
@@ -81,6 +82,11 @@ function Conversacion({
 }) {
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [opcionesPendientes, setOpcionesPendientes] = useState<string[]>([]);
+  // Candidatos de propósito estructurados (Fase 2, ver
+  // Sintesis/CandidatosProposito.tsx) -- reemplaza a OpcionesForm para
+  // este momento puntual, nunca coexisten (el Sintetizador ya no llama
+  // a presentar_opciones, ver agents/sintetizador.py).
+  const [candidatosPendientes, setCandidatosPendientes] = useState<CandidatoProposito[]>([]);
   const [faseActual, setFaseActual] = useState(1);
   const [ficha, setFicha] = useState<FichaSnapshot | null>(null);
   // Arranca en true a propósito (no vía setState en el efecto de abajo):
@@ -144,10 +150,11 @@ function Conversacion({
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (cancelado) return;
         if (evento === "mensaje") {
-          const d = datos as { fase: number; texto: string; opciones: string[] };
+          const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
           if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
+          setCandidatosPendientes(d.candidatos);
         } else if (evento === "ficha") {
           setFicha(datos as FichaSnapshot);
         } else if (evento === "error") {
@@ -175,6 +182,7 @@ function Conversacion({
 
       setMensajes((prev) => [...prev, { rol: "user", texto }]);
       setOpcionesPendientes([]);
+      setCandidatosPendientes([]);
       setCargando(true);
 
       let faseFinal = faseAntes;
@@ -182,11 +190,12 @@ function Conversacion({
       const respuesta = await enviarMensaje(texto, idioma);
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
-          const d = datos as { fase: number; texto: string; opciones: string[] };
+          const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
           if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           faseFinal = d.fase;
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
+          setCandidatosPendientes(d.candidatos);
         } else if (evento === "ficha") {
           fichaDespues = datos as FichaSnapshot;
           setFicha(fichaDespues);
@@ -238,10 +247,11 @@ function Conversacion({
       const respuesta = await continuarSesion(idioma);
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
-          const d = datos as { fase: number; texto: string; opciones: string[] };
+          const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
           if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
+          setCandidatosPendientes(d.candidatos);
         } else if (evento === "ficha") {
           setFicha(datos as FichaSnapshot);
         } else if (evento === "error") {
@@ -337,14 +347,23 @@ function Conversacion({
 
             <ChatWindow mensajes={mensajes} cargando={cargando} />
 
-            {opcionesPendientes.length > 0 && (
-              <OpcionesForm
-                titulo={t.opciones_titulo}
-                submitLabel={t.opciones_submit}
-                opciones={opcionesPendientes}
+            {candidatosPendientes.length > 0 ? (
+              <CandidatosProposito
+                idioma={idioma}
+                candidatos={candidatosPendientes}
                 deshabilitado={cargando}
                 onElegir={procesarTurno}
               />
+            ) : (
+              opcionesPendientes.length > 0 && (
+                <OpcionesForm
+                  titulo={t.opciones_titulo}
+                  submitLabel={t.opciones_submit}
+                  opciones={opcionesPendientes}
+                  deshabilitado={cargando}
+                  onElegir={procesarTurno}
+                />
+              )
             )}
 
             <ChatInput placeholder={t.chat_placeholder} deshabilitado={cargando} onEnviar={procesarTurno} />

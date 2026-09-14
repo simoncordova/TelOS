@@ -24,8 +24,18 @@ export type FichaSnapshot = {
   nombre: string | null;
 };
 
+// Fase 2 (Sintetizador): un propósito candidato, ya estructurado por el
+// backend -- ver agents/_modelo.py::CandidatoProposito. No parsear texto
+// libre del lado del frontend, estos tres campos son la fuente de
+// verdad para la tarjeta editorial (ver Sintesis/CandidatosProposito.tsx).
+export type CandidatoProposito = {
+  frase: string;
+  explicacion: string;
+  ejemplo: string;
+};
+
 export type EventoTurno =
-  | { evento: "mensaje"; datos: { fase: number; texto: string; opciones: string[] } }
+  | { evento: "mensaje"; datos: { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] } }
   | { evento: "ficha"; datos: FichaSnapshot }
   | { evento: "error"; datos: { detalle: string } }
   | { evento: "done"; datos: Record<string, never> };

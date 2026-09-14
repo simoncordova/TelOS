@@ -268,6 +268,7 @@ def crear_agente_seguimiento(
     contenedor_opciones: list | None = None,
     contenedor_guardado: list | None = None,
     contenedor_informe: list | None = None,
+    contenedor_candidatos: list | None = None,
     turn_id: str | None = None,
 ) -> Agent:
     if contenedor_guardado is None:

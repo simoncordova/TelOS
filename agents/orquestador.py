@@ -485,6 +485,11 @@ class SesionTelos:
         # (_invocar_una_vez/_invocar_fase_directo); quien llama a
         # enviar_mensaje/abrir_conversacion la lee apenas termina.
         self._contenedor_opciones: list = []
+        # Candidatos de propósito estructurados (Fase 2, ver
+        # agents/_modelo.py::crear_tool_presentar_candidatos_proposito) --
+        # mismo mecanismo que _contenedor_opciones, leído por
+        # api/main.py::_eventos_turno para armar el evento SSE "mensaje".
+        self._contenedor_candidatos: list = []
         # Ver enviar_mensaje -- diagnóstico público, sin valor hasta el
         # primer mensaje real (abrir_conversacion no los toca, invoca
         # directo).
@@ -600,6 +605,7 @@ class SesionTelos:
         contenedor_opciones: list = []
         contenedor_guardado: list = []
         contenedor_informe: list = []
+        contenedor_candidatos: list = []
         turnos = leer_turnos(self.usuario_id, fase)
         agente = _FABRICAS_POR_FASE[fase](
             self.usuario_id,
@@ -609,6 +615,7 @@ class SesionTelos:
             contenedor_opciones=contenedor_opciones,
             contenedor_guardado=contenedor_guardado,
             contenedor_informe=contenedor_informe,
+            contenedor_candidatos=contenedor_candidatos,
             turn_id=turn_id,
         )
         agente(texto)
@@ -632,6 +639,13 @@ class SesionTelos:
                     }
                 )
         self._contenedor_opciones = list(contenedor_opciones)
+        # Candidatos estructurados de propósito (Fase 2, ver
+        # agents/_modelo.py::crear_tool_presentar_candidatos_proposito) --
+        # mismo criterio que _contenedor_opciones arriba: se sobreescribe
+        # siempre con lo que haya quedado de ESTA invocación, vacío si el
+        # agente de esta fase no llamó (o no tiene) la tool, nunca
+        # arrastra un valor de una fase anterior.
+        self._contenedor_candidatos = list(contenedor_candidatos)
         if not contenedor_informe:
             # Mismo fallback que _invocar_una_vez -- ver ese comentario.
             texto_fallback = _texto_ultimo_mensaje_asistente(agente)
@@ -1218,6 +1232,17 @@ class SesionTelos:
         continuacion = self._verificar_y_reforzar(self.fase_actual, continuacion, cerrado, total_versiones_antes)
         guardar_intercambio(self.usuario_id, self.fase_actual, kickoff, continuacion)
         yield self.fase_actual, continuacion, list(self._contenedor_opciones)
+
+    @property
+    def candidatos_pendientes(self) -> list[dict]:
+        """Público -- ver _contenedor_candidatos. Los propósitos
+        candidatos estructurados (Fase 2, cada uno con "frase"/
+        "explicacion"/"ejemplo") que dejó la última invocación real, para
+        que api/main.py arme el evento SSE sin leer un atributo privado
+        directo -- mismo criterio que contar_versiones_ficha/
+        ficha_actualizada más abajo. Vacío en cualquier turno que no sea
+        el Sintetizador presentando candidatos por primera vez."""
+        return list(self._contenedor_candidatos)
 
     def contar_versiones_ficha(self) -> int:
         """Público (a diferencia de _leer_ficha_con_reintento, que sigue

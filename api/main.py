@@ -191,7 +191,20 @@ def _eventos_turno(usuario_id: str, idioma: str, correr_generador):
         sesion = _obtener_sesion(usuario_id, idioma)
         total_antes = sesion.contar_versiones_ficha()
         for fase, texto, opciones in correr_generador(sesion):
-            yield "mensaje", {"fase": fase, "texto": texto, "opciones": opciones}
+            # candidatos_pendientes: propósitos candidatos estructurados
+            # de Fase 2 (ver SesionTelos.candidatos_pendientes) -- leído
+            # de la sesión, no del tuple que arma correr_generador,
+            # porque solo el Sintetizador lo usa y extender ese tuple a
+            # un 4to elemento en cada lugar que lo genera/consume
+            # (scripts/chat_terminal.py, scripts/simular_conversacion.py,
+            # tests/) no valía la pena para un campo que casi siempre
+            # viaja vacío. Seguro contra datos de una fase anterior
+            # porque SesionTelos siempre sobreescribe este contenedor en
+            # la misma invocación que produce cada `texto` (ver
+            # _invocar_fase_directo) -- para cuando este for pide el
+            # próximo valor, ya corresponde a la fase que generó ESE
+            # `texto`, nunca a la anterior.
+            yield "mensaje", {"fase": fase, "texto": texto, "opciones": opciones, "candidatos": sesion.candidatos_pendientes}
         ficha = sesion.ficha_actualizada(total_antes)
         yield "ficha", _ficha_snapshot(usuario_id, idioma, sesion.nombre, ficha=ficha)
 

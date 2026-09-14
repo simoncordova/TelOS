@@ -31,6 +31,7 @@ Strands), confirmado en la misma documentación.
 
 import os
 
+from pydantic import BaseModel
 from strands import tool
 from strands.models import BedrockModel
 
@@ -220,8 +221,7 @@ def crear_tool_presentar_opciones(contenedor: list):
     """Fabrica un tool `presentar_opciones` que un agente de fase puede
     llamar para que la interfaz muestre botones de elección en vez de
     obligar a la persona a escribir la respuesta (ver punto 6 del pedido
-    de UX que motivó esto: formularios para decisiones cerradas, como el
-    candidato de propósito que elige en Fase 2).
+    de UX que motivó esto: formularios para decisiones cerradas).
 
     `contenedor` es una lista mutable que le pasa
     agents/orquestador.py: la limpia antes de cada invocación al agente y
@@ -229,7 +229,15 @@ def crear_tool_presentar_opciones(contenedor: list):
     sesión se entera de las opciones ofrecidas sin necesitar interceptar
     la tool call con un hook de Strands, con el mismo patrón de closure
     sobre una variable de sesión que ya usa cada agents/*.py para
-    guardar_ficha_usuario sobre usuario_id."""
+    guardar_ficha_usuario sobre usuario_id.
+
+    Fase 2 (el ejemplo original que motivó esta tool) dejó de usarla --
+    ver crear_tool_presentar_candidatos_proposito más abajo, con el
+    mismo patrón de closure pero devolviendo datos estructurados en vez
+    de solo la frase corta, para que la interfaz arme tarjetas
+    editoriales en vez de una lista de botones sin contexto. Esta queda
+    disponible para cualquier fase futura que solo necesite botones
+    simples, sin explicación ni ejemplo por opción."""
 
     @tool
     def presentar_opciones(opciones: list[str]) -> str:
@@ -242,3 +250,49 @@ presentaste en el mensaje."""
         return "Opciones mostradas a la persona como botones."
 
     return presentar_opciones
+
+
+class CandidatoProposito(BaseModel):
+    """Un propósito candidato que el Sintetizador (Fase 2) le refleja a
+    la persona -- ver crear_tool_presentar_candidatos_proposito. Los
+    tres campos son obligatorios: sin "explicacion" ni "ejemplo" la
+    tarjeta editorial del frontend queda vacía, y sin "frase" no hay
+    nada para que la persona elija."""
+
+    frase: str
+    explicacion: str
+    ejemplo: str
+
+
+def crear_tool_presentar_candidatos_proposito(contenedor: list):
+    """Fabrica un tool `presentar_candidatos_proposito` para el
+    Sintetizador (Fase 2, agents/sintetizador.py) -- mismo patrón de
+    closure que crear_tool_presentar_opciones (ver docstring de esa),
+    pero entregando cada candidato como datos estructurados (frase +
+    explicación + ejemplo) en vez de solo la frase corta.
+
+    Motivo del cambio (14/09/2026, pedido explícito del dueño del
+    producto): la interfaz mostraba los 2-3 candidatos como texto libre
+    de prosa dentro de la burbuja de chat -- "el diseño de sintetizador
+    antiguo", inconsistente con las tarjetas editoriales que ya usan
+    ArbolSelector/ValidacionSelector/SistemaSelector para presentar
+    contenido central (propósito, sistema). Con esta tool, el modelo
+    entrega los tres campos de cada candidato por separado; el frontend
+    arma las tarjetas directo desde esos datos, sin parsear el texto
+    libre del mensaje (que ahora es solo un marco breve alrededor de las
+    tarjetas, ver el prompt de agents/sintetizador.py)."""
+
+    @tool
+    def presentar_candidatos_proposito(candidatos: list[CandidatoProposito]) -> str:
+        """Llamar SIEMPRE, en el mismo turno en que presentás los \
+candidatos por primera vez -- ver instrucción completa en el prompt. \
+`candidatos` es una lista de 2 o 3 elementos, cada uno con "frase" \
+(el propósito corto y concreto), "explicacion" (por qué se ajusta a \
+esta persona, anclado en algo puntual que dijo) y "ejemplo" (una \
+escena o analogía real de su ficha que muestre cómo se vería en la \
+práctica). Mismo orden en que los mencionás en tu mensaje."""
+        contenedor.clear()
+        contenedor.extend(c.model_dump() for c in candidatos)
+        return "Candidatos mostrados a la persona como tarjetas."
+
+    return presentar_candidatos_proposito

@@ -26,6 +26,13 @@ class _SesionFalsa:
         self.nombre = "Simón"
         self.fase_actual = 1
 
+    @property
+    def candidatos_pendientes(self) -> list[dict]:
+        # Ver SesionTelos.candidatos_pendientes -- vacío por default,
+        # ningún test de este archivo ejercita candidatos estructurados
+        # de Fase 2 todavía.
+        return []
+
     def abrir_conversacion(self):
         yield 1, "Hola, ¿qué te trae por acá?", []
 
@@ -110,7 +117,7 @@ def test_abrir_sesion_transmite_mensaje_y_ficha_en_orden(cliente):
     eventos = _leer_eventos(respuesta.text)
     nombres = [nombre for nombre, _ in eventos]
     assert nombres == ["mensaje", "ficha", "done"]
-    assert eventos[0][1] == {"fase": 1, "texto": "Hola, ¿qué te trae por acá?", "opciones": []}
+    assert eventos[0][1] == {"fase": 1, "texto": "Hola, ¿qué te trae por acá?", "opciones": [], "candidatos": []}
     assert eventos[1][1]["racha"] == 0
     assert eventos[1][1]["nombre"] == "Simón"
 

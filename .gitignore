@@ -22,3 +22,6 @@ CLAUDE.md
 PLAN.md
 UPDATES.md
 .claude/
+
+# Maquetas de diseño — solo referencia visual local, no se necesitan en deploy
+maqueta/

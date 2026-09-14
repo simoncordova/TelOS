@@ -214,7 +214,17 @@ export function ArbolSelector({
   const [taxonomia, setTaxonomia] = useState<CategoriasFase1 | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [started, setStarted] = useState(false);
+  // Arranca en true (no en false como el prototipo original de Claude
+  // Design) -- ese estado "welcome" con "Comenzar exploración" ya lo
+  // muestra LoginScreen.tsx ANTES de loguearse (misma frase, mismo
+  // gráfico vacío, ver su docstring). Cuando este componente monta es
+  // porque la persona ya inició sesión real con Cognito -- volver a
+  // pedirle el mismo clic acá era una segunda pantalla de bienvenida
+  // idéntica a la que ya pasó, un paso extra sin motivo real (bug
+  // reportado 13/09/2026: "volvió a mostrar la pantalla de inicio tras
+  // el login"). La guía paso a paso ("Ver cómo funciona") sigue
+  // disponible desde el botón de abajo, ya con started=true.
+  const [started, setStarted] = useState(true);
   const [stage, setStage] = useState<Etapa>("l1");
   const [path, setPath] = useState<string[]>([]);
   const [detalle, setDetalle] = useState("");
@@ -878,6 +888,14 @@ export function ArbolSelector({
                 </h2>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
+                {stage === "l1" && path.length === 0 && (
+                  <button
+                    onClick={() => setTourStep(0)}
+                    style={{ border: "1px solid #ded7cc", background: "transparent", color: "#5d564d", borderRadius: 999, padding: "8px 16px", fontSize: 12.5, cursor: "pointer" }}
+                  >
+                    {t.verComoFunciona}
+                  </button>
+                )}
                 <button
                   onClick={() => setChatOpen((v) => !v)}
                   style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #ded7cc", background: "transparent", color: "#5d564d", borderRadius: 999, padding: "8px 16px", fontSize: 12.5, cursor: "pointer" }}

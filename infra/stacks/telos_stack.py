@@ -640,6 +640,23 @@ class TelosStack(Stack):
                         instancia_web.instance_public_dns_name,
                         protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
                         http_port=8000,
+                        # Default de CloudFront (30s) es justo lo que
+                        # cortaba en producción (14/09/2026): un turno de
+                        # Fase 2 con Bedrock real + la tool de candidatos
+                        # estructurados (varias invocaciones si el modelo
+                        # no llama la tool a la primera y hace falta el
+                        # reintento forzado, ver agents/orquestador.py::
+                        # _invocar_fase_directo) puede tardar más de 30s
+                        # en producir el primer byte del stream SSE --
+                        # CloudFront corta la conexión con
+                        # net::ERR_HTTP2_PROTOCOL_ERROR antes de que el
+                        # origen llegue a responder, aunque el origen
+                        # mismo nunca se cuelgue. 60s es el máximo que
+                        # CloudFront permite sin pedir un aumento de
+                        # cuota a soporte -- no soluciona una invocación
+                        # que de verdad tarde más que eso, pero sí este
+                        # caso real medido en logs (~30.1s).
+                        read_timeout=Duration.seconds(60),
                     ),
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,

@@ -687,6 +687,43 @@ class SesionTelos:
         # agente de esta fase no llamó (o no tiene) la tool, nunca
         # arrastra un valor de una fase anterior.
         self._contenedor_candidatos = list(contenedor_candidatos)
+
+        # Guard Fase 2: si el modelo escribió los candidatos como prosa
+        # pero olvidó llamar a presentar_candidatos_proposito (bug
+        # recurrente en producción: la interfaz recibe texto largo pero
+        # candidatos=[], y el selector visual queda vacío), forzar un
+        # reintento con un nudge explícito. Una sola vez por invocación,
+        # usando el mismo agente (ya tiene la ficha en contexto) -- no
+        # re-lee la ficha ni reinicia la conversación.
+        if fase == 2 and not self._contenedor_candidatos and contenedor_informe:
+            _NUDGE_CANDIDATOS = {
+                "es": (
+                    "Tu respuesta llegó bien, pero la tool "
+                    "presentar_candidatos_proposito no fue llamada -- "
+                    "sin eso la interfaz no puede mostrar los botones de "
+                    "selección y la persona ve la pantalla vacía. "
+                    "Llamá ahora a presentar_candidatos_proposito con la "
+                    "misma lista de candidatos que acabás de describir, "
+                    "sin cambiar nada más."
+                ),
+                "en": (
+                    "Your response came through fine, but the "
+                    "presentar_candidatos_proposito tool was not called -- "
+                    "without it the UI cannot show the selection buttons "
+                    "and the person sees a blank screen. "
+                    "Call presentar_candidatos_proposito now with the same "
+                    "list of candidates you just described, without "
+                    "changing anything else."
+                ),
+            }
+            nudge = _NUDGE_CANDIDATOS.get(self.idioma, _NUDGE_CANDIDATOS["en"])
+            try:
+                agente(nudge)
+                registrar_invocacion(self.usuario_id)
+                self._contenedor_candidatos = list(contenedor_candidatos)
+            except Exception:  # noqa: BLE001
+                logger.warning("Fase 2: reintento de presentar_candidatos_proposito falló")
+
         # Persistido (no solo en memoria) para que confirmar_proposito_elegido
         # pueda validar el click de la persona contra lo que de verdad se
         # le presentó, incluso si la sesión en memoria expiró entre medio

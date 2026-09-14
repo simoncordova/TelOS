@@ -34,6 +34,7 @@ export function PropositoSelector({
   idioma,
   onCambiarIdioma,
   requiereLogin,
+  pregunta,
   candidatos,
   cargando,
   onElegir,
@@ -167,6 +168,13 @@ export function PropositoSelector({
         {/* ── loading state ── */}
         {mostrarCargando && (
           <p style={{ margin: 0, fontSize: 13, color: "#a8a096" }}>{t.cargando}</p>
+        )}
+
+        {/* ── model intro paragraph (when candidates arrived) ── */}
+        {!mostrarCargando && candidatos.length > 0 && pregunta && (
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: "#5d564d", maxWidth: "52ch" }}>
+            {pregunta}
+          </p>
         )}
 
         {/* ── candidato buttons ── */}

@@ -5,40 +5,24 @@ import { useState } from "react";
 import type { CandidatoProposito, Idioma } from "@/lib/types";
 import { AccionesCuenta } from "../AccionesCuenta";
 
-// Selector visual de Fase 2 (Sintetizador, momento "Entender") -- mismo
-// criterio que ArbolSelector.tsx/SistemaSelector.tsx (Fases 1/4): página
-// propia de selección visual, NO un chat. Corrección explícita del
-// dueño del producto (14/09/2026) sobre el primer intento de este
-// cambio: mostrar los candidatos como tarjetas DENTRO del chat (bajo un
-// mensaje de texto en ChatWindow) todavía se sentía como chat -- acá los
-// 2-3 candidatos que arma agents/sintetizador.py y el marco breve que
-// los presenta (`pregunta`, viaja en el evento SSE "mensaje" para Fase
-// 2, ver TelosApp.tsx) son el contenido central de toda la pantalla, sin
-// ningún historial de mensajes visible.
-//
-// "Combinar partes de varios" sigue siendo texto libre real -- no se
-// puede reducir a un botón porque es una redacción nueva, no una de las
-// ya ofrecidas -- pero vive como un campo en esta misma página
-// (`onEscribirLibre`, en la práctica el mismo `procesarTurno` que usa el
-// chat real de otras fases), nunca como una burbuja de conversación.
 const TEXTOS = {
   es: {
     faseLabel: "Entender · tu propósito",
     cerrarSesion: "Cerrar sesión",
+    titulo: "Elige tu propósito",
     cargando: "Armando tus propósitos candidatos…",
-    ejemploLabel: "Así se vería",
-    elegir: "Elegir este propósito",
-    combinarTitulo: "¿Preferís combinar partes de varios, o escribir el tuyo?",
+    ejemploLabel: "Ejemplo:",
+    escribirTuyo: "Escribir el mío",
     combinarPlaceholder: "Escribí tu propia versión…",
     combinarBoton: "Enviar",
   },
   en: {
     faseLabel: "Understand · your purpose",
     cerrarSesion: "Sign out",
+    titulo: "Choose your purpose",
     cargando: "Putting together your candidate purposes…",
-    ejemploLabel: "What this looks like",
-    elegir: "Choose this purpose",
-    combinarTitulo: "Prefer to blend parts of a few, or write your own?",
+    ejemploLabel: "Example:",
+    escribirTuyo: "Write your own version",
     combinarPlaceholder: "Write your own version…",
     combinarBoton: "Send",
   },
@@ -50,7 +34,6 @@ export function PropositoSelector({
   idioma,
   onCambiarIdioma,
   requiereLogin,
-  pregunta,
   candidatos,
   cargando,
   onElegir,
@@ -59,21 +42,29 @@ export function PropositoSelector({
   idioma: Idioma;
   onCambiarIdioma: (idioma: Idioma) => void;
   requiereLogin: boolean;
-  pregunta: string;
+  pregunta: string; // kept in props for API compat but no longer rendered
   candidatos: CandidatoProposito[];
   cargando: boolean;
   onElegir: (frase: string) => void;
   onEscribirLibre: (texto: string) => void;
 }) {
   const t = TEXTOS[idioma];
+  const [libreAbierto, setLibreAbierto] = useState(false);
   const [libre, setLibre] = useState("");
+
+  function toggleLibre() {
+    setLibreAbierto((v) => !v);
+  }
 
   function enviarLibre() {
     const texto = libre.trim();
     if (!texto || cargando) return;
     setLibre("");
+    setLibreAbierto(false);
     onEscribirLibre(texto);
   }
+
+  const mostrarCargando = cargando && candidatos.length === 0;
 
   return (
     <div
@@ -83,113 +74,279 @@ export function PropositoSelector({
         overflowY: "auto",
         display: "flex",
         flexDirection: "column",
-        background: "radial-gradient(70% 45% at 50% 0%, rgba(226,164,74,.13) 0%, rgba(226,164,74,0) 60%), linear-gradient(#fcfaf7 0%, #f5f1ea 55%, #efe8dd 100%)",
+        background:
+          "radial-gradient(70% 45% at 50% 0%, rgba(226,164,74,.13) 0%, rgba(226,164,74,0) 60%), linear-gradient(#fcfaf7 0%, #f5f1ea 55%, #efe8dd 100%)",
         fontFamily: "var(--font-instrument-sans), system-ui, sans-serif",
         color: "#1b1917",
       }}
     >
-      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, padding: "16px clamp(18px,5vw,56px) 8px", flexWrap: "wrap" }}>
+      {/* ── header ── */}
+      <header
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 18,
+          padding: "16px clamp(18px,5vw,56px) 8px",
+          flexWrap: "wrap",
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/telos-brand.png" alt="TelOS" style={{ width: 32, height: 32, borderRadius: 9, objectFit: "cover", objectPosition: "50% 34%", background: "#1d1b33", flexShrink: 0 }} />
+          <img
+            src="/telos-brand.png"
+            alt="TelOS"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 9,
+              objectFit: "cover",
+              objectPosition: "50% 34%",
+              background: "#1d1b33",
+              flexShrink: 0,
+            }}
+          />
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 12.5, letterSpacing: ".34em", textTransform: "uppercase" }}>Telos</span>
-            <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase", color: "#6b6459" }}>{t.faseLabel}</span>
+            <span
+              style={{
+                fontFamily: "var(--font-ibm-plex-mono), monospace",
+                fontSize: 12.5,
+                letterSpacing: ".34em",
+                textTransform: "uppercase",
+              }}
+            >
+              Telos
+            </span>
+            <span
+              style={{
+                fontFamily: "var(--font-ibm-plex-mono), monospace",
+                fontSize: 9.5,
+                letterSpacing: ".16em",
+                textTransform: "uppercase",
+                color: "#6b6459",
+              }}
+            >
+              {t.faseLabel}
+            </span>
           </div>
         </div>
-        <AccionesCuenta idioma={idioma} onCambiarIdioma={onCambiarIdioma} requiereLogin={requiereLogin} logoutLabel={t.cerrarSesion} />
+        <AccionesCuenta
+          idioma={idioma}
+          onCambiarIdioma={onCambiarIdioma}
+          requiereLogin={requiereLogin}
+          logoutLabel={t.cerrarSesion}
+        />
       </header>
 
-      <main style={{ flex: 1, width: "100%", maxWidth: 1080, margin: "0 auto", padding: "clamp(20px,5vh,56px) clamp(18px,5vw,56px) 40px", display: "flex", flexDirection: "column", gap: "clamp(18px,3vh,30px)" }}>
-        {!pregunta && candidatos.length === 0 ? (
-          <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", fontSize: 13, color: "#a8a096" }}>{t.cargando}</div>
-        ) : (
-          <>
-            {pregunta && (
-              <h1 style={{ margin: 0, fontFamily: "var(--font-instrument-serif), Georgia, serif", fontWeight: 400, fontSize: "clamp(22px,2.8vw,34px)", lineHeight: 1.2, maxWidth: "44ch" }}>
-                {pregunta}
-              </h1>
-            )}
+      {/* ── main ── */}
+      <main
+        style={{
+          flex: 1,
+          width: "100%",
+          maxWidth: 720,
+          margin: "0 auto",
+          padding: "clamp(24px,5vh,60px) clamp(18px,5vw,56px) 48px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "clamp(16px,2.6vh,26px)",
+        }}
+      >
+        {/* ── title ── */}
+        <h1
+          style={{
+            margin: 0,
+            fontFamily: "var(--font-instrument-serif), Georgia, serif",
+            fontWeight: 400,
+            fontSize: "clamp(26px,3.2vw,40px)",
+            lineHeight: 1.15,
+          }}
+        >
+          {t.titulo}
+        </h1>
 
-            {candidatos.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: "clamp(10px,1.4vw,16px)" }}>
-                {candidatos.map((candidato, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 12,
-                      border: "1px solid #e2dbd0",
-                      background: "#fcfaf7",
-                      borderRadius: 18,
-                      padding: "20px 22px",
-                      animation: "telos-rise .5s ease both",
-                      animationDelay: `${i * 60}ms`,
-                    }}
-                  >
-                    <p style={{ margin: 0, fontFamily: "var(--font-instrument-serif), Georgia, serif", fontSize: "clamp(19px,2.3vw,25px)", lineHeight: 1.22, color: "#1b1917" }}>
-                      {candidato.frase}
-                    </p>
+        {/* ── loading state ── */}
+        {mostrarCargando && (
+          <p style={{ margin: 0, fontSize: 13, color: "#a8a096" }}>{t.cargando}</p>
+        )}
 
-                    <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: "#5d564d" }}>{candidato.explicacion}</p>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: 3, borderLeft: `2px solid ${ACENTO}`, paddingLeft: 12 }}>
-                      <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9, letterSpacing: ".18em", textTransform: "uppercase", color: ACENTO }}>
-                        {t.ejemploLabel}
-                      </span>
-                      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: "#6b6459", fontStyle: "italic" }}>{candidato.ejemplo}</p>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={cargando}
-                      onClick={() => onElegir(candidato.frase)}
-                      style={{
-                        alignSelf: "flex-start",
-                        marginTop: 4,
-                        border: "1px solid #1b1917",
-                        background: "#1b1917",
-                        color: "#f7f4ef",
-                        borderRadius: 999,
-                        padding: "10px 20px",
-                        fontSize: 13,
-                        cursor: cargando ? "default" : "pointer",
-                        opacity: cargando ? 0.5 : 1,
-                      }}
-                    >
-                      {t.elegir}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 680, borderTop: "1px solid #e2dbd0", paddingTop: "clamp(14px,2.4vh,22px)" }}>
-              <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase", color: "#6b6459" }}>
-                {t.combinarTitulo}
+        {/* ── candidato buttons ── */}
+        {candidatos.map((candidato, i) => (
+          <div
+            key={i}
+            style={{
+              animation: "telos-rise .45s ease both",
+              animationDelay: `${i * 70}ms`,
+            }}
+          >
+            {/* clickable purpose button */}
+            <button
+              type="button"
+              disabled={cargando}
+              onClick={() => onElegir(candidato.frase)}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                background: "#fcfaf7",
+                border: "1.5px solid #d8d0c4",
+                borderRadius: 16,
+                padding: "18px 22px",
+                cursor: cargando ? "default" : "pointer",
+                opacity: cargando ? 0.55 : 1,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                transition: "border-color .15s, box-shadow .15s",
+              }}
+              onMouseEnter={(e) => {
+                if (!cargando) {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = "#1b1917";
+                  (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 2px 10px rgba(27,25,23,.08)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "#d8d0c4";
+                (e.currentTarget as HTMLButtonElement).style.boxShadow = "none";
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "var(--font-instrument-serif), Georgia, serif",
+                  fontSize: "clamp(17px,2vw,22px)",
+                  lineHeight: 1.25,
+                  color: "#1b1917",
+                }}
+              >
+                {candidato.frase}
               </span>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", border: "1px solid #e2dbd0", background: "#fcfaf7", borderRadius: 16, padding: "14px 16px" }}>
-                <input
-                  value={libre}
-                  onChange={(e) => setLibre(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") enviarLibre();
+              {candidato.explicacion && (
+                <span style={{ fontSize: 13.5, lineHeight: 1.55, color: "#5d564d" }}>
+                  {candidato.explicacion}
+                </span>
+              )}
+            </button>
+
+            {/* example below the button */}
+            {candidato.ejemplo && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "flex-start",
+                  marginTop: 6,
+                  paddingLeft: 14,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "var(--font-ibm-plex-mono), monospace",
+                    fontSize: 9,
+                    letterSpacing: ".18em",
+                    textTransform: "uppercase",
+                    color: ACENTO,
+                    paddingTop: 2,
+                    flexShrink: 0,
                   }}
-                  disabled={cargando}
-                  placeholder={t.combinarPlaceholder}
-                  style={{ flex: 1, minWidth: 220, border: "none", background: "transparent", outline: "none", fontSize: 14.5, color: "#1b1917" }}
-                />
-                <button
-                  onClick={enviarLibre}
-                  disabled={cargando || !libre.trim()}
-                  style={{ border: "1px solid #1b1917", background: "#1b1917", color: "#f7f4ef", borderRadius: 999, padding: "11px 22px", fontSize: 13, cursor: "pointer", opacity: cargando || !libre.trim() ? 0.6 : 1 }}
                 >
-                  {t.combinarBoton}
-                </button>
+                  {t.ejemploLabel}
+                </span>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 12.5,
+                    lineHeight: 1.5,
+                    color: "#6b6459",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {candidato.ejemplo}
+                </p>
               </div>
-            </div>
-          </>
+            )}
+          </div>
+        ))}
+
+        {/* ── "write your own" option ── */}
+        {!libreAbierto ? (
+          <button
+            type="button"
+            disabled={cargando}
+            onClick={toggleLibre}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              background: "transparent",
+              border: "1.5px dashed #c8c0b4",
+              borderRadius: 16,
+              padding: "18px 22px",
+              cursor: cargando ? "default" : "pointer",
+              opacity: cargando ? 0.55 : 1,
+              fontFamily: "var(--font-instrument-sans), system-ui, sans-serif",
+              fontSize: "clamp(14px,1.6vw,17px)",
+              color: "#6b6459",
+              transition: "border-color .15s",
+              animation: `telos-rise .45s ease both`,
+              animationDelay: `${candidatos.length * 70}ms`,
+            }}
+            onMouseEnter={(e) => {
+              if (!cargando) (e.currentTarget as HTMLButtonElement).style.borderColor = "#8c7e6e";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "#c8c0b4";
+            }}
+          >
+            {t.escribirTuyo}…
+          </button>
+        ) : (
+          <div
+            style={{
+              border: "1.5px solid #1b1917",
+              borderRadius: 16,
+              background: "#fcfaf7",
+              padding: "14px 16px",
+              display: "flex",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+              animation: "telos-rise .25s ease both",
+            }}
+          >
+            <input
+              autoFocus
+              value={libre}
+              onChange={(e) => setLibre(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") enviarLibre();
+                if (e.key === "Escape") setLibreAbierto(false);
+              }}
+              disabled={cargando}
+              placeholder={t.combinarPlaceholder}
+              style={{
+                flex: 1,
+                minWidth: 200,
+                border: "none",
+                background: "transparent",
+                outline: "none",
+                fontSize: 14.5,
+                color: "#1b1917",
+              }}
+            />
+            <button
+              onClick={enviarLibre}
+              disabled={cargando || !libre.trim()}
+              style={{
+                border: "1px solid #1b1917",
+                background: "#1b1917",
+                color: "#f7f4ef",
+                borderRadius: 999,
+                padding: "10px 20px",
+                fontSize: 13,
+                cursor: "pointer",
+                opacity: cargando || !libre.trim() ? 0.6 : 1,
+              }}
+            >
+              {t.combinarBoton}
+            </button>
+          </div>
         )}
       </main>
     </div>

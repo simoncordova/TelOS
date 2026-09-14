@@ -11,7 +11,10 @@ iteración real (incluyendo las llamadas a Bedrock que pasan mientras se
 consume el generador), no solo el momento en que se lo crea."""
 
 import json
+import logging
 from collections.abc import Generator, Iterable
+
+logger = logging.getLogger(__name__)
 
 
 def formatear_evento(nombre: str, datos: dict) -> str:
@@ -55,7 +58,8 @@ def stream_eventos(generador_eventos: Iterable[tuple[str, dict]]) -> Generator[s
         generador_eventos.close()
         raise
     except Exception as e:  # noqa: BLE001 -- el error tiene que llegar al cliente, no tumbar la conexión en silencio
-        yield formatear_evento("error", {"detalle": str(e)})
+        logger.exception("Error durante streaming SSE")
+        yield formatear_evento("error", {"detalle": "Ocurrió un error inesperado. Por favor, intenta de nuevo."})
         yield "event: done\ndata: {}\n\n"
     else:
         yield "event: done\ndata: {}\n\n"

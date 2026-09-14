@@ -406,17 +406,20 @@ Sin probar todavía end-to-end — ver "Qué falta" abajo.
 
 ## Qué falta / limitaciones conocidas
 
-- **El orquestador agéntico (reemplazó el dispatch por regex por un
-  `Agent` real que decide con juicio semántico a qué fase invocar,
-  incluida una corrección posterior de confiabilidad con Haiku) todavía
-  no pasó por una ronda de prueba real de punta a punta contra Bedrock
-  desplegado** — el último ciclo de prueba real con una persona real (11
-  hallazgos, todos resueltos) fue contra la versión anterior del
-  orquestador. `scripts/simular_conversacion.py` corre una conversación
-  completa contra Bedrock real e imprime si el orquestador invoca la
-  fase esperada y si un cierre declarado coincide con lo que realmente
-  quedó guardado — es el paso siguiente antes de confiar en un deploy
-  nuevo.
+- **El orquestador dejó de ser un `Agent` agéntico.** Se probó esa
+  versión (un `Agent` real decidiendo con juicio semántico a qué fase
+  invocar) y se revirtió a ruteo 100% determinístico en código plano
+  (`agents/orquestador.py::SesionTelos.fase_actual`, mantenido por
+  código, no "decidido" por un modelo) -- ya no aporta nada que el
+  código no supiera y sumaba una invocación real de más por turno.
+  Desde entonces pasó por varias rondas reales de prueba contra la app
+  desplegada (selectores visuales de Fases 1/3/4, el candado por
+  usuario en el streaming SSE, el paso de Fase 2 a Fase 3, la captura de
+  nombre) -- cada hallazgo real quedó corregido en código, no solo
+  documentado. `scripts/simular_conversacion.py` sigue siendo la forma
+  de correr una conversación completa contra Bedrock real e imprimir si
+  la fase que respondió es la esperada y si un cierre declarado coincide
+  con lo que realmente quedó guardado.
 - Login real con Cognito, el Guardrail de Bedrock
   (`infra/stacks/telos_stack.py::GuardrailTelos` — denied topics +
   filtros de contenido, ver

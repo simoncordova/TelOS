@@ -360,6 +360,36 @@ pedir que la cambie por una definitiva.
   deploy va a recibir un recordatorio real una vez por día, no hace
   falta ningún paso extra para activarlo.
 
+### Actualizar un deploy existente después de un cambio de código
+
+Bug real visto durante el desarrollo: un fix ya commiteado y pusheado a
+GitHub no se veía reflejado en la app desplegada, aun después de correr
+`cdk deploy` de nuevo. Dos causas típicas, en orden de probabilidad:
+
+1. **El clon de CloudShell donde corriste `cdk deploy` estaba desactualizado.**
+   La imagen Docker se construye desde tu checkout local, no desde
+   GitHub directo -- si reusás una sesión de CloudShell de una vez
+   anterior, hacé `git pull` (o un `git clone` nuevo) ahí adentro antes
+   de volver a correr `npx aws-cdk deploy` en `infra/`. Sin parámetros
+   nuevos: CDK conserva los que ya quedaron seteados (ver Paso 3).
+2. **La instancia EC2 no se reemplazó de verdad.** Es una sola instancia
+   (`AWS::EC2::Instance`, no un Auto Scaling Group) que se reemplaza
+   automáticamente cuando cambia el user data (`user_data_causes_replacement`
+   en `infra/stacks/telos_stack.py`) -- el user data incluye la URI de la
+   imagen Docker nueva, así que un cambio real de código sí debería
+   forzar el reemplazo. Confirmá en el output de `cdk deploy` o en la
+   consola de EC2 que `IdInstanciaWeb` apunta a una instancia con fecha
+   de lanzamiento reciente (no la misma de antes) -- si sigue siendo la
+   vieja, algo no disparó el reemplazo y conviene revisar el diff que
+   mostró `cdk deploy` antes de asumir que el código está mal.
+
+Una vez confirmado el reemplazo, probá en una ventana de incógnito o con
+recarga forzada (Ctrl+Shift+R) antes de reportar el bug como persistente:
+CloudFront tiene el caching deshabilitado a propósito para esta app
+(`CachePolicy.CACHING_DISABLED` en el stack), pero el navegador puede
+seguir mostrando una pestaña ya abierta desde antes del deploy con el
+bundle de JS viejo en memoria.
+
 ### (Opcional, no bloquea nada) — AgentCore Runtime real
 
 Bonus de puntaje ("Technical Implementation" del reglamento del

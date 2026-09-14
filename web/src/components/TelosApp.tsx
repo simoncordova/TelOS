@@ -277,6 +277,7 @@ function Conversacion({
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ValidacionSelector
             idioma={idioma}
+            proposito={datos.proposito}
             onEntrarRefinado={(primerMensaje) => {
               setMensajes((prev) => [...prev, { rol: "assistant", texto: primerMensaje }]);
               setFase3EnRefinado(true);

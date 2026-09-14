@@ -86,7 +86,7 @@ import uuid
 from pydantic import BaseModel
 from strands.agent import Agent
 
-from agents._modelo import crear_modelo_subagente
+from agents._modelo import CandidatoProposito, crear_modelo_subagente
 from agents.seguimiento import crear_agente_seguimiento
 from agents.sintetizador import crear_agente_sintetizador
 from tools.categorias_ikigai import DIMENSIONES_IKIGAI, MAX_VALORES, VALORES_DISPONIBLES, buscar_hoja
@@ -346,6 +346,18 @@ class InformeAlOrquestador(BaseModel):
     texto_para_persona: str
     cerrado: bool
     dato_nuevo: str | None = None
+
+
+class ListaCandidatosProposito(BaseModel):
+    """Mismo mecanismo que InformeAlOrquestador: pasar esta clase como
+    `structured_output_model` fuerza tool_choice en Bedrock, garantizando
+    que el modelo llame a `presentar_candidatos_proposito` con la lista
+    estructurada en vez de escribir los candidatos como prosa libre (bug
+    recurrente en producción, ver guard en _invocar_fase_directo). Úsado
+    como fallback de último recurso cuando el nudge de texto simple
+    tampoco consigue que el modelo llame la tool."""
+
+    candidatos: list[CandidatoProposito]
 
 # El mismo bug de "dijo que guardó pero no llamó a la tool" apareció
 # primero en el Explorador y después en el Sintetizador -- por eso ahora
@@ -726,15 +738,33 @@ class SesionTelos:
             }
             nudge = _NUDGE_CANDIDATOS.get(self.idioma, _NUDGE_CANDIDATOS["en"])
             try:
-                agente(nudge)
+                resultado_nudge = agente(nudge, structured_output_model=ListaCandidatosProposito)
                 registrar_invocacion(self.usuario_id)
-                self._contenedor_candidatos = list(contenedor_candidatos)
-                # Capturar también el informe si el nudge lo generó por primera vez
+                # structured_output_model fuerza que Bedrock llame
+                # presentar_candidatos_proposito -- el resultado puede
+                # llegar por dos caminos: (a) el modelo llamó la tool
+                # real y el closure ya mutó contenedor_candidatos, o (b)
+                # structured_output_model capturó la respuesta estructurada
+                # en resultado_nudge.structured_output. Verificar ambos.
+                if contenedor_candidatos:
+                    # Tool real fue llamada, contenedor ya tiene los datos
+                    self._contenedor_candidatos = list(contenedor_candidatos)
+                elif (
+                    resultado_nudge is not None
+                    and hasattr(resultado_nudge, "structured_output")
+                    and resultado_nudge.structured_output is not None
+                ):
+                    # Recuperar de structured_output como fallback
+                    lista = resultado_nudge.structured_output
+                    if hasattr(lista, "candidatos") and lista.candidatos:
+                        self._contenedor_candidatos = [c.model_dump() for c in lista.candidatos]
+                        contenedor_candidatos.extend(self._contenedor_candidatos)
+                # Capturar informe si el nudge lo generó por primera vez
                 if not contenedor_informe:
                     texto_nudge = _texto_ultimo_mensaje_asistente(agente)
                     contenedor_informe.append({"texto": texto_nudge, "cerrado": False, "dato_nuevo": None})
             except Exception:  # noqa: BLE001
-                logger.warning("Fase 2: reintento de presentar_candidatos_proposito falló")
+                logger.warning("Fase 2: reintento forzado de presentar_candidatos_proposito falló")
 
         # Persistido (no solo en memoria) para que confirmar_proposito_elegido
         # pueda validar el click de la persona contra lo que de verdad se

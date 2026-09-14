@@ -69,6 +69,17 @@ export type Textos = {
   calendario_autorizar_boton: string;
   calendario_pendiente_autorizacion: string;
   calendario_error: string;
+  // Sustain view
+  sustain_proposito_kicker: string;
+  sustain_sistema_kicker: string;
+  sustain_ejecutado_boton: string;
+  sustain_ejecutado_registrado: string;
+  sustain_cumplimiento_kicker: string;
+  sustain_cumplimiento_veces: string; // "{n} de {total} veces esta semana"
+  sustain_periodo_semana: string;
+  sustain_sin_frecuencia: string;
+  sustain_descubrir_kicker: string;
+  sustain_descubrir_desc: string;
 };
 
 export const TEXTOS: Record<Idioma, Textos> = {
@@ -117,6 +128,16 @@ export const TEXTOS: Record<Idioma, Textos> = {
     calendario_autorizar_boton: "Autorizar acceso a Google Calendar",
     calendario_pendiente_autorizacion: "Necesitamos que autorices el acceso a tu Google Calendar primero.",
     calendario_error: "No se pudo agregar a tu calendario. Probá de nuevo en un momento.",
+    sustain_proposito_kicker: "Tu propósito",
+    sustain_sistema_kicker: "Tu sistema",
+    sustain_ejecutado_boton: "✓ Sistema ejecutado",
+    sustain_ejecutado_registrado: "¡Registrado!",
+    sustain_cumplimiento_kicker: "Cumplimiento esta semana",
+    sustain_cumplimiento_veces: "{n} de {total} veces",
+    sustain_periodo_semana: "Esta semana",
+    sustain_sin_frecuencia: "Sin frecuencia definida",
+    sustain_descubrir_kicker: "Tu mapa Ikigai",
+    sustain_descubrir_desc: "El cruce de lo que amás, en lo que sos bueno, lo que el mundo necesita y por lo que te pueden pagar — donde nació este propósito.",
   },
   en: {
     logout_button: "Sign out",
@@ -163,5 +184,15 @@ export const TEXTOS: Record<Idioma, Textos> = {
     calendario_autorizar_boton: "Authorize Google Calendar access",
     calendario_pendiente_autorizacion: "We need you to authorize access to your Google Calendar first.",
     calendario_error: "Couldn't add it to your calendar. Try again in a moment.",
+    sustain_proposito_kicker: "Your purpose",
+    sustain_sistema_kicker: "Your system",
+    sustain_ejecutado_boton: "✓ System executed",
+    sustain_ejecutado_registrado: "Logged!",
+    sustain_cumplimiento_kicker: "This week's compliance",
+    sustain_cumplimiento_veces: "{n} of {total} times",
+    sustain_periodo_semana: "This week",
+    sustain_sin_frecuencia: "No frequency defined",
+    sustain_descubrir_kicker: "Your Ikigai map",
+    sustain_descubrir_desc: "The intersection of what you love, what you're good at, what the world needs, and what you can be paid for — where this purpose was born.",
   },
 };

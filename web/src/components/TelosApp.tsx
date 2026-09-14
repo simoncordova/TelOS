@@ -243,6 +243,7 @@ function Conversacion({
   // flujo de Fase 1) -- no lo usamos como prerequisito para mostrar los
   // selectores visuales.
   const esFaseSelector =
+    faseActual === 0 ||
     faseActual === 1 ||
     (faseActual === 3 && !fase3EnRefinado) ||
     faseActual === 4;
@@ -267,7 +268,7 @@ function Conversacion({
           que la propia fase lo active (Fase 3, ver ValidacionSelector).
           El resto de las fases (2, 3 ya en "refinando", 5) sigue 100%
           igual que siempre. */}
-      {faseActual === 1 ? (
+      {(faseActual === 0 || faseActual === 1) ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ArbolSelector idioma={idioma} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
         </main>

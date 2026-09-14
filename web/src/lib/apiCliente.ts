@@ -6,7 +6,7 @@
 // telos_stack.py, DistribucionWeb), así que nunca hace falta CORS ni
 // conocer una URL absoluta acá. `credentials: "include"` manda la
 // cookie de sesión (HttpOnly, api/auth.py) en cada request.
-import type { CategoriasFase1, CategoriasFase3, CategoriasFase4, EventoCalendarioResultado, FichaSnapshot, Idioma, SeleccionConfirmada, SugerenciaCategoria } from "./types";
+import type { CategoriasFase1, CategoriasFase4, EventoCalendarioResultado, FichaSnapshot, Idioma, SeleccionConfirmada, SugerenciaCategoria } from "./types";
 
 async function streamPost(ruta: string, cuerpo: unknown): Promise<Response> {
   const respuesta = await fetch(ruta, {
@@ -62,17 +62,13 @@ async function jsonFetch<T>(ruta: string, init: RequestInit): Promise<T> {
   return respuesta.status === 204 ? (undefined as T) : respuesta.json();
 }
 
-// --- Selector visual (Fases 1/3/4) -- ver api/main.py::obtener_categorias/
+// --- Selector visual (Fases 1/4) -- ver api/main.py::obtener_categorias/
 // confirmar_seleccion/confirmar_valores. Un solo GET trae el árbol/selector
 // completo; la navegación entre niveles es 100% client-side, sin otra
 // llamada de red hasta confirmar una hoja real. ---
 
 export function obtenerCategoriasFase1(idioma: Idioma): Promise<CategoriasFase1> {
   return jsonFetch(`/api/categorias/1?idioma=${idioma}`, { method: "GET" });
-}
-
-export function obtenerCategoriasFase3(idioma: Idioma): Promise<CategoriasFase3> {
-  return jsonFetch(`/api/categorias/3?idioma=${idioma}`, { method: "GET" });
 }
 
 export function obtenerCategoriasFase4(idioma: Idioma): Promise<CategoriasFase4> {

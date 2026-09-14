@@ -1,18 +1,18 @@
 import type { Idioma } from "@/lib/types";
 import { urlLogout } from "@/lib/apiCliente";
 
-// Compartido por CabeceraFase.tsx (fases de chat) Y por los tres
-// selectores visuales (ArbolSelector/ValidacionSelector/SistemaSelector)
-// -- bug real reportado (14/09/2026): cambiar de idioma y cerrar sesión
-// solo existían en la cabecera de las fases de chat, así que alguien
-// que pasaba todo el tiempo en Fase 1, 3 (antes del refinado) o 4 nunca
-// tenía forma de hacer ninguna de las dos cosas. Un solo componente
-// chico en vez de repetir el markup en cada uno de los 4 lugares --
-// misma idea que agents/_modelo.py centralizando reglas compartidas
-// entre los 5 prompts, ahora del lado del frontend.
+// Compartido por CabeceraFase.tsx (fases de chat) Y por los dos
+// selectores visuales (ArbolSelector/SistemaSelector) -- bug real
+// reportado (14/09/2026): cambiar de idioma y cerrar sesión solo
+// existían en la cabecera de las fases de chat, así que alguien que
+// pasaba todo el tiempo en Fase 1 o 4 nunca tenía forma de hacer
+// ninguna de las dos cosas. Un solo componente chico en vez de repetir
+// el markup en cada uno de esos lugares -- misma idea que
+// agents/_modelo.py centralizando reglas compartidas entre los agentes
+// de fase, ahora del lado del frontend.
 //
-// `logoutLabel` (no `t: Textos`) a propósito: los tres selectores
-// tienen su PROPIO diccionario de textos local (no el `Textos` de
+// `logoutLabel` (no `t: Textos`) a propósito: los selectores tienen su
+// PROPIO diccionario de textos local (no el `Textos` de
 // web/src/lib/i18n.ts), así que este componente no depende de ningún
 // tipo de textos en particular -- cada caller le pasa el string ya
 // traducido que corresponda.

@@ -38,18 +38,27 @@ Usuario
   │
   ├─ fase=1 ─> Fase 1 Explorador
   ├─ fase=2 ─> Fase 2 Sintetizador
-  ├─ fase=3 ─> Fase 3 Coach de Validación
   ├─ fase=4 ─> Fase 4 Estratega de Sistemas ──> ficha completa
   │                                                   │
   └─ fase=5 ─> Fase 5 Seguimiento (al abrir sesión) <─┘
                     │
-                    └─(si el sistema/propósito ya no sirve)─> re-entra a Fase 3 o 4
+                    └─(si el sistema/propósito ya no sirve)─> re-entra a Fase 2 o 4
 ```
 
-Fases 1→2→3→4 son un **flujo fijo**: el Orquestador no permite saltarlas
+Fases 1→2→4 son un **flujo fijo**: el Orquestador no permite saltarlas
 ni reordenarlas. Fase 5 es **dinámica**: no vive en la secuencia lineal,
 se dispara por evento (abrir sesión con ficha ya completa) y puede
-reinyectar al usuario en Fase 3 o 4 según lo que reporte.
+reinyectar al usuario en Fase 2 o 4 según lo que reporte.
+
+**Fase 3 (Coach de Validación) se eliminó del flujo el 14/09/2026** --
+pedido explícito del dueño del producto tras probar en producción:
+elegir un candidato de propósito (Fase 2) pasa directo a construir el
+sistema (Fase 4), sin otra ventana ni otro chat en el medio. La
+sección 4 más abajo describe cómo funcionaba (histórico, ya no
+implementado) -- `agents/coach_validacion.py`,
+`agents/evaluador_confirmacion.py`, `tools/categorias_validacion.py` y
+el selector visual `ValidacionSelector.tsx` se borraron en ese mismo
+cambio, recuperables de git history si hace falta comparar.
 
 Esta secuencia (incluido el encadenado de una fase a la siguiente en el
 mismo turno) es lógica de control en Python plano
@@ -391,7 +400,7 @@ auto-scaling, IAM delimitado al modelo, alarma de AWS Budgets).
    dispara al abrir una conversación nueva, no en el mismo turno que
    cierra Fase 4).
 6. Caso especial: si existe una ficha con fase=5 (ciclo de seguimiento) y
-   el agente de Fase 5 decide re-entrar a Fase 3 o 4, el Orquestador
+   el agente de Fase 5 decide re-entrar a Fase 2 o 4, el Orquestador
    actualiza `fase_actual` a ese valor y guarda el motivo — esta
    re-entrada también cascadea en el mismo turno, igual que el punto 5.
 7. Cada mensaje que entrega `enviar_mensaje`/`abrir_conversacion` es una
@@ -675,52 +684,68 @@ modelo tenga que acordarse de llamar.
 > [shared transition rule — section 0.7] [shared real-close rule —
 > section 0.7] [shared name rule — section 0.7]
 
-**Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=2, motivo_version="propósito candidato elegido")`, `presentar_opciones(opciones: list[str])`
+**Tools:** `leer_ficha_usuario(usuario_id)`, `guardar_ficha_usuario(usuario_id, datos, fase=2, motivo_version="propósito candidato elegido")`, `presentar_candidatos_proposito(candidatos)` (estructurado -- ver `agents/_modelo.py::CandidatoProposito`; el frontend los muestra como tarjetas con botón, `ArbolSelector`/`SistemaSelector`/`CandidatosProposito.tsx`, nunca como texto de chat -- pedido explícito del dueño del producto, 14/09/2026)
 
-**Sale a:** Fase 3.
+**Sale a:** Fase 4 -- directo, elegir un candidato (o confirmar una
+redacción combinada por chat) ya es el evento de "propósito listo, a
+construir el sistema" (ver `agents/orquestador.py::SesionTelos.
+confirmar_proposito_elegido`).
 
-## 4. Fase 3 — Coach de Validación
+## 4. Fase 3 — Coach de Validación (eliminada del flujo, 14/09/2026)
+
+**Esta sección es histórica -- ya no está implementada.** Pedido
+explícito del dueño del producto tras probar en producción: elegir un
+candidato de propósito (Fase 2) tiene que pasar directo a construir el
+sistema (Fase 4), sin otra ventana ni otro chat en el medio. Se
+mantiene el detalle de cómo funcionaba por si hace falta comparar
+contra git history (`agents/coach_validacion.py`,
+`agents/evaluador_confirmacion.py`, `tools/categorias_validacion.py`,
+`web/src/components/Seleccion/ValidacionSelector.tsx` -- todos
+borrados en el mismo cambio).
 
 **Reescrita por completo el 13/09/2026 -- híbrido, no 100% selección
 como Fases 1 y 4.** Las etapas de evidencia pasada y fricción futura ya
-no son preguntas abiertas: la persona elige un área de vida de un
+no eran preguntas abiertas: la persona elegía un área de vida de un
 selector plano (`tools/categorias_validacion.py`, reutilizado para las
 dos etapas) en vez de escribir un relato libre. Pero afinar la redacción
-final del propósito SIGUE siendo conversación real -- no se puede
-reducir a selección sin que se sienta falso, es la única pieza de las
-Fases 1-4 donde el diseño deliberadamente dejó el diálogo abierto.
+final del propósito SEGUÍA siendo conversación real -- no se podía
+reducir a selección sin que se sintiera falso, era la única pieza de
+las Fases 1-4 donde el diseño deliberadamente dejaba el diálogo
+abierto.
 
-**Mecánica** (ver `agents/orquestador.py::SesionTelos.
-confirmar_seleccion_validacion` / `_invocar_coach_validacion`):
+**Mecánica que tenía** (ver git history de `agents/orquestador.py::
+SesionTelos.confirmar_seleccion_validacion` / `_invocar_coach_validacion`):
 
-1. Etapa "evidencia_pasada": la persona elige un área de vida
+1. Etapa "evidencia_pasada": la persona elegía un área de vida
    (`POST /api/seleccion/confirmar` con `fase=3`) donde ya vivió este
-   propósito, con un detalle libre opcional. Código avanza a la etapa
-   siguiente -- nunca al revés, el orden sigue siendo una garantía de
+   propósito, con un detalle libre opcional. Código avanzaba a la
+   etapa siguiente -- nunca al revés, el orden era una garantía de
    código, no de instrucción.
 2. Etapa "friccion_futura": mismo selector, pregunta distinta (¿dónde
-   sería tentador abandonarlo?). Al confirmar, código invoca UNA vez al
-   Coach de Validación (`agents/coach_validacion.py`, sin tools) para
-   que proponga la primera redacción, anclada en esa evidencia -- esa
-   respuesta viaja en el mismo request como `mensaje_apertura_refinado`.
+   sería tentador abandonarlo?). Al confirmar, código invocaba UNA vez
+   al Coach de Validación (`agents/coach_validacion.py`, sin tools)
+   para que propusiera la primera redacción, anclada en esa evidencia
+   -- esa respuesta viajaba en el mismo request como
+   `mensaje_apertura_refinado`.
 3. Etapa "refinando": conversación real por `POST /api/sesion/mensaje`.
-   Cada turno, ANTES de que el Coach responda de nuevo, código evalúa
-   con `agents/evaluador_confirmacion.py` (acotado -- ve solo la última
-   propuesta y la respuesta de la persona, no todo el historial) si eso
-   ya es una confirmación. Si lo es, cierra ahí mismo: guarda
-   `"proposito"` con la redacción confirmada, sin invocar al Coach una
-   vez más para una despedida (mismo criterio que Fase 4).
+   Cada turno, ANTES de que el Coach respondiera de nuevo, código
+   evaluaba con `agents/evaluador_confirmacion.py` (acotado -- veía
+   solo la última propuesta y la respuesta de la persona, no todo el
+   historial) si eso ya era una confirmación. Si lo era, cerraba ahí
+   mismo: guardaba `"proposito"` con la redacción confirmada, sin
+   invocar al Coach una vez más para una despedida (mismo criterio que
+   Fase 4).
 
-**Chat secundario:** durante las etapas de selección, el chat no es el
-mecanismo principal (mismo aviso fijo que Fases 1/4 si llega texto
-libre). Durante "refinando", el chat ES la interfaz -- no hay nada
-secundario que mostrar aparte.
+**Chat secundario que tenía:** durante las etapas de selección, el
+chat no era el mecanismo principal (mismo aviso fijo que Fases 1/4 si
+llegaba texto libre). Durante "refinando", el chat ERA la interfaz --
+no había nada secundario que mostrar aparte.
 
-**Tools:** ninguna del lado del modelo -- ni la selección de área ni el
-cierre por confirmación pasan por una tool que el modelo tenga que
-acordarse de llamar.
+**Tools que usaba:** ninguna del lado del modelo -- ni la selección de
+área ni el cierre por confirmación pasaban por una tool que el modelo
+tuviera que acordarse de llamar.
 
-**Sale a:** Fase 4.
+**Salía a:** Fase 4.
 
 ## 5. Fase 4 — Estratega de Sistemas
 
@@ -799,8 +824,9 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
      cerrar el check-in, no forzar más conversación.
    - Si el sistema no está funcionando (cumplimiento bajo o ajuste
      pedido): re-entra a **Fase 4** para rediseñar el sistema.
-   - Si el propósito ya no resuena: re-entra a **Fase 3** para
-     revalidar/redefinir.
+   - Si el propósito ya no resuena: re-entra a **Fase 2** para elegir
+     uno nuevo (Fase 3, que revalidaba el propósito por conversación,
+     se eliminó del flujo el 14/09/2026 -- ver sección 4).
    - En ambos casos de re-entrada, se guarda una nueva versión de la
      ficha con el motivo del cambio (versionado por cambio de contexto),
      nunca se sobrescribe la anterior.
@@ -831,7 +857,7 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 > valores vigentes que ya leíste (sin cambios, salvo que este check-in
 > los haya ajustado) — si las omitís, el panel de la interfaz y el
 > próximo check-in dejan de verlas; y, si corresponde re-entrar a una
-> fase anterior, la clave "reentrada" con "fase3" o "fase4". [regla de
+> fase anterior, la clave "reentrada" con "fase2" o "fase4". [regla de
 > cierre real compartida — sección 0.7] [regla de nombre compartida —
 > sección 0.7]
 
@@ -856,7 +882,7 @@ existe una ficha completa (fase ≥ 4). No hay scheduler real en el MVP —
 > current values you already read (unchanged, unless this check-in
 > adjusted them) — omitting them makes the UI's side panel and the next
 > check-in lose track of them; and, if re-entering an earlier phase
-> applies, the key "reentrada" with "fase3" or "fase4". [shared
+> applies, the key "reentrada" with "fase2" or "fase4". [shared
 > real-close rule — section 0.7] [shared name rule — section 0.7]
 
 **Tipos de check-in (English):** compliance ("How did the system go
@@ -872,15 +898,15 @@ current system: ... / Last updated: ...".
 
 | Tool | Firma | Usado por | Notas |
 |---|---|---|---|
-| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | Código directo en Fases 1, 3 (al confirmar la redacción) y 4 -- ver agents/orquestador.py; tool del agente en Fases 2 y 5 | Cada `agents/*.py` (y el código de cierre de Fases 1/3/4) en realidad llama a `tools.ficha.guardar_ficha_usuario_fusionada`, no a la función base: fusiona `datos` sobre la última versión guardada (las claves nuevas ganan) antes de escribir, así una fase que se olvida de re-incluir "proposito"/"sistema" no los borra — ver sección 1, puntos 13-14. Vía AgentCore Memory (o backend JSON local en desarrollo); cada llamada crea una nueva versión, nunca sobrescribe el historial. Convención de claves de `datos`: desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas); desde Fase 5 (rama `gamificacion`), además `datos["cumplido"]` (booleano, no string — `agents/orquestador.py::_campos_faltantes` usa `is None` para detectar que falta, justamente para no confundir un `false` legítimo con una clave ausente) del que `agents/seguimiento.py::calcular_racha` deriva la racha — si una clave nunca se puso ni una sola vez, la fusión no tiene nada de qué heredarla, así que `SesionTelos._campos_faltantes` fuerza un reintento (sección 1, punto 14). El cuerpo real de la tool, en cada `agents/*.py`, también marca `SesionTelos._contenedor_guardado` (mismo patrón que `presentar_opciones`, fila de abajo) para que el Orquestador sepa con certeza que se ejecutó, sin depender de releer la ficha — ver sección 0.7. |
-| `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 3, 4, 5 | Devuelve la última versión y el historial de versiones anteriores, cada una con su `datos` completo (no solo fase/fecha/motivo) — necesario para la vista "Tu evolución" de la interfaz, que muestra cómo cambió el propósito/sistema con el tiempo, no solo cuándo. |
-| `presentar_opciones` | `(opciones: list[str]) -> str` | 2 (Sintetizador) | `agents/_modelo.py::crear_tool_presentar_opciones`. No persiste nada — solo le avisa a la sesión (`SesionTelos`) qué opciones mostrar como botones en este turno, vía un contenedor mutable compartido; el Orquestador la limpia antes de cada invocación y la entrega en la tupla `(fase, texto, opciones)`. Pensada para decisiones cerradas de un conjunto chico y conocido (el candidato de propósito); Fases 1, 3 (etapas de selección) y 4 ya resuelven sus propias decisiones cerradas con el selector visual (`POST /api/seleccion/confirmar`), no con esta tool -- no hace falta acá. |
+| `guardar_ficha_usuario` | `(usuario_id: str, datos: dict, fase: int, motivo_version: str) -> None` | Código directo en Fases 1, 2 (al elegir una tarjeta de candidato) y 4 -- ver agents/orquestador.py; tool del agente en Fase 2 (al combinar/redactar libre por chat) y en Fase 5 | Cada `agents/*.py` (y el código de cierre de Fases 1/2/4) en realidad llama a `tools.ficha.guardar_ficha_usuario_fusionada`, no a la función base: fusiona `datos` sobre la última versión guardada (las claves nuevas ganan) antes de escribir, así una fase que se olvida de re-incluir "proposito"/"sistema" no los borra — ver sección 1, puntos 13-14. Vía AgentCore Memory (o backend JSON local en desarrollo); cada llamada crea una nueva versión, nunca sobrescribe el historial. Convención de claves de `datos`: desde Fase 2, `datos["proposito"]` (string) con la redacción vigente; desde Fase 4, además `datos["sistema"]` (string legible, con salto de línea real entre cada una de las 4 respuestas); desde Fase 5 (rama `gamificacion`), además `datos["cumplido"]` (booleano, no string — `agents/orquestador.py::_campos_faltantes` usa `is None` para detectar que falta, justamente para no confundir un `false` legítimo con una clave ausente) del que `agents/seguimiento.py::calcular_racha` deriva la racha — si una clave nunca se puso ni una sola vez, la fusión no tiene nada de qué heredarla, así que `SesionTelos._campos_faltantes` fuerza un reintento (sección 1, punto 14). El cuerpo real de la tool, en cada `agents/*.py`, también marca `SesionTelos._contenedor_guardado` (mismo patrón que `presentar_opciones`, fila de abajo) para que el Orquestador sepa con certeza que se ejecutó, sin depender de releer la ficha — ver sección 0.7. |
+| `leer_ficha_usuario` | `(usuario_id: str) -> dict` | 2, 4, 5 | Devuelve la última versión y el historial de versiones anteriores, cada una con su `datos` completo (no solo fase/fecha/motivo) — necesario para la vista "Tu evolución" de la interfaz, que muestra cómo cambió el propósito/sistema con el tiempo, no solo cuándo. |
+| `presentar_opciones` | `(opciones: list[str]) -> str` | 2 (Sintetizador) | `agents/_modelo.py::crear_tool_presentar_opciones`. No persiste nada — solo le avisa a la sesión (`SesionTelos`) qué opciones mostrar como botones en este turno, vía un contenedor mutable compartido; el Orquestador la limpia antes de cada invocación y la entrega en la tupla `(fase, texto, opciones)`. Pensada para decisiones cerradas de un conjunto chico y conocido (el candidato de propósito); Fases 1 y 4 ya resuelven sus propias decisiones cerradas con el selector visual (`POST /api/seleccion/confirmar`), no con esta tool -- no hace falta acá. |
 | `guardar_nombre_usuario` / `leer_nombre_usuario` | `(usuario_id: str, nombre: str) -> None` / `(usuario_id: str) -> str \| None` | Orquestador, en el Paso 0 (código, no tool de ningún agente de fase) | `tools/perfil.py` (mismo selector de backend `TELOS_FICHA_BACKEND` que la ficha). No versiona -- a diferencia de `guardar_ficha_usuario`, cada guardado reemplaza el nombre vigente. Vive separado de la ficha a propósito: si fuera una clave más dentro de `datos`, se perdería de vista en cuanto una fase posterior guardara una versión nueva sin repetirla (ver la nota de la fila de arriba). |
 | `detectar_señal_crisis` | `(texto: str) -> dict` | Orquestador, en cada turno (código, no tool del modelo) | Retorna `{"disparado": bool, "categoria": str \| None}`. Lista estática curada, sin llamada a modelo — determinístico. No se registra como tool de ningún agente de fase: exponerla al LLM la haría opcional para el modelo, y este guardrail no puede ser opcional. |
 | `crear_evento_calendario` | `(usuario_id: str, detalle: dict) -> dict` | Fase 4 | P2. Vía AgentCore Gateway envolviendo Google Calendar. Si no hay tiempo, se mockea devolviendo una confirmación fija sin llamar a ninguna API externa — el agente y su prompt no cambian, solo la implementación de la tool. |
 | `guardar_intercambio` | `(usuario_id: str, fase: int, texto_usuario: str, texto_asistente: str) -> None` | Orquestador, en cada turno real (código, no tool del modelo) | Vía AgentCore Memory (`create_event`, un evento conversacional por turno — distinto de `create_blob_event`, que usa `guardar_ficha_usuario`) o backend JSON local en desarrollo. No se expone como tool del modelo: es lógica de control del Orquestador, igual que `detectar_señal_crisis`. |
 | `leer_turnos` | `(usuario_id: str, fase: int) -> list[dict]` | Orquestador, al construir o reconstruir el agente de una fase | Devuelve los turnos guardados de esa fase en orden cronológico (`[{"rol": "user"\|"assistant", "texto": str}, ...]`); el Orquestador los convierte al formato `Message` de Strands y los precarga como historial real del agente. |
-| `informar_al_orquestador` | `(texto_para_persona: str, cerrado: bool, dato_nuevo: str \| None) -> str` | 2 y 5 -- Fases 1, 3 y 4 ya no la usan, cierran por código puro (ver secciones 2, 4 y 5) | Obligatoria al final de CADA turno. `texto_para_persona` es lo único que el orquestador agéntico le muestra a la persona (tal cual, sin resumir). `cerrado` reemplaza a la vieja detección por regex de "dijo que guardó sin guardar" -- se verifica contra AgentCore Memory antes de confiarle nada. `dato_nuevo` alimenta `tools/contexto_usuario.py` para que ningún subagente repita una pregunta ya contestada en otra fase. |
+| `informar_al_orquestador` | `(texto_para_persona: str, cerrado: bool, dato_nuevo: str \| None) -> str` | 2 y 5 -- Fases 1 y 4 ya no la usan, cierran por código puro (ver secciones 2 y 5) | Obligatoria al final de CADA turno. `texto_para_persona` es lo único que el orquestador agéntico le muestra a la persona (tal cual, sin resumir). `cerrado` reemplaza a la vieja detección por regex de "dijo que guardó sin guardar" -- se verifica contra AgentCore Memory antes de confiarle nada. `dato_nuevo` alimenta `tools/contexto_usuario.py` para que ningún subagente repita una pregunta ya contestada en otra fase. |
 | `excedio_limite_diario` / `registrar_invocacion` | `(usuario_id: str) -> bool` / `(usuario_id: str) -> int` | Orquestador, antes/después de cada invocación real al agente de fase (código, no tool del modelo) | Protección de costo (100 invocaciones/día por usuario), no una regla de producto. Backend JSON local — no vía AgentCore Memory: no hace falta un backend compartido entre instancias, la UI corre en una sola instancia EC2, sin auto-scaling (ver README). La extracción del nombre (Paso 0) también cuenta acá. |
 
 ## 8. Reglas de tono (todas las fases, con énfasis en Fase 5)

@@ -6,21 +6,17 @@ import type { Textos } from "@/lib/i18n";
 import { NOMBRES_FASE } from "@/lib/i18n";
 import type { Idioma } from "@/lib/types";
 
-// Port del "mapa del camino" de ui/app.py -- ya NO son 5 paradas (una
-// por fase interna), son los 4 MOMENTOS del viaje que ve la persona
-// (Descubrir/Entender/Construir/Sostener, ver NOMBRES_FASE en
-// web/src/lib/i18n.ts). Pedido explícito del dueño del producto
-// (14/09/2026): "la experiencia no debe sentirse como cuatro fases" --
-// Fase 2 (Sintetizador) y Fase 3 (Coach de Validación) son, para la
-// persona, un solo momento ("Entender" tu propósito: primero se arma,
-// después se pone a prueba), así que comparten un mismo segmento acá en
-// vez de dos paradas separadas. La fase interna (1-5) sigue siendo la
-// fuente de verdad en `faseActual` -- este componente solo agrupa cómo
-// se muestra, nunca cambia qué fase es.
+// Port del "mapa del camino" de ui/app.py -- son los 4 MOMENTOS del
+// viaje que ve la persona (Descubrir/Entender/Construir/Sostener, ver
+// NOMBRES_FASE en web/src/lib/i18n.ts), no las fases internas. La fase
+// interna (1, 2, 4, 5 -- Fase 3, Coach de Validación, se eliminó del
+// flujo el 14/09/2026, ver agents/orquestador.py) sigue siendo la
+// fuente de verdad en `faseActual`; este componente solo agrupa cómo se
+// muestra, nunca cambia qué fase es.
 type Momento = { id: string; fases: number[] };
 const MOMENTOS: Momento[] = [
   { id: "descubrir", fases: [1] },
-  { id: "entender", fases: [2, 3] },
+  { id: "entender", fases: [2] },
   { id: "construir", fases: [4] },
   { id: "sostener", fases: [5] },
 ];

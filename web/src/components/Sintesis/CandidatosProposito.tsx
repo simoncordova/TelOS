@@ -8,11 +8,10 @@ import type { Idioma } from "@/lib/types";
 // candidatos de propósito que arma agents/sintetizador.py ahora llegan
 // como datos estructurados (ver tipo CandidatoProposito), así que se
 // muestran como tarjetas editoriales -- mismo lenguaje visual que
-// ArbolSelector/ValidacionSelector/SistemaSelector (serif grande para el
-// contenido central, mono uppercase para los rótulos) en vez del "diseño
-// de sintetizador antiguo" (texto plano en una burbuja de chat) que
-// motivó este cambio (pedido explícito del dueño del producto,
-// 14/09/2026).
+// ArbolSelector/SistemaSelector (serif grande para el contenido
+// central, mono uppercase para los rótulos) en vez del "diseño de
+// sintetizador antiguo" (texto plano en una burbuja de chat) que motivó
+// este cambio (pedido explícito del dueño del producto, 14/09/2026).
 //
 // El chat de abajo (ChatInput) sigue disponible para quien prefiera
 // escribir su propia combinación en vez de elegir una tarjeta tal

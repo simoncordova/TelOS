@@ -16,22 +16,24 @@ class EnviarMensajeRequest(BaseModel):
 
 
 class ConfirmarSeleccionRequest(BaseModel):
-    """Fases 1, 2, 3 y 4: una opción confirmada en un árbol, un candidato
-    de propósito o un selector de categorías (tools/categorias_ikigai.py,
-    tools/categorias_validacion.py o tools/categorias_sistema.py -- ver
-    agents/orquestador.py::SesionTelos.confirmar_seleccion/
-    confirmar_proposito_elegido/confirmar_seleccion_validacion/
+    """Fases 1, 2 y 4: una opción confirmada en un árbol, un candidato
+    de propósito o un selector de categorías (tools/categorias_ikigai.py
+    o tools/categorias_sistema.py -- ver agents/orquestador.py::
+    SesionTelos.confirmar_seleccion/confirmar_proposito_elegido/
     confirmar_seleccion_sistema). `ruta`/`dimensiones`/el contenido real
     del candidato NO se mandan desde acá -- el backend los deriva de la
     taxonomía o de lo que de verdad se le presentó a la persona, nunca
     confía en lo que mande el cliente. `nodo_id` sirve tanto para un id
-    de nodo de árbol (Fase 1) como para un `area_id` del selector plano
-    de Fase 3, la respuesta elegida de Fase 4, o la `frase` de un
-    candidato de propósito de Fase 2 -- mismo campo, incluso el shape
-    del origen sea distinto, porque conceptualmente es siempre "qué
-    opción se eligió". `pregunta_id` es obligatorio solo cuando
-    `fase=4` (cuál de las 4 preguntas fijas está respondiendo -- ver
-    tools/categorias_sistema.py::PREGUNTAS_SISTEMA_IDS)."""
+    de nodo de árbol (Fase 1) como para la respuesta elegida de Fase 4,
+    o la `frase` de un candidato de propósito de Fase 2 -- mismo campo,
+    incluso el shape del origen sea distinto, porque conceptualmente es
+    siempre "qué opción se eligió". `pregunta_id` es obligatorio solo
+    cuando `fase=4` (cuál de las 4 preguntas fijas está respondiendo --
+    ver tools/categorias_sistema.py::PREGUNTAS_SISTEMA_IDS).
+
+    Fase 3 (Coach de Validación) usaba `fase=3` acá para su selector de
+    evidencia -- se eliminó del flujo (ver docstring de
+    agents/orquestador.py); `fase` ya no acepta ese valor."""
 
     fase: int = 1
     nodo_id: str
@@ -41,25 +43,19 @@ class ConfirmarSeleccionRequest(BaseModel):
 
 
 class SeleccionConfirmadaResponse(BaseModel):
-    """`cobertura` (Fase 1), `respuestas` (Fase 4) y `etapa`/
-    `mensaje_apertura_refinado` (Fase 3) son mutuamente excluyentes --
-    cuál viene poblada depende de `fase` en el request. `mostrar_valores`
-    (Fase 1) es True exactamente en el turno donde se completa la 2da
-    selección y todavía no se pasó por `POST /api/seleccion/valores` --
-    ahí el frontend debe mostrar el paso único de "tus valores" (ver
-    agents/orquestador.py::SesionTelos.confirmar_seleccion). `puede_cerrar`
-    (Fase 1) habilita el botón "Ver mi propósito" -- llegar al mínimo NO
-    cierra la fase sola, la persona decide cuándo con
-    `POST /api/seleccion/cerrar-fase1` (ver cerrar_fase_1_manual). Fase 3
-    nunca cierra a través de este endpoint (`cerrado` siempre False, ver
-    agents/orquestador.py::SesionTelos.confirmar_seleccion_validacion)
-    -- su cierre real pasa por `POST /api/sesion/mensaje` una vez en
-    etapa "refinando", que sí es una conversación de texto."""
+    """`cobertura` (Fase 1) y `respuestas` (Fase 4) son mutuamente
+    excluyentes -- cuál viene poblada depende de `fase` en el request.
+    `mostrar_valores` (Fase 1) es True exactamente en el turno donde se
+    completa la 2da selección y todavía no se pasó por
+    `POST /api/seleccion/valores` -- ahí el frontend debe mostrar el
+    paso único de "tus valores" (ver agents/orquestador.py::SesionTelos.
+    confirmar_seleccion). `puede_cerrar` (Fase 1) habilita el botón "Ver
+    mi propósito" -- llegar al mínimo NO cierra la fase sola, la persona
+    decide cuándo con `POST /api/seleccion/cerrar-fase1` (ver
+    cerrar_fase_1_manual)."""
 
     cobertura: dict[str, int] | None = None
     respuestas: dict[str, dict] | None = None
-    etapa: str | None = None
-    mensaje_apertura_refinado: str | None = None
     mostrar_valores: bool = False
     puede_cerrar: bool = False
     cerrado: bool

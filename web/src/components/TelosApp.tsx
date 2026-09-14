@@ -18,7 +18,6 @@ import type { Festejo } from "./Notifications/Celebracion";
 import { Celebracion } from "./Notifications/Celebracion";
 import { ArbolSelector } from "./Seleccion/ArbolSelector";
 import { SistemaSelector } from "./Seleccion/SistemaSelector";
-import { ValidacionSelector } from "./Seleccion/ValidacionSelector";
 import { CandidatosProposito } from "./Sintesis/CandidatosProposito";
 
 // Dueño solo del idioma elegido -- todo lo demás (mensajes, ficha,
@@ -55,15 +54,14 @@ export function TelosApp({
 // en vez de dejarlo ahí a la espera de una fase de chat futura que lo
 // reviva sin contexto.
 //
-// Fase 3 es un caso aparte: mientras sigue en su sub-etapa de selección
-// (`!fase3EnRefinado`) tampoco muestra chat, y el mensaje que produce en
-// ese momento (la cascada 2→3, por ejemplo) es siempre el mismo aviso
-// fijo _PLACEHOLDER_FASE_1 (ver agents/orquestador.py::
-// _invocar_coach_validacion) -- mismo riesgo de que reaparezca sin
-// contexto una vez que la persona sí llega a "refinando" y el chat real
-// se muestra por primera vez.
-function esFaseSoloSelector(fase: number, fase3EnRefinado: boolean): boolean {
-  return fase === 0 || fase === 1 || fase === 4 || (fase === 3 && !fase3EnRefinado);
+// Fase 3 (Coach de Validación, un selector de evidencia + chat de
+// refinado) existía como caso híbrido acá -- se eliminó del flujo del
+// todo (pedido explícito del dueño del producto, 14/09/2026: elegir un
+// candidato de propósito pasa directo a construir el sistema, sin otra
+// ventana ni otro chat en el medio). self.fase_actual ya nunca vale 3
+// en una sesión nueva, ver agents/orquestador.py.
+function esFaseSoloSelector(fase: number): boolean {
+  return fase === 0 || fase === 1 || fase === 4;
 }
 
 // Port 1:1 del script principal de ui/app.py -- misma secuencia
@@ -108,26 +106,6 @@ function Conversacion({
   // visible en Sidebar.tsx; ahora es a pedido, así el chat no compite
   // por espacio con un panel de resultados todo el tiempo.
   const [detallesAbierto, setDetallesAbierto] = useState(false);
-  // Fase 3 es híbrida (ver ValidacionSelector.tsx): mientras esto es
-  // false, la vista principal es el selector de áreas; en cuanto el
-  // backend confirma la 2da elección y devuelve la primera propuesta del
-  // coach, pasa a true y la vista principal vuelve a ser el chat normal
-  // -- self.fase_actual sigue en 3 todo ese tiempo del lado del backend,
-  // así que esto es puramente estado de UI, no algo que refleje `ficha`.
-  // Se resetea cada vez que se ENTRA a Fase 3 (primera vez o reentrada
-  // real desde Fase 5, ver agents/orquestador.py::_avanzar_fase_si_corresponde)
-  // para no arrastrar el valor de una vuelta anterior.
-  const [fase3EnRefinado, setFase3EnRefinado] = useState(false);
-  // Ajuste de estado durante el render (no en un efecto) siguiendo el
-  // patrón que React mismo recomienda para "resetear un estado cuando
-  // cambia una prop/otro estado" -- evita el reproche de eslint sobre
-  // llamar a setState dentro de un efecto, y además evita el frame extra
-  // de re-render que tendría un efecto acá.
-  const [faseActualAnterior, setFaseActualAnterior] = useState(faseActual);
-  if (faseActual !== faseActualAnterior) {
-    setFaseActualAnterior(faseActual);
-    if (faseActual === 3) setFase3EnRefinado(false);
-  }
 
   const t = TEXTOS[idioma];
 
@@ -140,21 +118,10 @@ function Conversacion({
   // (no durante el render) para no mutar un ref fuera de ese punto.
   const fichaRef = useRef(ficha);
   const faseActualRef = useRef(faseActual);
-  // Mismo motivo que los dos de arriba: esFaseSoloSelector necesita
-  // saber, al momento real de recibir un mensaje (no al momento en que
-  // React armó el closure), si Fase 3 está todavía en su sub-etapa de
-  // selección -- ahí un mensaje de texto es siempre el aviso fijo
-  // _PLACEHOLDER_FASE_1 (ver agents/orquestador.py::
-  // _invocar_coach_validacion), nunca contenido real del Coach de
-  // Validación, así que tampoco debería quedar guardado en `mensajes`
-  // para reaparecer sin contexto una vez que sí se entra a "refinando"
-  // -- mismo bug real que ya motivó esFaseSoloSelector para fase 0/1/4.
-  const fase3EnRefinadoRef = useRef(fase3EnRefinado);
   useEffect(() => {
     fichaRef.current = ficha;
     faseActualRef.current = faseActual;
-    fase3EnRefinadoRef.current = fase3EnRefinado;
-  }, [ficha, faseActual, fase3EnRefinado]);
+  }, [ficha, faseActual]);
 
   // El agente habla primero siempre, nueva conversación o retomada
   // (Fase 5 muestra su resumen apenas abre, no después) -- corre una
@@ -170,7 +137,7 @@ function Conversacion({
         if (cancelado) return;
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
-          if (!esFaseSoloSelector(d.fase, fase3EnRefinadoRef.current)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
           setCandidatosPendientes(d.candidatos);
@@ -210,7 +177,7 @@ function Conversacion({
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
-          if (!esFaseSoloSelector(d.fase, fase3EnRefinadoRef.current)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           faseFinal = d.fase;
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
@@ -248,11 +215,11 @@ function Conversacion({
     [idioma, t],
   );
 
-  // Fases 1, 2 (al elegir un candidato de propósito), 3 y 4 cierran por
+  // Fases 1, 2 (al elegir un candidato de propósito) y 4 cierran por
   // selección visual/tarjeta (ArbolSelector, CandidatosProposito,
-  // ValidacionSelector, SistemaSelector), fuera del pipeline de texto de
-  // procesarTurno -- así que su cascada hacia la fase siguiente nunca se
-  // dispara sola. Mismo criterio que agents/orquestador.py::SesionTelos.
+  // SistemaSelector), fuera del pipeline de texto de procesarTurno --
+  // así que su cascada hacia la fase siguiente nunca se dispara sola.
+  // Mismo criterio que agents/orquestador.py::SesionTelos.
   // continuar_tras_seleccion (que es justo lo que este endpoint invoca):
   // se llama una sola vez, después de que el cierre explícito ya guardó
   // la ficha del lado del backend. `mensajeCierre` es el texto que ya
@@ -268,7 +235,7 @@ function Conversacion({
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
-          if (!esFaseSoloSelector(d.fase, fase3EnRefinadoRef.current)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
           setCandidatosPendientes(d.candidatos);
@@ -289,12 +256,13 @@ function Conversacion({
   // algo que la interfaz ya sabe con certeza (pedido explícito del dueño
   // del producto, 14/09/2026: la interfaz ya manda los eventos que
   // marcan el paso entre fases). Mismo endpoint determinístico que
-  // ArbolSelector/ValidacionSelector/SistemaSelector ya usan
-  // (POST /api/seleccion/confirmar, ver agents/orquestador.py::
-  // SesionTelos.confirmar_proposito_elegido) -- nunca pasa por
-  // enviarMensaje/el Sintetizador de vuelta. "Combinar partes de varios"
-  // sigue siendo texto libre por el ChatInput de siempre, sin pasar por
-  // acá -- esta función es solo para el click directo en una tarjeta.
+  // ArbolSelector/SistemaSelector ya usan (POST /api/seleccion/confirmar,
+  // ver agents/orquestador.py::SesionTelos.confirmar_proposito_elegido)
+  // -- nunca pasa por enviarMensaje/el Sintetizador de vuelta, y pasa
+  // directo a Fase 4 (construir el sistema): Fase 3 (Coach de
+  // Validación) se eliminó del flujo. "Combinar partes de varios" sigue
+  // siendo texto libre por el ChatInput de siempre, sin pasar por acá --
+  // esta función es solo para el click directo en una tarjeta.
   const elegirProposito = useCallback(
     async (frase: string) => {
       setCandidatosPendientes([]);
@@ -318,10 +286,10 @@ function Conversacion({
   const datos = (ficha?.actual?.datos ?? {}) as { proposito?: string; sistema?: string };
   const nombre = ficha?.nombre ?? null;
 
-  // Fases con selector visual propio (0, 1, 3 sin refinado, 4): la
-  // sidebar se oculta y el selector ocupa todo el viewport -- su propio
-  // fondo y tipografía warm reemplazan el chrome de la app. En fases de
-  // chat (2, 3 refinado, 5) la sidebar vuelve a mostrarse.
+  // Fases con selector visual propio (0, 1, 4): la sidebar se oculta y
+  // el selector ocupa todo el viewport -- su propio fondo y tipografía
+  // warm reemplazan el chrome de la app. En fases de chat (2, 5) la
+  // sidebar vuelve a mostrarse.
   // Nota: nombre puede ser null en el primer login (se obtiene dentro del
   // flujo de Fase 1) -- no lo usamos como prerequisito para mostrar los
   // selectores visuales.
@@ -337,38 +305,23 @@ function Conversacion({
   // las dos (no debería pasar nunca en uso normal) cae explícitamente en
   // EstadoError más abajo, nunca en un dashboard vacío que se ve
   // legítimo sin serlo.
-  const esFaseChat = faseActual === 2 || (faseActual === 3 && fase3EnRefinado) || faseActual === 5;
+  const esFaseChat = faseActual === 2 || faseActual === 5;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {/* Fases 1, 3 (mientras dura la selección de áreas) y 4: la interfaz
-          principal deja de ser el chat -- selector visual, con el chat
-          relegado a apoyo opcional (Fase 1) o directamente ausente hasta
-          que la propia fase lo active (Fase 3, ver ValidacionSelector).
-          El resto de las fases (2, 3 ya en "refinando", 5) es chat, pero
-          con la MISMA cabecera visual que estos tres selectores (ver
-          CabeceraFase) en vez del panel de resultados que antes ocupaba
-          toda la altura -- pedido explícito del dueño del producto:
-          las fases de chat tienen que sentirse la misma aplicación, no
-          una pantalla intermedia aparte. Cualquier otro valor de fase
-          (no debería pasar nunca en uso normal) cae en EstadoError, no
-          en el chat -- ver comentario de esFaseChat arriba. */}
+      {/* Fases 1 y 4: la interfaz principal deja de ser el chat --
+          selector visual, con el chat relegado a apoyo opcional (Fase 1).
+          El resto de las fases (2, 5) es chat, pero con la MISMA
+          cabecera visual que estos dos selectores (ver CabeceraFase) en
+          vez del panel de resultados que antes ocupaba toda la altura --
+          pedido explícito del dueño del producto: las fases de chat
+          tienen que sentirse la misma aplicación, no una pantalla
+          intermedia aparte. Cualquier otro valor de fase (no debería
+          pasar nunca en uso normal) cae en EstadoError, no en el chat --
+          ver comentario de esFaseChat arriba. */}
       {(faseActual === 0 || faseActual === 1) ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ArbolSelector idioma={idioma} onCambiarIdioma={onCambiarIdioma} requiereLogin={requiereLogin} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
-        </main>
-      ) : faseActual === 3 && !fase3EnRefinado ? (
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <ValidacionSelector
-            idioma={idioma}
-            onCambiarIdioma={onCambiarIdioma}
-            requiereLogin={requiereLogin}
-            proposito={datos.proposito}
-            onEntrarRefinado={(primerMensaje) => {
-              setMensajes((prev) => [...prev, { rol: "assistant", texto: primerMensaje }]);
-              setFase3EnRefinado(true);
-            }}
-          />
         </main>
       ) : faseActual === 4 ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">

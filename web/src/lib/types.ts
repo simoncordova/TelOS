@@ -83,18 +83,9 @@ export type CategoriasFase4 = {
   categorias: Record<string, NodoCategoriaSistema[]>;
 };
 
-// --- Fase 3: selector plano de áreas de vida -- espejo de
-// tools/categorias_validacion.py.
-
-export type AreaVida = { id: string; label: string };
-
-export type CategoriasFase3 = { areas: AreaVida[] };
-
 export type SeleccionConfirmada = {
   cobertura: Record<string, number> | null;
   respuestas: Record<string, unknown> | null;
-  etapa: string | null;
-  mensaje_apertura_refinado: string | null;
   mostrar_valores: boolean;
   puede_cerrar: boolean;
   cerrado: boolean;

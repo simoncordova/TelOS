@@ -4,28 +4,26 @@ import { parsearSistema } from "@/lib/parseSistema";
 import type { Idioma } from "@/lib/types";
 import { AccionesCuenta } from "../AccionesCuenta";
 
-// Cabecera de las fases de chat (2, 3 ya refinando, 5) -- reemplaza a
-// Sidebar.tsx, que ocupaba toda la altura como una columna fija al
-// costado. Pedido explícito del dueño del producto (13/09/2026): "el
-// paso entre fases no necesita esa ventana intermedia" -- las fases de
-// chat tienen que sentirse la MISMA aplicación que ArbolSelector/
-// ValidacionSelector/SistemaSelector, no un panel de resultados aparte.
-// Esta cabecera toma el mismo lenguaje visual que esos tres (logo +
-// título mono en mayúsculas, misma paleta) en vez de inventar uno
-// nuevo, y el detalle "secundario" (fase/racha, resultados completos,
-// evolución, exportar, notificaciones -- todo lo que antes vivía
-// siempre visible en Sidebar) se movió a PanelDetalles, un panel que se
-// abre a pedido con el botón "Detalles" en vez de ocupar espacio todo
-// el tiempo.
+// Cabecera de las fases de chat (2, 5) -- reemplaza a Sidebar.tsx, que
+// ocupaba toda la altura como una columna fija al costado. Pedido
+// explícito del dueño del producto (13/09/2026): "el paso entre fases
+// no necesita esa ventana intermedia" -- las fases de chat tienen que
+// sentirse la MISMA aplicación que ArbolSelector/SistemaSelector, no un
+// panel de resultados aparte. Esta cabecera toma el mismo lenguaje
+// visual que esos dos (logo + título mono en mayúsculas, misma paleta)
+// en vez de inventar uno nuevo, y el detalle "secundario" (fase/racha,
+// resultados completos, evolución, exportar, notificaciones -- todo lo
+// que antes vivía siempre visible en Sidebar) se movió a PanelDetalles,
+// un panel que se abre a pedido con el botón "Detalles" en vez de
+// ocupar espacio todo el tiempo.
 //
 // El propósito, una vez que existe, se muestra siempre acá arriba --
 // mismo pedido: "el resto de fases construye un sistema para ese
 // propósito, y hace seguimiento a ese sistema para cumplir ese
 // propósito", así que tiene sentido que la persona lo tenga siempre a
-// la vista, no solo la primera vez que ValidacionSelector/
-// SistemaSelector lo muestran. Mismo estilo (caption mono + serif
-// grande) que esos dos componentes ya usan para el propósito -- no un
-// tratamiento visual nuevo.
+// la vista, no solo la primera vez que SistemaSelector lo muestra.
+// Mismo estilo (caption mono + serif grande) que ese componente ya usa
+// para el propósito -- no un tratamiento visual nuevo.
 export function CabeceraFase({
   idioma,
   onCambiarIdioma,

@@ -43,7 +43,9 @@ def test_elegir_un_candidato_presentado_cierra_la_fase():
 
     assert resultado["cerrado"] is True
     assert resultado["mensaje_cierre"]
-    assert sesion.fase_actual == 3
+    # Pasa directo a Fase 4 (construir el sistema) -- Fase 3 (Coach de
+    # Validación) se eliminó del flujo, ver agents/orquestador.py.
+    assert sesion.fase_actual == 4
 
 
 def test_elegir_un_candidato_guarda_el_proposito_en_la_ficha():
@@ -84,7 +86,7 @@ def test_fase_actual_distinta_de_2_lanza_value_error():
     usuario_id = "test_confirmar_proposito_u5"
     borrar_selecciones_estructuradas(usuario_id)
     sesion = SesionTelos(usuario_id, idioma="es")
-    sesion.fase_actual = 3
+    sesion.fase_actual = 4
     guardar_selecciones_estructuradas(usuario_id, {"fase": 2, "candidatos": list(_CANDIDATOS)})
 
     with pytest.raises(ValueError):

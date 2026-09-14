@@ -1,17 +1,16 @@
 import type { Idioma } from "./types";
 
 // Vocabulario de "momento del viaje" que ve la persona -- NO el nombre
-// interno de cada fase/agente (Explorador, Sintetizador, Coach de
-// Validación, Estratega de Sistemas, Seguimiento; esos siguen existiendo
-// tal cual en agents/orquestador.py, solo dejan de mostrarse en la UI).
-// Pedido explícito del dueño del producto (14/09/2026): "la experiencia
-// no debe sentirse como cuatro fases" -- Fase 2 (Sintetizador, arma el
-// propósito) y Fase 3 (Coach de Validación, lo pone a prueba contra
-// evidencia real antes de refinarlo) son, para la persona, un solo
-// momento: "Entender" tu propósito. Por eso comparten la misma etiqueta
-// acá -- la fase interna sigue siendo 2 o 3 en el backend y en
-// "Tu evolución" (dos entradas de "Entender" en el historial, una por
-// cada cierre real), pero la persona nunca ve el número.
+// interno de cada fase/agente (Explorador, Sintetizador, Estratega de
+// Sistemas, Seguimiento; esos siguen existiendo tal cual en
+// agents/orquestador.py, solo dejan de mostrarse en la UI). Pedido
+// explícito del dueño del producto (14/09/2026): "la experiencia no debe
+// sentirse como cuatro fases" -- Fase 2 (Sintetizador, arma el propósito)
+// se muestra como el momento "Entender". La entrada `3` se mantiene
+// solo para poder seguir mostrando el nombre de una versión vieja en
+// "Tu evolución" (de fichas guardadas antes del 14/09/2026, cuando Fase 3
+// -- Coach de Validación -- todavía existía y se eliminó del flujo por
+// completo) -- una sesión nueva nunca vuelve a producir esa fase.
 export const NOMBRES_FASE: Record<Idioma, Record<number, string>> = {
   es: { 0: "Bienvenida", 1: "Descubrir", 2: "Entender", 3: "Entender", 4: "Construir", 5: "Sostener" },
   en: { 0: "Welcome", 1: "Discover", 2: "Understand", 3: "Understand", 4: "Build", 5: "Sustain" },

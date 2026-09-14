@@ -113,9 +113,9 @@ la racha por código, así que es obligatoria en cada check-in, incluso en \
 los de tipo autopercepción o ajuste (inferí el cumplimiento del hábito \
 igual, aunque la pregunta principal haya sido sobre otra cosa); y, si \
 corresponde re-entrar a una fase anterior, la clave "reentrada" con el \
-valor "fase3" (el propósito ya no resuena) o "fase4" (el sistema \
-necesita rediseño), o sin esa clave (u omitida) si no hace falta \
-re-entrar.
+valor "fase2" (el propósito ya no resuena, vuelve a elegir uno) o \
+"fase4" (el sistema necesita rediseño), o sin esa clave (u omitida) si \
+no hace falta re-entrar.
 
 {regla_nombre}
 
@@ -169,9 +169,9 @@ time — this is what lets the app compute the streak in code, so it's \
 required on every check-in, even self-perception or adjustment ones \
 (infer compliance anyway, even if the main question was about something \
 else); and, if re-entering an earlier phase applies, the key "reentrada" \
-with the value "fase3" (the purpose no longer resonates) or "fase4" (the \
-system needs a redesign), or without that key (or omitted) if no \
-re-entry is needed.
+with the value "fase2" (the purpose no longer resonates, go pick a new \
+one) or "fase4" (the system needs a redesign), or without that key (or \
+omitted) if no re-entry is needed.
 
 {regla_nombre}
 

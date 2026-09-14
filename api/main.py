@@ -37,7 +37,6 @@ from api.sse import stream_eventos
 from tools.calendario import crear_evento_calendario
 from tools.categorias_ikigai import DIMENSIONES_IKIGAI, DOMINIOS, ETIQUETAS_DIMENSION, HOJAS, MAX_VALORES, VALORES_DISPONIBLES, VERBOS
 from tools.categorias_sistema import CATEGORIAS_SISTEMA, PREGUNTAS_SISTEMA_IDS
-from tools.categorias_validacion import AREAS_VIDA
 from tools.ficha import leer_ficha_usuario
 from tools.perfil import leer_nombre_usuario
 from tools.push_suscripcion import (
@@ -243,10 +242,11 @@ def obtener_categorias(fase: int, idioma: str = "en") -> dict:
     el frontend lo cachea y navega client-side, sin otra llamada de red
     por click (ver el plan del selector visual Ikigai). Fase 1: verbo
     (nivel 1) -> dominio (nivel 2) -> hoja (nivel 3), tal como en el
-    prototipo real de Claude Design (tools/categorias_ikigai.py). Fase 3:
-    un selector plano de áreas de vida, reutilizado para evidencia pasada
-    y fricción futura (tools/categorias_validacion.py). Fase 4: 4 árboles
-    independientes, uno por pregunta (tools/categorias_sistema.py)."""
+    prototipo real de Claude Design (tools/categorias_ikigai.py). Fase 4:
+    4 árboles independientes, uno por pregunta (tools/categorias_sistema.py).
+    Fase 3 (Coach de Validación) tenía un selector propio acá -- se
+    eliminó del flujo junto con esa fase (ver docstring de
+    agents/orquestador.py)."""
     idioma_arbol = "es" if idioma == "es" else "en"
     if fase == 1:
         return {
@@ -258,8 +258,6 @@ def obtener_categorias(fase: int, idioma: str = "en") -> dict:
             "valoresDisponibles": VALORES_DISPONIBLES[idioma_arbol],
             "maxValores": MAX_VALORES,
         }
-    if fase == 3:
-        return {"areas": AREAS_VIDA[idioma_arbol]}
     if fase == 4:
         return {"preguntas": list(PREGUNTAS_SISTEMA_IDS), "categorias": CATEGORIAS_SISTEMA[idioma_arbol]}
     raise HTTPException(status_code=404, detail=f"No hay taxonomía para la fase {fase} todavía.")
@@ -289,22 +287,19 @@ def sugerir_categoria_endpoint(
 def confirmar_seleccion(
     body: ConfirmarSeleccionRequest, usuario_id: str = Depends(obtener_usuario_actual)
 ) -> SeleccionConfirmadaResponse:
-    """Fases 1, 2, 3 y 4: confirma una opción de un árbol, un candidato
-    de propósito o un selector de categorías -- nunca pasa por el
-    camino de texto libre (ver agents/orquestador.py::SesionTelos.
+    """Fases 1, 2 y 4: confirma una opción de un árbol, un candidato de
+    propósito o un selector de categorías -- nunca pasa por el camino de
+    texto libre (ver agents/orquestador.py::SesionTelos.
     confirmar_seleccion/confirmar_proposito_elegido/
-    confirmar_seleccion_validacion/confirmar_seleccion_sistema, que
-    derivan `ruta`/`dimensiones`/`frase` de la taxonomía o de lo que de
-    verdad se le presentó a la persona, nunca del cliente sin validar).
-    Fase 2 y Fase 4 SÍ pueden cerrar acá mismo (elegir un candidato o
-    completar las 4 preguntas fijas ya es la fase completa, sin
-    ambigüedad); Fase 1 cierra por un endpoint separado
-    (`POST /api/seleccion/cerrar-fase1`) y Fase 3 nunca cierra acá -- ver
-    docstring de SeleccionConfirmadaResponse; su cierre real pasa por
-    `POST /api/sesion/mensaje` una vez en etapa "refinando". Mismo lock
-    por (usuario_id, idioma) que _eventos_turno, para serializar
-    selecciones concurrentes del mismo usuario contra la misma
-    SesionTelos en memoria."""
+    confirmar_seleccion_sistema, que derivan `ruta`/`dimensiones`/`frase`
+    de la taxonomía o de lo que de verdad se le presentó a la persona,
+    nunca del cliente sin validar). Fase 2 y Fase 4 SÍ pueden cerrar acá
+    mismo (elegir un candidato o completar las 4 preguntas fijas ya es
+    la fase completa, sin ambigüedad); Fase 1 cierra por un endpoint
+    separado (`POST /api/seleccion/cerrar-fase1`). Mismo lock por
+    (usuario_id, idioma) que _eventos_turno, para serializar selecciones
+    concurrentes del mismo usuario contra la misma SesionTelos en
+    memoria."""
     lock = _obtener_lock(usuario_id, body.idioma)
     with lock:
         sesion = _obtener_sesion(usuario_id, body.idioma)
@@ -313,8 +308,6 @@ def confirmar_seleccion(
                 if not body.pregunta_id:
                     raise HTTPException(status_code=400, detail="pregunta_id es obligatorio cuando fase=4.")
                 resultado = sesion.confirmar_seleccion_sistema(body.pregunta_id, body.nodo_id, body.detalle_libre)
-            elif body.fase == 3:
-                resultado = sesion.confirmar_seleccion_validacion(body.nodo_id, body.detalle_libre)
             elif body.fase == 2:
                 # nodo_id lleva la frase del candidato elegido -- mismo
                 # campo reusado para "qué opción se eligió" en cualquier
@@ -328,8 +321,6 @@ def confirmar_seleccion(
     return SeleccionConfirmadaResponse(
         cobertura=resultado.get("cobertura"),
         respuestas=resultado.get("respuestas"),
-        etapa=resultado.get("etapa"),
-        mensaje_apertura_refinado=resultado.get("mensaje_apertura_refinado"),
         mostrar_valores=resultado.get("mostrar_valores", False),
         puede_cerrar=resultado.get("puede_cerrar", False),
         cerrado=resultado.get("cerrado", False),

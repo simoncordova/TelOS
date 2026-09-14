@@ -26,8 +26,6 @@ export const ICONOS_FASE: Record<number, string> = {
 };
 
 export type Textos = {
-  caption: string;
-  login_button: string;
   logout_button: string;
   connected_as: string;
   saludo_nombre: string;
@@ -35,7 +33,6 @@ export type Textos = {
   racha_label: string;
   checkin_toast: string;
   chat_placeholder: string;
-  idioma_label: string;
   panel_titulo: string;
   panel_proposito: string;
   panel_sistema: string;
@@ -49,8 +46,6 @@ export type Textos = {
   evolucion_titulo: string;
   evolucion_vacio: string;
   exportar_boton: string;
-  bienvenida_titulo: string;
-  bienvenida_texto: string;
   error_generico: string;
   error_estado_titulo: string;
   error_estado_texto: string;
@@ -60,7 +55,6 @@ export type Textos = {
   detalles_boton: string;
   cerrar_boton: string;
   push_titulo: string;
-  push_no_soportado: string;
   push_activar: string;
   push_activando: string;
   push_activado: string;
@@ -74,8 +68,6 @@ export type Textos = {
 
 export const TEXTOS: Record<Idioma, Textos> = {
   es: {
-    caption: "El propósito no es una meta, es un horizonte.",
-    login_button: "Iniciar sesión",
     logout_button: "Cerrar sesión",
     connected_as: "Conectado como {usuario_id}",
     saludo_nombre: "Hola, {nombre}",
@@ -83,7 +75,6 @@ export const TEXTOS: Record<Idioma, Textos> = {
     racha_label: "🔥 Racha",
     checkin_toast: "🔥 ¡Racha de {racha}! Seguís sosteniendo tu sistema.",
     chat_placeholder: "Escribe aquí...",
-    idioma_label: "Idioma / Language",
     panel_titulo: "Tus resultados",
     panel_proposito: "Propósito",
     panel_sistema: "Sistema",
@@ -97,15 +88,6 @@ export const TEXTOS: Record<Idioma, Textos> = {
     evolucion_titulo: "Tu evolución",
     evolucion_vacio: "Todavía no hay versiones guardadas.",
     exportar_boton: "⬇️ Descargar tu ficha",
-    bienvenida_titulo: "👋 Bienvenido a Telos",
-    bienvenida_texto:
-      "Vamos a explorar tu propósito de vida en una conversación corta, en 5 pasos:\n\n" +
-      "1. 🔎 **Explorador** — ponés en palabras lo que te mueve\n" +
-      "2. 🪞 **Sintetizador** — te reflejamos 2 o 3 propósitos posibles\n" +
-      "3. 🧭 **Coach de Validación** — lo ponemos a prueba con tu propia experiencia\n" +
-      "4. 🛠️ **Estratega de Sistemas** — lo convertimos en un hábito concreto\n" +
-      "5. 🔁 **Seguimiento** — check-ins breves cada vez que vuelvas\n\n" +
-      "No es una meta con fecha límite — es un horizonte. Para arrancar, contame cómo te llamas 👇",
     error_generico: "Uy, algo falló de nuestro lado. Probá de nuevo en un momento.",
     error_estado_titulo: "Falló la solución",
     error_estado_texto: "Algo se rompió del lado de la app y no sabemos en qué paso estás. Tu progreso no se perdió -- recargá la página para retomarlo.",
@@ -115,7 +97,6 @@ export const TEXTOS: Record<Idioma, Textos> = {
     detalles_boton: "Detalles",
     cerrar_boton: "Cerrar",
     push_titulo: "Notificaciones",
-    push_no_soportado: "Tu navegador no soporta notificaciones push.",
     push_activar: "🔔 Activar notificaciones",
     push_activando: "Activando...",
     push_activado: "🔔 Notificaciones activadas",
@@ -127,8 +108,6 @@ export const TEXTOS: Record<Idioma, Textos> = {
     push_prueba_resultado: "Enviadas: {enviados}",
   },
   en: {
-    caption: "Purpose isn't a goal to reach, it's a horizon.",
-    login_button: "Sign in",
     logout_button: "Sign out",
     connected_as: "Signed in as {usuario_id}",
     saludo_nombre: "Hi, {nombre}",
@@ -136,7 +115,6 @@ export const TEXTOS: Record<Idioma, Textos> = {
     racha_label: "🔥 Streak",
     checkin_toast: "🔥 {racha}-streak! You're keeping up your system.",
     chat_placeholder: "Type here...",
-    idioma_label: "Idioma / Language",
     panel_titulo: "Your results",
     panel_proposito: "Purpose",
     panel_sistema: "System",
@@ -150,15 +128,6 @@ export const TEXTOS: Record<Idioma, Textos> = {
     evolucion_titulo: "Your evolution",
     evolucion_vacio: "No saved versions yet.",
     exportar_boton: "⬇️ Download your ficha",
-    bienvenida_titulo: "👋 Welcome to Telos",
-    bienvenida_texto:
-      "We're going to explore your life purpose in a short conversation, in 5 steps:\n\n" +
-      "1. 🔎 **Explorer** — put into words what moves you\n" +
-      "2. 🪞 **Synthesizer** — we reflect back 2 or 3 possible purposes\n" +
-      "3. 🧭 **Validation Coach** — we stress-test it against your own experience\n" +
-      "4. 🛠️ **Systems Strategist** — we turn it into a concrete habit\n" +
-      "5. 🔁 **Follow-up** — brief check-ins every time you come back\n\n" +
-      "It's not a goal with a deadline — it's a horizon. To get started, tell me your name 👇",
     error_generico: "Oops, something failed on our end. Try again in a moment.",
     error_estado_titulo: "The setup failed",
     error_estado_texto: "Something broke on the app's side and we can't tell what step you're on. Your progress wasn't lost -- reload the page to pick it back up.",
@@ -168,7 +137,6 @@ export const TEXTOS: Record<Idioma, Textos> = {
     detalles_boton: "Details",
     cerrar_boton: "Close",
     push_titulo: "Notifications",
-    push_no_soportado: "Your browser doesn't support push notifications.",
     push_activar: "🔔 Enable notifications",
     push_activando: "Enabling...",
     push_activado: "🔔 Notifications enabled",

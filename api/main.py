@@ -1,8 +1,6 @@
 """API HTTP para el frontend Next.js -- capa delgada sobre
 `agents.orquestador.SesionTelos`: NO reimplementa lógica de agentes,
-solo la expone por HTTP/SSE. Ver
-C:\\Users\\Wendy\\.claude\\plans\\cosmic-zooming-tarjan.md sección A para
-el diseño completo.
+solo la expone por HTTP/SSE.
 
 Corre desde la raíz del repo (mismo patrón que scripts/chat_terminal.py
 -- imports absolutos `agents.*`/`tools.*` sin paquete instalado):

@@ -7,21 +7,11 @@
 //     instancia EC2 con --network host, así que esto nunca sale a
 //     internet ni pasa por CloudFront.
 //   - En desarrollo local: NEXT_PUBLIC_API_URL (ver .env.example).
-// Un futuro fetch desde el navegador (Fase 2, ej. el chat interactivo)
-// sí puede usar rutas relativas ("/api/...") porque CloudFront enruta
-// /api/* al mismo origen (ver plan de migración sección C) -- no
-// necesita esta constante.
+// El chat/selectores interactivos (todo lo que corre en el navegador, no
+// en un Server Component) usan lib/apiCliente.ts en cambio, con rutas
+// relativas ("/api/...") -- CloudFront enruta /api/* al mismo origen, así
+// que esa parte nunca necesita esta constante.
 export const BASE_URL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "";
-
-export async function obtenerSalud(): Promise<{ estado: string } | null> {
-  try {
-    const respuesta = await fetch(`${BASE_URL}/api/salud`, { cache: "no-store" });
-    if (!respuesta.ok) return null;
-    return await respuesta.json();
-  } catch {
-    return null;
-  }
-}
 
 export async function obtenerAuthConfig(): Promise<{ requiereLogin: boolean }> {
   try {

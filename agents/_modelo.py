@@ -1,32 +1,30 @@
-"""Factory de modelo compartida por el orquestador y los 5 agentes de fase.
-No es un agente en sí — es configuración común, para no repetirla en cada
-archivo de agents/.
+"""Factory de modelo compartida por los 5 agentes de fase. No es un
+agente en sí — es configuración común, para no repetirla en cada archivo
+de agents/.
 
-Dos modelos distintos, a pedido explícito del dueño del producto (rama
-gamificacion, migración al orquestador agéntico -- ver
-C:\\Users\\Wendy\\.claude\\plans\\cosmic-zooming-tarjan.md): el orquestador
-(agents/orquestador_agente.py) decide a qué fase invocar y compone la
-respuesta final -- poco volumen de texto, pero es el único punto de
-contacto real con la entrada/salida de la persona, así que usa Sonnet.
-Cada agente de fase (agents/sintetizador.py y hermanos) hace el trabajo de
-contenido pesado (explorar, sintetizar, validar) pero con una tarea acotada
-y un prompt más liviano ahora que las reglas de flujo/transición viven solo
-en el orquestador -- Haiku alcanza y sale bastante más barato/rápido,
-compensando en parte que ahora cada turno paga dos invocaciones reales en
-vez de una.
+Un solo modelo (Haiku) para todo el sistema. Hubo, brevemente, un diseño
+de dos niveles -- Sonnet para un Agent orquestador (rama gamificacion,
+`agents/orquestador_agente.py`) que decidía a qué fase invocar y
+componía la respuesta final, Haiku para los subagentes de contenido
+pesado -- pero ese orquestador agéntico se revirtió a favor de ruteo
+100% determinístico en código plano (ver
+agents/orquestador.py::SesionTelos, sección "Sacado" en su docstring):
+`self.fase_actual` ya resuelve la única pregunta que el orquestador
+"decidía" con juicio semántico, así que esa invocación de Sonnet no
+aportaba nada que el código no supiera ya, y sacarla de encima además
+mejora la latencia (una invocación real menos por turno). `crear_modelo_orquestador`/
+`MODEL_ID_ORQUESTADOR` quedaron sin ningún caller real tras ese revert
+-- eliminados acá (14/09/2026) en vez de mantenerlos como código muerto.
 
-Ambos usan el ID de "global cross-region inference" (prefijo `global.`),
-no el ID pelado del modelo: Claude Sonnet 4.5 no admite invocación
-on-demand "In-Region" en la mayoría de las regiones (confirmado con un
-ValidationException real en us-east-1: "Invocation of model ID ... with
-on-demand throughput isn't supported"). El ID `global.` funciona desde
-cualquier región del mundo (a diferencia de los `us.`/`eu.`/`au.`/`jp.`
-que solo enrutan dentro de esa geografía) y además sale ~10% más barato
-según la documentación de Bedrock. IDs verificados contra la
-documentación oficial de Bedrock antes de escribirlos (model card de
-Claude Haiku 4.5), no asumidos de memoria -- Guardrails está soportado
-para Haiku 4.5 vía el endpoint bedrock-runtime/Converse (que es el que usa
-Strands), confirmado en la misma documentación.
+El ID de modelo usa el prefijo de "global cross-region inference"
+(`global.`), no el ID pelado del modelo: funciona desde cualquier región
+del mundo (a diferencia de los `us.`/`eu.`/`au.`/`jp.` que solo enrutan
+dentro de esa geografía) y sale ~10% más barato según la documentación
+de Bedrock. ID verificado contra la documentación oficial de Bedrock
+antes de escribirlo (model card de Claude Haiku 4.5), no asumido de
+memoria -- Guardrails está soportado para Haiku 4.5 vía el endpoint
+bedrock-runtime/Converse (que es el que usa Strands), confirmado en la
+misma documentación.
 """
 
 import os
@@ -35,9 +33,6 @@ from pydantic import BaseModel
 from strands import tool
 from strands.models import BedrockModel
 
-MODEL_ID_ORQUESTADOR = os.environ.get(
-    "TELOS_MODEL_ID_ORQUESTADOR", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
-)
 MODEL_ID_SUBAGENTE = os.environ.get(
     "TELOS_MODEL_ID_SUBAGENTE", "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 )
@@ -52,11 +47,7 @@ REGION = os.environ.get("TELOS_AWS_REGION", "us-east-1")
 # crisis (corre en código, antes de invocar a Bedrock, sin importar este
 # guardrail) -- ver docs/agente-proposito-de-vida-prompts.md sección 10.
 # Vacío en desarrollo local (sin GUARDRAIL_ID seteado) para no requerir
-# el recurso desplegado solo para probar el flujo de agentes. Se aplica en
-# los dos modelos (orquestador Y subagentes) -- el orquestador es el punto
-# de contacto real con la persona, pero el texto de un subagente puede
-# terminar mostrándose tal cual (ver informar_al_orquestador), así que no
-# tiene sentido dejarlo desprotegido.
+# el recurso desplegado solo para probar el flujo de agentes.
 GUARDRAIL_ID = os.environ.get("GUARDRAIL_ID", "")
 GUARDRAIL_VERSION = os.environ.get("GUARDRAIL_VERSION", "")
 
@@ -76,19 +67,16 @@ def _crear_modelo(model_id: str) -> BedrockModel:
     return BedrockModel(model_id=model_id, region_name=REGION)
 
 
-def crear_modelo_orquestador() -> BedrockModel:
-    """Sonnet -- decide a qué fase invocar y compone la respuesta final
-    que ve la persona (agents/orquestador_agente.py)."""
-    return _crear_modelo(MODEL_ID_ORQUESTADOR)
-
-
 def crear_modelo_subagente() -> BedrockModel:
     """Haiku -- ejecuta la tarea puntual de una fase (sintetizar,
-    validar, hacer seguimiento) o una llamada acotada de una sola
-    invocación (agents/orquestador.py::SesionTelos._sintetizar_selecciones,
-    _extraer_nombre). Usado por los factories de
-    agents/{sintetizador,coach_validacion,seguimiento}.py -- Fases 1 y 4
-    ya no tienen agente conversacional propio, ver docstring de
+    validar, hacer seguimiento, sugerir una categoría) o una llamada
+    acotada de una sola invocación (agents/orquestador.py::SesionTelos.
+    _sintetizar_selecciones, _extraer_nombre). Único modelo del sistema
+    -- ver docstring del módulo. Usado por los factories de
+    agents/{sintetizador,coach_validacion,seguimiento,
+    asistente_categorias,evaluador_confirmacion}.py y directo por
+    agents/orquestador.py para sus propias llamadas acotadas -- Fases 1
+    y 4 ya no tienen agente conversacional propio, ver docstring de
     agents/orquestador.py."""
     return _crear_modelo(MODEL_ID_SUBAGENTE)
 
@@ -107,8 +95,10 @@ REGLA_CONJUGACION_ES = (
 )
 
 # Compartida por los 5 prompts de fase (ES y EN): instrucción del informe
-# estructurado al orquestador agéntico (rama gamificacion, ver
-# agents/orquestador_agente.py). Reemplaza dos reglas de texto libre que
+# estructurado que cada subagente le deja a SesionTelos
+# (agents/orquestador.py -- código plano, no un Agent orquestador; ese
+# diseño se probó y se revirtió, ver docstring de agents/_modelo.py).
+# Reemplaza dos reglas de texto libre que
 # vivían acá antes -- REGLA_TRANSICION_* (nunca anunciar que la
 # conversación "pasa" a otro agente/fase) y REGLA_CIERRE_REAL_* (si decís
 # que guardaste, tiene que ser verdad, no una descripción de algo que

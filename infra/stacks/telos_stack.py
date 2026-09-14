@@ -51,19 +51,18 @@ from constructs import Construct
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# Mismos modelos que los defaults de agents/_modelo.py
-# (TELOS_MODEL_ID_ORQUESTADOR/TELOS_MODEL_ID_SUBAGENTE) -- si esos
-# defaults cambian, estos también, para que la política de IAM siga
-# delimitada a los modelos reales que invoca la app y no se vuelva a
-# abrir a "cualquier modelo" por descuido. Dos modelos desde el
-# orquestador agéntico (rama gamificacion, ver
-# C:\Users\Wendy\.claude\plans\cosmic-zooming-tarjan.md): Sonnet para el
-# orquestador (decide a qué fase invocar y compone la respuesta), Haiku
-# para los subagentes de fase (hacen el trabajo de contenido pesado, sale
-# más barato/rápido). IDs verificados contra la documentación oficial de
-# Bedrock antes de escribirlos, no asumidos de memoria.
-_MODELO_ORQUESTADOR = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-_PERFIL_INFERENCIA_ORQUESTADOR = f"global.{_MODELO_ORQUESTADOR}"
+# Mismo modelo que el default de agents/_modelo.py
+# (TELOS_MODEL_ID_SUBAGENTE) -- si ese default cambia, este también,
+# para que la política de IAM siga delimitada al modelo real que invoca
+# la app y no se vuelva a abrir a "cualquier modelo" por descuido. Un
+# solo modelo (Haiku) -- hubo un diseño de dos niveles (Sonnet para un
+# Agent orquestador, rama gamificacion) que se revirtió a ruteo 100%
+# determinístico en código plano; la sentencia IAM que habilitaba Sonnet
+# se eliminó junto con `crear_modelo_orquestador` (14/09/2026, ver
+# docstring de agents/_modelo.py) -- dejarla habría sido de más, ni el
+# rol de agentes ni ningún código invoca ese modelo. ID verificado contra
+# la documentación oficial de Bedrock antes de escribirlo, no asumido de
+# memoria.
 _MODELO_SUBAGENTE = "anthropic.claude-haiku-4-5-20251001-v1:0"
 _PERFIL_INFERENCIA_SUBAGENTE = f"global.{_MODELO_SUBAGENTE}"
 
@@ -97,15 +96,13 @@ class TelosStack(Stack):
         rol_agentes.add_managed_policy(
             iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore")
         )
-        # Delimitado a los modelos/perfiles de inferencia que la app
-        # realmente invoca, no a "cualquier modelo de Bedrock" -- las 3
-        # sentencias por modelo son el patrón exacto que documenta AWS
-        # para perfiles de inferencia cross-region "global.": perfil
-        # regional, modelo regional (con condición de que venga del
-        # perfil) y modelo global (sin región, requerido para el
-        # ruteo cross-region). Repetido dos veces (Sonnet para el
-        # orquestador, Haiku para los subagentes) -- ver
-        # _MODELO_ORQUESTADOR/_MODELO_SUBAGENTE arriba.
+        # Delimitado al modelo/perfil de inferencia que la app realmente
+        # invoca, no a "cualquier modelo de Bedrock" -- las 3 sentencias
+        # son el patrón exacto que documenta AWS para perfiles de
+        # inferencia cross-region "global.": perfil regional, modelo
+        # regional (con condición de que venga del perfil) y modelo
+        # global (sin región, requerido para el ruteo cross-region). Ver
+        # _MODELO_SUBAGENTE arriba.
         acciones_invocar = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
 
         def _permitir_invocar_modelo(sid_prefijo: str, modelo_base: str, perfil_inferencia: str) -> None:
@@ -145,7 +142,6 @@ class TelosStack(Stack):
                 )
             )
 
-        _permitir_invocar_modelo("Orquestador", _MODELO_ORQUESTADOR, _PERFIL_INFERENCIA_ORQUESTADOR)
         _permitir_invocar_modelo("Subagente", _MODELO_SUBAGENTE, _PERFIL_INFERENCIA_SUBAGENTE)
         rol_agentes.add_to_policy(
             iam.PolicyStatement(
@@ -471,8 +467,7 @@ class TelosStack(Stack):
         # interfaz de la app -- Streamlit/InstanciaUI/DistribucionUI se
         # decomisionaron una vez que esta migró a producción y se
         # confirmó reemplazo funcional completo, ver el commit que
-        # borró esos recursos para el detalle). Ver
-        # C:\Users\Wendy\.claude\plans\cosmic-zooming-tarjan.md sección C.
+        # borró esos recursos para el detalle).
         #
         # Los dos contenedores (API :8000, Next.js :3000) comparten esta
         # misma instancia con --network host: es la forma más simple de

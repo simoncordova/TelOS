@@ -556,22 +556,25 @@ class SesionTelos:
         return fase, texto_respuesta, cerrado
 
     def _invocar(self, texto: str) -> tuple[int, str, bool]:
-        """Invoca al orquestador agéntico, salvo que esta cuenta ya haya
+        """Invoca al subagente de `self.fase_actual` (vía
+        _invocar_una_vez, código plano, no un Agent orquestador -- ver
+        docstring de agents/_modelo.py), salvo que esta cuenta ya haya
         llegado al límite diario de invocaciones reales
         (tools/limite_uso.py) -- en ese caso corta antes de tocar Bedrock.
-        Cuenta cada invocación real (orquestador + el subagente que haya
-        respondido), no cada mensaje de la persona.
+        Cuenta cada invocación real (la del subagente que respondió, más
+        el reintento forzado si hizo falta), no cada mensaje de la
+        persona.
 
         Nunca devuelve un string vacío: AgentCore Memory rechaza guardar
         un turno con texto de largo 0 (`ParamValidationError`, bug real
         visto en producción) y una burbuja en blanco tampoco le sirve a
-        la persona. Si la respuesta viene vacía (el orquestador no llegó
-        a invocar ninguna tool, o el subagente no llamó a
-        informar_al_orquestador), reintenta una vez antes de resignarse a
-        un aviso fijo -- como mucho un reintento, nunca un loop sin
-        límite. El mismo `turn_id` (ver InformeAlOrquestador/
-        tools/ficha.py) se usa en el reintento -- es el mismo turno real
-        de la persona, solo que el primer intento no produjo nada útil."""
+        la persona. Si la respuesta viene vacía (el subagente no llamó a
+        informar_al_orquestador ni siquiera tras el reintento forzado),
+        reintenta una vez antes de resignarse a un aviso fijo -- como
+        mucho un reintento, nunca un loop sin límite. El mismo `turn_id`
+        (ver InformeAlOrquestador/tools/ficha.py) se usa en el reintento
+        -- es el mismo turno real de la persona, solo que el primer
+        intento no produjo nada útil."""
         if excedio_limite_diario(self.usuario_id):
             return self.fase_actual, mensaje_limite_alcanzado(self.idioma), False
         turn_id = str(uuid.uuid4())

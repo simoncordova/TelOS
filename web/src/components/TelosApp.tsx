@@ -18,7 +18,7 @@ import type { Festejo } from "./Notifications/Celebracion";
 import { Celebracion } from "./Notifications/Celebracion";
 import { ArbolSelector } from "./Seleccion/ArbolSelector";
 import { SistemaSelector } from "./Seleccion/SistemaSelector";
-import { CandidatosProposito } from "./Sintesis/CandidatosProposito";
+import { PropositoSelector } from "./Sintesis/PropositoSelector";
 
 // Dueño solo del idioma elegido -- todo lo demás (mensajes, ficha,
 // festejos) vive en <Conversacion>, remontada con key={idioma}. Cambiar
@@ -41,18 +41,30 @@ export function TelosApp({
   );
 }
 
-// Fases 0, 1 y 4 nunca renderizan el chat (siempre un selector visual,
-// ver esFaseChat más abajo) -- un mensaje de texto que llega para
-// alguna de esas fases no tiene dónde mostrarse en esa vista. Bug real
-// reportado (14/09/2026): el aviso fijo "¿cómo te llamas?" (fase 0, el
-// primer evento de una persona sin nombre guardado) igual se agregaba a
-// `mensajes`, invisible mientras se mostraba ArbolSelector -- pero una
-// vez que la persona avanzaba a una fase de chat de verdad (Fase 2), el
-// historial completo se renderizaba de una, mezclando ese aviso viejo y
-// fuera de contexto con la respuesta real del Sintetizador. No agregar
-// a `mensajes` un texto que llega para una fase que nunca lo muestra,
-// en vez de dejarlo ahí a la espera de una fase de chat futura que lo
+// Fases 0, 1, 2 y 4 nunca renderizan el chat (siempre un selector
+// visual, ver esFaseChat más abajo) -- un mensaje de texto que llega
+// para alguna de esas fases no tiene dónde mostrarse en esa vista. Bug
+// real reportado (14/09/2026): el aviso fijo "¿cómo te llamas?" (fase
+// 0, el primer evento de una persona sin nombre guardado) igual se
+// agregaba a `mensajes`, invisible mientras se mostraba ArbolSelector
+// -- pero una vez que la persona avanzaba a una fase de chat de verdad
+// (Fase 5), el historial completo se renderizaba de una, mezclando ese
+// aviso viejo y fuera de contexto con la respuesta real. No agregar a
+// `mensajes` un texto que llega para una fase que nunca lo muestra, en
+// vez de dejarlo ahí a la espera de una fase de chat futura que lo
 // reviva sin contexto.
+//
+// Fase 2 (Sintetizador) se agregó acá el 14/09/2026 -- corrección
+// explícita del dueño del producto sobre el primer intento de este
+// cambio: mostrar los candidatos de propósito como tarjetas DENTRO del
+// chat (bajo un mensaje de ChatWindow) todavía se sentía como chat. Fase
+// 2 ahora es una página de selección propia (ver
+// Sintesis/PropositoSelector.tsx, mismo trato que ArbolSelector/
+// SistemaSelector) -- el marco breve que presenta los candidatos viaja
+// como `preguntaProposito`, nunca como una burbuja en `mensajes`.
+// "Combinar partes de varios" sigue siendo texto libre real (vía
+// procesarTurno, el mismo camino que usa el chat de otras fases) pero
+// vive como un campo en esa página, no como una conversación visible.
 //
 // Fase 3 (Coach de Validación, un selector de evidencia + chat de
 // refinado) existía como caso híbrido acá -- se eliminó del flujo del
@@ -61,7 +73,7 @@ export function TelosApp({
 // ventana ni otro chat en el medio). self.fase_actual ya nunca vale 3
 // en una sesión nueva, ver agents/orquestador.py.
 function esFaseSoloSelector(fase: number): boolean {
-  return fase === 0 || fase === 1 || fase === 4;
+  return fase === 0 || fase === 1 || fase === 2 || fase === 4;
 }
 
 // Port 1:1 del script principal de ui/app.py -- misma secuencia
@@ -89,10 +101,17 @@ function Conversacion({
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [opcionesPendientes, setOpcionesPendientes] = useState<string[]>([]);
   // Candidatos de propósito estructurados (Fase 2, ver
-  // Sintesis/CandidatosProposito.tsx) -- reemplaza a OpcionesForm para
+  // Sintesis/PropositoSelector.tsx) -- reemplaza a OpcionesForm para
   // este momento puntual, nunca coexisten (el Sintetizador ya no llama
   // a presentar_opciones, ver agents/sintetizador.py).
   const [candidatosPendientes, setCandidatosPendientes] = useState<CandidatoProposito[]>([]);
+  // Marco breve que presenta esos candidatos (ej. "Elegí el que mejor
+  // te represente...") -- el texto que la fase 2 deja en cada turno,
+  // capturado acá en vez de en `mensajes` porque PropositoSelector es
+  // una página de selección, no un chat (ver esFaseSoloSelector). Se
+  // actualiza con cada turno de Fase 2 real (apertura, o la respuesta a
+  // "combinar partes de varios" escrito en esa misma página).
+  const [preguntaProposito, setPreguntaProposito] = useState("");
   const [faseActual, setFaseActual] = useState(1);
   const [ficha, setFicha] = useState<FichaSnapshot | null>(null);
   // Arranca en true a propósito (no vía setState en el efecto de abajo):
@@ -141,6 +160,7 @@ function Conversacion({
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
           setCandidatosPendientes(d.candidatos);
+          if (d.fase === 2) setPreguntaProposito(d.texto);
         } else if (evento === "ficha") {
           setFicha(datos as FichaSnapshot);
         } else if (evento === "error") {
@@ -166,7 +186,11 @@ function Conversacion({
       const faseAntes = faseActualRef.current;
       const fichaAntes = fichaRef.current;
 
-      setMensajes((prev) => [...prev, { rol: "user", texto }]);
+      // Fase 2 (PropositoSelector) también manda texto libre por acá
+      // ("combinar partes de varios") -- pero esa página no es un chat,
+      // así que el mensaje de la persona tampoco se agrega a `mensajes`
+      // en ese caso (ver esFaseSoloSelector).
+      if (!esFaseSoloSelector(faseAntes)) setMensajes((prev) => [...prev, { rol: "user", texto }]);
       setOpcionesPendientes([]);
       setCandidatosPendientes([]);
       setCargando(true);
@@ -182,6 +206,7 @@ function Conversacion({
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
           setCandidatosPendientes(d.candidatos);
+          if (d.fase === 2) setPreguntaProposito(d.texto);
         } else if (evento === "ficha") {
           fichaDespues = datos as FichaSnapshot;
           setFicha(fichaDespues);
@@ -216,7 +241,7 @@ function Conversacion({
   );
 
   // Fases 1, 2 (al elegir un candidato de propósito) y 4 cierran por
-  // selección visual/tarjeta (ArbolSelector, CandidatosProposito,
+  // selección visual/tarjeta (ArbolSelector, PropositoSelector,
   // SistemaSelector), fuera del pipeline de texto de procesarTurno --
   // así que su cascada hacia la fase siguiente nunca se dispara sola.
   // Mismo criterio que agents/orquestador.py::SesionTelos.
@@ -225,12 +250,27 @@ function Conversacion({
   // la ficha del lado del backend. `mensajeCierre` es el texto que ya
   // dejó ESE cierre (ej. "Ver mi propósito" en Fase 1) -- se muestra acá
   // como el turno previo a la cascada, nunca se descarta en silencio.
+  //
+  // `faseSiguiente`, si el caller ya la conoce con certeza (todos hoy:
+  // Fase 1 cierra siempre a Fase 2, Fase 4 siempre a Fase 5), se aplica
+  // ACÁ MISMO en vez de esperar a que el stream SSE la confirme -- bug
+  // real reportado (14/09/2026): el botón "Continuar" de SistemaSelector
+  // (Fase 4 -> 5) no llevaba a ningún lado. Causa: continuar_tras_seleccion
+  // no hace nada cuando `fase_actual` ya es 5 ("espera a una conversación
+  // nueva, no continúa en caliente" -- ver su docstring), así que ese
+  // turno nunca yield-ea ningún evento "mensaje" con `fase=5` -- la única
+  // señal que este generador usaba hasta ahora para actualizar
+  // `faseActual`. El snapshot de "ficha" sí viaja siempre (ver
+  // api/main.py::_eventos_turno), por eso propósito/sistema se veían
+  // bien en cuanto se entraba a Fase 5 por otro camino (recargar la
+  // página) -- lo que faltaba era el número de fase en sí.
   const iniciarFaseSiguiente = useCallback(
-    async (mensajeCierre?: string) => {
+    async (mensajeCierre?: string, faseSiguiente?: number) => {
       setCargando(true);
       if (mensajeCierre) {
         setMensajes((prev) => [...prev, { rol: "assistant", texto: mensajeCierre }]);
       }
+      if (faseSiguiente !== undefined) setFaseActual(faseSiguiente);
       const respuesta = await continuarSesion(idioma);
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
@@ -239,6 +279,7 @@ function Conversacion({
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
           setCandidatosPendientes(d.candidatos);
+          if (d.fase === 2) setPreguntaProposito(d.texto);
         } else if (evento === "ficha") {
           setFicha(datos as FichaSnapshot);
         } else if (evento === "error") {
@@ -266,6 +307,7 @@ function Conversacion({
   const elegirProposito = useCallback(
     async (frase: string) => {
       setCandidatosPendientes([]);
+      setPreguntaProposito("");
       setCargando(true);
       try {
         const resultado = await confirmarSeleccion({ fase: 2, nodoId: frase, idioma });
@@ -286,10 +328,10 @@ function Conversacion({
   const datos = (ficha?.actual?.datos ?? {}) as { proposito?: string; sistema?: string };
   const nombre = ficha?.nombre ?? null;
 
-  // Fases con selector visual propio (0, 1, 4): la sidebar se oculta y
-  // el selector ocupa todo el viewport -- su propio fondo y tipografía
-  // warm reemplazan el chrome de la app. En fases de chat (2, 5) la
-  // sidebar vuelve a mostrarse.
+  // Fases con selector visual propio (0, 1, 2, 4): la sidebar se oculta
+  // y el selector ocupa todo el viewport -- su propio fondo y
+  // tipografía warm reemplazan el chrome de la app. En fase de chat de
+  // verdad (5) la sidebar vuelve a mostrarse.
   // Nota: nombre puede ser null en el primer login (se obtiene dentro del
   // flujo de Fase 1) -- no lo usamos como prerequisito para mostrar los
   // selectores visuales.
@@ -305,16 +347,16 @@ function Conversacion({
   // las dos (no debería pasar nunca en uso normal) cae explícitamente en
   // EstadoError más abajo, nunca en un dashboard vacío que se ve
   // legítimo sin serlo.
-  const esFaseChat = faseActual === 2 || faseActual === 5;
+  const esFaseChat = faseActual === 5;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {/* Fases 1 y 4: la interfaz principal deja de ser el chat --
-          selector visual, con el chat relegado a apoyo opcional (Fase 1).
-          El resto de las fases (2, 5) es chat, pero con la MISMA
-          cabecera visual que estos dos selectores (ver CabeceraFase) en
-          vez del panel de resultados que antes ocupaba toda la altura --
-          pedido explícito del dueño del producto: las fases de chat
+      {/* Fases 1, 2 y 4: la interfaz principal deja de ser el chat --
+          selector visual, con el chat relegado a apoyo opcional (Fase 1)
+          o directamente ausente (Fases 2 y 4). Solo Fase 5 es chat, con
+          la MISMA cabecera visual que estos selectores (ver CabeceraFase)
+          en vez del panel de resultados que antes ocupaba toda la altura
+          -- pedido explícito del dueño del producto: las fases de chat
           tienen que sentirse la misma aplicación, no una pantalla
           intermedia aparte. Cualquier otro valor de fase (no debería
           pasar nunca en uso normal) cae en EstadoError, no en el chat --
@@ -322,6 +364,19 @@ function Conversacion({
       {(faseActual === 0 || faseActual === 1) ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <ArbolSelector idioma={idioma} onCambiarIdioma={onCambiarIdioma} requiereLogin={requiereLogin} nombre={nombre} onCerrado={iniciarFaseSiguiente} />
+        </main>
+      ) : faseActual === 2 ? (
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <PropositoSelector
+            idioma={idioma}
+            onCambiarIdioma={onCambiarIdioma}
+            requiereLogin={requiereLogin}
+            pregunta={preguntaProposito}
+            candidatos={candidatosPendientes}
+            cargando={cargando}
+            onElegir={elegirProposito}
+            onEscribirLibre={procesarTurno}
+          />
         </main>
       ) : faseActual === 4 ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -351,23 +406,14 @@ function Conversacion({
 
             <ChatWindow mensajes={mensajes} cargando={cargando} />
 
-            {candidatosPendientes.length > 0 ? (
-              <CandidatosProposito
-                idioma={idioma}
-                candidatos={candidatosPendientes}
+            {opcionesPendientes.length > 0 && (
+              <OpcionesForm
+                titulo={t.opciones_titulo}
+                submitLabel={t.opciones_submit}
+                opciones={opcionesPendientes}
                 deshabilitado={cargando}
-                onElegir={elegirProposito}
+                onElegir={procesarTurno}
               />
-            ) : (
-              opcionesPendientes.length > 0 && (
-                <OpcionesForm
-                  titulo={t.opciones_titulo}
-                  submitLabel={t.opciones_submit}
-                  opciones={opcionesPendientes}
-                  deshabilitado={cargando}
-                  onElegir={procesarTurno}
-                />
-              )
             )}
 
             <ChatInput placeholder={t.chat_placeholder} deshabilitado={cargando} onEnviar={procesarTurno} />

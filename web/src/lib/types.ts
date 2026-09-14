@@ -27,7 +27,7 @@ export type FichaSnapshot = {
 // Fase 2 (Sintetizador): un propósito candidato, ya estructurado por el
 // backend -- ver agents/_modelo.py::CandidatoProposito. No parsear texto
 // libre del lado del frontend, estos tres campos son la fuente de
-// verdad para la tarjeta editorial (ver Sintesis/CandidatosProposito.tsx).
+// verdad para la tarjeta editorial (ver Sintesis/PropositoSelector.tsx).
 export type CandidatoProposito = {
   frase: string;
   explicacion: string;

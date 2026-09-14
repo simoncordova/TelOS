@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { confirmarSeleccion, continuarSesion, obtenerCategoriasFase4 } from "@/lib/apiCliente";
+import { confirmarSeleccion, obtenerCategoriasFase4 } from "@/lib/apiCliente";
 import type { CategoriasFase4, Idioma, NodoCategoriaSistema } from "@/lib/types";
 import { AccionesCuenta } from "../AccionesCuenta";
 
@@ -174,7 +174,7 @@ export function SistemaSelector({
   onCambiarIdioma: (idioma: Idioma) => void;
   requiereLogin: boolean;
   proposito?: string;
-  onCerrado: (mensajeCierre?: string) => void;
+  onCerrado: (mensajeCierre?: string, faseSiguiente?: number) => void;
 }) {
   const t = TEXTOS[idioma];
 
@@ -193,6 +193,7 @@ export function SistemaSelector({
   const [respuestas, setRespuestas] = useState<Record<string, Respuesta>>({});
   const [done, setDone] = useState(false);
   const [mensajeCierre, setMensajeCierre] = useState<string | undefined>(undefined);
+  const [faseSiguiente, setFaseSiguiente] = useState<number | undefined>(undefined);
   const [guardando, setGuardando] = useState(false);
   const [continuando, setContinuando] = useState(false);
 
@@ -274,6 +275,7 @@ export function SistemaSelector({
       if (resultado.cerrado) {
         setDone(true);
         setMensajeCierre(resultado.mensaje_cierre ?? undefined);
+        setFaseSiguiente(resultado.fase_actual);
       } else {
         setPaso((p) => p + 1);
         setNivel("top");
@@ -343,14 +345,10 @@ export function SistemaSelector({
     }
   }
 
-  async function continuar() {
+  function continuar() {
     setContinuando(true);
-    try {
-      await continuarSesion(idioma).catch(() => {});
-      onCerrado(mensajeCierre);
-    } finally {
-      setContinuando(false);
-    }
+    onCerrado(mensajeCierre, faseSiguiente);
+    setContinuando(false);
   }
 
   function respuestaMecanicaOEnviar(texto: string) {

@@ -41,9 +41,11 @@ fijas + evaluador acotado -- sacado en este mismo cambio, ver git
 history si hace falta comparar): código calcula cobertura por dimensión
 y decide el cierre, nunca el modelo. `_invocar_fase_directo`/
 `enviar_mensaje` (el camino de texto libre) ya NO atienden a Fase 1 más
-que con un aviso fijo -- ver `_PLACEHOLDER_FASE_1` -- hasta que la
-interfaz visual (`ArbolSelector.tsx`, todavía sin construir) llame a
-`confirmar_seleccion` a través de los endpoints nuevos de `api/main.py`.
+que con un aviso fijo -- ver `_PLACEHOLDER_FASE_1` -- para cualquier
+mensaje que llegue por ese canal en vez de por la interfaz visual
+(`web/src/components/Seleccion/ArbolSelector.tsx`, ya construida) que
+llama a `confirmar_seleccion` a través de los endpoints de
+`api/main.py`.
 
 El guardrail de crisis, el Paso 0 (captura de nombre) y el avance de fase
 siguen siendo código plano, sin involucrar a ningún `Agent` -- son

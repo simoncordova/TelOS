@@ -13,10 +13,17 @@ def crear_evento_calendario(usuario_id: str, detalle: dict) -> dict:
 
     Args:
         usuario_id: identificador del usuario.
-        detalle: dict con al menos "accion", "cuando" (día/hora recurrente).
+        detalle: dict con al menos "accion", "cuando" (día/hora
+            recurrente) -- "proposito" es opcional, se agrega a la
+            descripción del evento si se pasa (pedido explícito del
+            dueño del producto, 14/09/2026: el cuerpo del evento debe
+            mostrar el propósito, no solo la acción).
 
     Returns:
-        {"confirmado": bool, "mensaje": str}
+        {"confirmado": bool, "mensaje": str, "url_autorizacion": None}
+        -- el mock nunca necesita autorización, url_autorizacion
+        siempre None; mismo shape que calendario_agentcore.py para que
+        quien llama (api/main.py) no tenga que distinguir el backend.
     """
     accion = detalle.get("accion", "tu sistema")
     cuando = detalle.get("cuando", "el horario que definiste")
@@ -27,4 +34,5 @@ def crear_evento_calendario(usuario_id: str, detalle: dict) -> dict:
             "(Integración de calendario real pendiente; por ahora es una "
             "confirmación simulada.)"
         ),
+        "url_autorizacion": None,
     }

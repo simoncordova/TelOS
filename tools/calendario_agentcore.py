@@ -178,22 +178,26 @@ def crear_evento_calendario(usuario_id: str, detalle: dict) -> dict:
     de la persona. Misma firma/forma de retorno que
     tools/calendario_local.py -- ver tools/calendario.py para el selector.
 
-    Si todavía no autorizó (o hace falta reconsentir), `mensaje` incluye
-    el link de autorización en vez de crear el evento -- el agente de
-    fase (Estratega de Sistemas) lo relaya tal cual en su
-    texto_para_persona, y reintenta en un turno posterior si la persona
-    confirma que ya autorizó."""
+    `detalle` puede incluir "proposito" (opcional) -- se agrega a la
+    descripción del evento junto con "cuando" (pedido explícito del
+    dueño del producto, 14/09/2026: el cuerpo del evento debe mostrar el
+    propósito).
+
+    Si todavía no autorizó (o hace falta reconsentir), `url_autorizacion`
+    viene poblado en vez de crear el evento -- campo estructurado, no
+    solo texto embebido en `mensaje` (14/09/2026: api/main.py llama esto
+    directo desde un endpoint determinístico, no desde un agente que
+    "relaye" texto libre -- el link tiene que poder mostrarse como un
+    link real del lado del frontend, no parsearse de vuelta de la
+    prosa)."""
     access_token, url_autorizacion = _obtener_token(usuario_id)
 
     if access_token is None:
         if url_autorizacion:
             return {
                 "confirmado": False,
-                "mensaje": (
-                    "Antes de agendarlo necesito que autorices el acceso a tu "
-                    f"Google Calendar: {url_autorizacion}\n\nAvisame apenas lo "
-                    "hayas hecho y lo agendo."
-                ),
+                "mensaje": "Antes de agendarlo necesitamos que autorices el acceso a tu Google Calendar.",
+                "url_autorizacion": url_autorizacion,
             }
         return {
             "confirmado": False,
@@ -201,6 +205,7 @@ def crear_evento_calendario(usuario_id: str, detalle: dict) -> dict:
                 "No pude conectar con Google Calendar ahora mismo. Probemos "
                 "de nuevo en un momento, o seguimos sin agendarlo por hoy."
             ),
+            "url_autorizacion": None,
         }
 
     return _crear_evento_real(access_token, detalle)
@@ -213,13 +218,20 @@ def _crear_evento_real(access_token: str, detalle: dict) -> dict:
 
     accion = detalle.get("accion", "tu sistema")
     cuando = detalle.get("cuando", "")
+    proposito = detalle.get("proposito", "")
+
+    descripcion = "Sistema de hábito creado con Telos."
+    if proposito:
+        descripcion += f"\n\nPropósito: {proposito}"
+    if cuando:
+        descripcion += f"\n\nCuándo/dónde: {cuando}"
 
     credenciales = Credentials(token=access_token, scopes=_SCOPES)
     try:
         servicio = build("calendar", "v3", credentials=credenciales)
         evento = {
             "summary": accion,
-            "description": f"Sistema de hábito creado con Telos. Cuándo/dónde: {cuando}",
+            "description": descripcion,
             # MVP: un evento simple, no una regla RRULE de recurrencia
             # real -- suficiente para demostrar la integración; una
             # recurrencia real es la siguiente iteración si el tiempo
@@ -229,6 +241,7 @@ def _crear_evento_real(access_token: str, detalle: dict) -> dict:
         return {
             "confirmado": True,
             "mensaje": f"Listo, lo agendé de verdad en tu Google Calendar: \"{accion}\" — {cuando}.",
+            "url_autorizacion": None,
             "eventoId": creado.get("id"),
         }
     except HttpError:
@@ -239,4 +252,5 @@ def _crear_evento_real(access_token: str, detalle: dict) -> dict:
                 "Google Calendar rechazó el pedido de agendar esto. Podemos "
                 "seguir sin el calendario por ahora y retomarlo después."
             ),
+            "url_autorizacion": None,
         }

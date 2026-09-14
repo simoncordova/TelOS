@@ -138,3 +138,17 @@ class EliminarSuscripcionPushRequest(BaseModel):
 
 class EnviarPruebaPushRequest(BaseModel):
     idioma: str = "en"
+
+
+class CrearEventoCalendarioResponse(BaseModel):
+    """Respuesta de `POST /api/calendario/crear-evento` -- ver
+    tools/calendario.py::crear_evento_calendario. `url_autorizacion`
+    viene poblado (y `confirmado=False`) cuando todavía hace falta que
+    la persona autorice el acceso a su Google Calendar -- el frontend
+    lo muestra como un link real para abrir en una pestaña nueva, nunca
+    parseado de `mensaje` (ese es solo el texto para mostrar, no la
+    fuente de verdad del link)."""
+
+    confirmado: bool
+    mensaje: str
+    url_autorizacion: str | None = None

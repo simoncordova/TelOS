@@ -392,7 +392,7 @@ function Conversacion({
               <JourneyMap idioma={idioma} t={t} faseActual={faseActual} proposito={datos.proposito} sistema={datos.sistema} />
             )}
 
-            {ficha && faseActual === 5 && <ResumenCard t={t} vistaResumen={ficha.vista_resumen} />}
+            {ficha && faseActual === 5 && <ResumenCard t={t} proposito={datos.proposito} sistema={datos.sistema} />}
 
             {nombre && <p className="px-4 pt-2 text-xs text-foreground/60">{t.saludo_nombre.replace("{nombre}", nombre)}</p>}
 

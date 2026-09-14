@@ -6,7 +6,7 @@
 // telos_stack.py, DistribucionWeb), así que nunca hace falta CORS ni
 // conocer una URL absoluta acá. `credentials: "include"` manda la
 // cookie de sesión (HttpOnly, api/auth.py) en cada request.
-import type { CategoriasFase1, CategoriasFase3, CategoriasFase4, FichaSnapshot, Idioma, SeleccionConfirmada, SugerenciaCategoria } from "./types";
+import type { CategoriasFase1, CategoriasFase3, CategoriasFase4, EventoCalendarioResultado, FichaSnapshot, Idioma, SeleccionConfirmada, SugerenciaCategoria } from "./types";
 
 async function streamPost(ruta: string, cuerpo: unknown): Promise<Response> {
   const respuesta = await fetch(ruta, {
@@ -159,4 +159,12 @@ export function enviarPruebaPush(idioma: Idioma): Promise<{ enviados: number; in
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ idioma }),
   });
+}
+
+// Fase 5 (Vista de resumen): agenda el sistema ya definido en el Google
+// Calendar real de la persona -- ver api/main.py::
+// crear_evento_calendario_endpoint. El backend lee la ficha del lado del
+// servidor, así que este POST no manda body.
+export function crearEventoCalendario(): Promise<EventoCalendarioResultado> {
+  return jsonFetch("/api/calendario/crear-evento", { method: "POST" });
 }

@@ -114,3 +114,14 @@ export type SugerenciaCategoria = {
   hoja_id: string | null;
   explicacion: string;
 };
+
+// Fase 5 (Vista de resumen): botón "Agregar a mi calendario de Google" --
+// espejo de api/esquemas.py::CrearEventoCalendarioResponse. `url_autorizacion`
+// viene poblada (y confirmado=false) cuando todavía hace falta que la
+// persona autorice el acceso -- se muestra como link real, nunca
+// parseado de `mensaje`.
+export type EventoCalendarioResultado = {
+  confirmado: boolean;
+  mensaje: string;
+  url_autorizacion: string | null;
+};

@@ -474,6 +474,36 @@ def _extraer_nombre(texto: str, idioma: str, usuario_id: str) -> str:
     return limpio or ("Friend" if idioma == "en" else "Amigo/a")
 
 
+def extraer_accion_y_cuando(sistema_texto: str) -> tuple[str, str]:
+    """Extrae "acción" y "cuándo/dónde" del texto de `sistema` ya
+    formateado (ver SesionTelos._formatear_sistema) -- para agendar el
+    evento de calendario (tools/calendario.py::crear_evento_calendario,
+    api/main.py::crear_evento_calendario_endpoint) sin tener que volver
+    a guardar los datos crudos de Fase 4 (que ya se borran al cerrar,
+    ver _cerrar_fase_4). Reconoce las etiquetas fijas en los dos
+    idiomas (_ETIQUETAS_SISTEMA) -- no asume cuál se usó al guardar,
+    porque el idioma de la sesión que agenda el evento puede no ser el
+    mismo que cuando se cerró Fase 4. Nunca lanza: si no reconoce el
+    formato (ficha vieja, u otro caso raro), devuelve strings vacíos en
+    vez de romper el agendado -- tools/calendario.py ya tiene sus
+    propios valores por defecto para eso."""
+    etiquetas_accion = {"acción", "action"}
+    etiquetas_cuando = {"cuándo/dónde", "when/where"}
+    accion = ""
+    cuando = ""
+    for linea in (sistema_texto or "").split("\n"):
+        if ":" not in linea:
+            continue
+        etiqueta, _, valor = linea.partition(":")
+        etiqueta_norm = etiqueta.strip().lower()
+        valor = valor.strip()
+        if etiqueta_norm in etiquetas_accion:
+            accion = valor
+        elif etiqueta_norm in etiquetas_cuando:
+            cuando = valor
+    return accion, cuando
+
+
 class SesionTelos:
     """Sesión en memoria de proceso: mantiene el agente Strands activo para
     la fase actual de un usuario. La ficha (tools/ficha.py) guarda el

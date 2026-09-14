@@ -11,7 +11,7 @@ os.environ.setdefault("TELOS_FICHA_BACKEND", "local")
 
 import pytest
 
-from agents.orquestador import SesionTelos
+from agents.orquestador import SesionTelos, extraer_accion_y_cuando
 from tools.ficha import borrar_ficha_usuario, guardar_ficha_usuario_fusionada, leer_ficha_usuario
 from tools.selecciones_estructuradas import borrar_selecciones_estructuradas
 
@@ -101,3 +101,36 @@ def test_proposito_se_hereda_de_version_anterior():
     ficha = leer_ficha_usuario(usuario_id)
     assert ficha["actual"]["datos"]["proposito"] == "Ayudar a otros a crecer"
     assert "sistema" in ficha["actual"]["datos"]
+
+
+def test_extraer_accion_y_cuando_texto_es():
+    # Inverso de _formatear_sistema -- ver agents/orquestador.py::
+    # extraer_accion_y_cuando, usado por api/main.py para agendar el
+    # evento de calendario sin necesitar los datos crudos de Fase 4.
+    sistema_texto = (
+        "Acción: Ejercicio cardiovascular\n"
+        "Cuándo/dónde: Todos los días, en casa\n"
+        "Métrica: Sí o no\n"
+        "Obstáculo: Llego sin energía -- Recordar mi propósito"
+    )
+    accion, cuando = extraer_accion_y_cuando(sistema_texto)
+    assert accion == "Ejercicio cardiovascular"
+    assert cuando == "Todos los días, en casa"
+
+
+def test_extraer_accion_y_cuando_texto_en():
+    sistema_texto = "Action: Journaling\nWhen/where: Every night, at home\nMetric: Yes or no\nObstacle: --"
+    accion, cuando = extraer_accion_y_cuando(sistema_texto)
+    assert accion == "Journaling"
+    assert cuando == "Every night, at home"
+
+
+def test_extraer_accion_y_cuando_texto_no_reconocido_no_lanza():
+    accion, cuando = extraer_accion_y_cuando("esto no sigue el formato esperado")
+    assert accion == ""
+    assert cuando == ""
+
+
+def test_extraer_accion_y_cuando_texto_vacio_no_lanza():
+    assert extraer_accion_y_cuando("") == ("", "")
+    assert extraer_accion_y_cuando(None) == ("", "")

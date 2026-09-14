@@ -57,7 +57,10 @@ def test_crear_evento_calendario_pendiente_de_autorizacion(monkeypatch):
     resultado = ca.crear_evento_calendario("u1", {"accion": "meditar", "cuando": "8am"})
 
     assert resultado["confirmado"] is False
-    assert "https://consent.example/abc" in resultado["mensaje"]
+    # url_autorizacion viaja como campo estructurado (14/09/2026), no
+    # embebida en el texto de mensaje -- el frontend la muestra como un
+    # link real, no la parsea de vuelta de la prosa.
+    assert resultado["url_autorizacion"] == "https://consent.example/abc"
 
 
 def test_crear_evento_calendario_fallo_sin_url(monkeypatch):
@@ -91,6 +94,7 @@ def test_crear_evento_calendario_exitoso(monkeypatch):
     assert resultado == {
         "confirmado": True,
         "mensaje": 'Listo, lo agendé de verdad en tu Google Calendar: "meditar" — 8am.',
+        "url_autorizacion": None,
         "eventoId": "evt-123",
     }
 

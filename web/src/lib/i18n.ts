@@ -64,6 +64,12 @@ export type Textos = {
   push_error_denegado_previo: string;
   push_error_tecnico: string;
   push_prueba_resultado: string;
+  calendario_agregar_boton: string;
+  calendario_agregando: string;
+  calendario_reintentar_boton: string;
+  calendario_autorizar_boton: string;
+  calendario_pendiente_autorizacion: string;
+  calendario_error: string;
 };
 
 export const TEXTOS: Record<Idioma, Textos> = {
@@ -106,6 +112,12 @@ export const TEXTOS: Record<Idioma, Textos> = {
     push_error_denegado_previo: "Tu navegador ya tiene las notificaciones bloqueadas para este sitio desde antes -- no alcanza con volver a tocar el botón. Abrí la configuración del sitio en tu navegador (el ícono de candado o \"i\" al lado de la dirección) y habilitá las notificaciones ahí, después probá de nuevo.",
     push_error_tecnico: "No se pudo activar por un error técnico: {detalle}",
     push_prueba_resultado: "Enviadas: {enviados}",
+    calendario_agregar_boton: "📅 Agregar a mi calendario de Google",
+    calendario_agregando: "Agregando...",
+    calendario_reintentar_boton: "Reintentar",
+    calendario_autorizar_boton: "Autorizar acceso a Google Calendar",
+    calendario_pendiente_autorizacion: "Necesitamos que autorices el acceso a tu Google Calendar primero.",
+    calendario_error: "No se pudo agregar a tu calendario. Probá de nuevo en un momento.",
   },
   en: {
     logout_button: "Sign out",
@@ -146,5 +158,11 @@ export const TEXTOS: Record<Idioma, Textos> = {
     push_error_denegado_previo: "Your browser already has notifications blocked for this site from before -- clicking the button again won't help. Open this site's settings in your browser (the lock or \"i\" icon next to the address) and enable notifications there, then try again.",
     push_error_tecnico: "Couldn't enable it due to a technical error: {detalle}",
     push_prueba_resultado: "Sent: {enviados}",
+    calendario_agregar_boton: "📅 Add to my Google Calendar",
+    calendario_agregando: "Adding...",
+    calendario_reintentar_boton: "Retry",
+    calendario_autorizar_boton: "Authorize Google Calendar access",
+    calendario_pendiente_autorizacion: "We need you to authorize access to your Google Calendar first.",
+    calendario_error: "Couldn't add it to your calendar. Try again in a moment.",
   },
 };

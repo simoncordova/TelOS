@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
 from agents.asistente_categorias import sugerir_categoria
-from agents.orquestador import SesionTelos
+from agents.orquestador import SesionTelos, extraer_accion_y_cuando
 from agents.seguimiento import calcular_racha, construir_vista_resumen
 from api import push
 from api.auth import NOMBRE_COOKIE, obtener_usuario_actual, requiere_login, verificar_secreto_scheduler
@@ -24,6 +24,7 @@ from api.esquemas import (
     CerrarFase1Request,
     ConfirmarSeleccionRequest,
     ConfirmarValoresRequest,
+    CrearEventoCalendarioResponse,
     EliminarSuscripcionPushRequest,
     EnviarMensajeRequest,
     EnviarPruebaPushRequest,
@@ -33,6 +34,7 @@ from api.esquemas import (
     SuscripcionPushRequest,
 )
 from api.sse import stream_eventos
+from tools.calendario import crear_evento_calendario
 from tools.categorias_ikigai import DIMENSIONES_IKIGAI, DOMINIOS, ETIQUETAS_DIMENSION, HOJAS, MAX_VALORES, VALORES_DISPONIBLES, VERBOS
 from tools.categorias_sistema import CATEGORIAS_SISTEMA, PREGUNTAS_SISTEMA_IDS
 from tools.categorias_validacion import AREAS_VIDA
@@ -451,9 +453,40 @@ def enviar_recordatorios() -> dict:
     return {"enviados": total_enviados, "invalidasEliminadas": total_invalidas}
 
 
-# --- Calendario (P2 del plan): callback de OAuth2 de AgentCore Identity
-# para Google Calendar. Ver tools/calendario_agentcore.py para el resto
-# del flujo y el setup externo que necesita. ---
+# --- Calendario (P2 del plan): botón determinístico en Fase 5 (ver
+# Fase5Summary/ResumenCard.tsx) + callback de OAuth2 de AgentCore
+# Identity para Google Calendar. Ver tools/calendario_agentcore.py para
+# el resto del flujo y el setup externo que necesita. ---
+
+
+@app.post("/api/calendario/crear-evento")
+def crear_evento_calendario_endpoint(usuario_id: str = Depends(obtener_usuario_actual)) -> CrearEventoCalendarioResponse:
+    """Agenda el sistema de la persona en su Google Calendar real --
+    pedido explícito del dueño del producto (14/09/2026): un botón en la
+    Vista de resumen (Fase 5), con el propósito en el cuerpo del evento.
+    Lee la ficha del lado del servidor (nunca confía en lo que mande el
+    cliente para el contenido del evento) y deriva "acción"/"cuándo" del
+    texto de `sistema` ya guardado -- ver
+    agents/orquestador.py::extraer_accion_y_cuando, porque los datos
+    crudos de Fase 4 ya se borraron al cerrar esa fase.
+
+    Si todavía no hay un sistema definido (ficha vacía o sin `sistema`),
+    400 -- este botón no tiene sentido antes de Fase 4."""
+    ficha = leer_ficha_usuario(usuario_id)
+    datos = (ficha["actual"] or {}).get("datos", {}) if ficha["existe"] else {}
+    sistema = datos.get("sistema", "")
+    if not sistema:
+        raise HTTPException(status_code=400, detail="Todavía no hay un sistema definido para agendar.")
+    accion, cuando = extraer_accion_y_cuando(sistema)
+    resultado = crear_evento_calendario(
+        usuario_id,
+        {"accion": accion or sistema, "cuando": cuando, "proposito": datos.get("proposito", "")},
+    )
+    return CrearEventoCalendarioResponse(
+        confirmado=resultado["confirmado"],
+        mensaje=resultado["mensaje"],
+        url_autorizacion=resultado.get("url_autorizacion"),
+    )
 
 
 @app.get("/api/calendario/oauth2/callback")

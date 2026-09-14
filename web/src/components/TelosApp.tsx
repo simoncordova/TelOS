@@ -54,8 +54,16 @@ export function TelosApp({
 // a `mensajes` un texto que llega para una fase que nunca lo muestra,
 // en vez de dejarlo ahí a la espera de una fase de chat futura que lo
 // reviva sin contexto.
-function esFaseSoloSelector(fase: number): boolean {
-  return fase === 0 || fase === 1 || fase === 4;
+//
+// Fase 3 es un caso aparte: mientras sigue en su sub-etapa de selección
+// (`!fase3EnRefinado`) tampoco muestra chat, y el mensaje que produce en
+// ese momento (la cascada 2→3, por ejemplo) es siempre el mismo aviso
+// fijo _PLACEHOLDER_FASE_1 (ver agents/orquestador.py::
+// _invocar_coach_validacion) -- mismo riesgo de que reaparezca sin
+// contexto una vez que la persona sí llega a "refinando" y el chat real
+// se muestra por primera vez.
+function esFaseSoloSelector(fase: number, fase3EnRefinado: boolean): boolean {
+  return fase === 0 || fase === 1 || fase === 4 || (fase === 3 && !fase3EnRefinado);
 }
 
 // Port 1:1 del script principal de ui/app.py -- misma secuencia
@@ -132,10 +140,21 @@ function Conversacion({
   // (no durante el render) para no mutar un ref fuera de ese punto.
   const fichaRef = useRef(ficha);
   const faseActualRef = useRef(faseActual);
+  // Mismo motivo que los dos de arriba: esFaseSoloSelector necesita
+  // saber, al momento real de recibir un mensaje (no al momento en que
+  // React armó el closure), si Fase 3 está todavía en su sub-etapa de
+  // selección -- ahí un mensaje de texto es siempre el aviso fijo
+  // _PLACEHOLDER_FASE_1 (ver agents/orquestador.py::
+  // _invocar_coach_validacion), nunca contenido real del Coach de
+  // Validación, así que tampoco debería quedar guardado en `mensajes`
+  // para reaparecer sin contexto una vez que sí se entra a "refinando"
+  // -- mismo bug real que ya motivó esFaseSoloSelector para fase 0/1/4.
+  const fase3EnRefinadoRef = useRef(fase3EnRefinado);
   useEffect(() => {
     fichaRef.current = ficha;
     faseActualRef.current = faseActual;
-  }, [ficha, faseActual]);
+    fase3EnRefinadoRef.current = fase3EnRefinado;
+  }, [ficha, faseActual, fase3EnRefinado]);
 
   // El agente habla primero siempre, nueva conversación o retomada
   // (Fase 5 muestra su resumen apenas abre, no después) -- corre una
@@ -151,7 +170,7 @@ function Conversacion({
         if (cancelado) return;
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
-          if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          if (!esFaseSoloSelector(d.fase, fase3EnRefinadoRef.current)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
           setCandidatosPendientes(d.candidatos);
@@ -191,7 +210,7 @@ function Conversacion({
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
-          if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          if (!esFaseSoloSelector(d.fase, fase3EnRefinadoRef.current)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           faseFinal = d.fase;
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
@@ -248,7 +267,7 @@ function Conversacion({
       for await (const { evento, datos } of leerEventosSSE(respuesta)) {
         if (evento === "mensaje") {
           const d = datos as { fase: number; texto: string; opciones: string[]; candidatos: CandidatoProposito[] };
-          if (!esFaseSoloSelector(d.fase)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
+          if (!esFaseSoloSelector(d.fase, fase3EnRefinadoRef.current)) setMensajes((prev) => [...prev, { rol: "assistant", texto: d.texto }]);
           setFaseActual(d.fase);
           setOpcionesPendientes(d.opciones);
           setCandidatosPendientes(d.candidatos);
